@@ -28,10 +28,25 @@ describe('profile lifecycle commands', () => {
   }
 
   async function runCli(userHome: string, args: string[]): Promise<CliRun> {
+    return runCliWithOptions(userHome, args);
+  }
+
+  async function runCliWithOptions(
+    userHome: string,
+    args: string[],
+    options: {
+      openedTargets?: string[];
+      clock?: () => Date;
+    } = {},
+  ): Promise<CliRun> {
     const originalUserProfile = process.env.USERPROFILE;
     const output: string[] = [];
     const program = createProgram({
       writeOut: (value) => output.push(value),
+      openTarget: async (targetPath) => {
+        options.openedTargets?.push(targetPath);
+      },
+      clock: options.clock,
     });
 
     process.env.USERPROFILE = userHome;
@@ -177,5 +192,69 @@ describe('profile lifecycle commands', () => {
     expect(result.output).toContain('Status: error');
     expect(result.output).toContain('JSON_INVALID');
     expect(result.output).toContain(profilePaths.settingsPath);
+  });
+
+  it('backup copies the profile into a timestamped backup directory without modifying the source', async () => {
+    const userHome = await makeUserHome();
+    const appHome = join(userHome, '.cc-profile-switch');
+    const profilePaths = getProfileTemplatePaths(appHome, 'coding');
+    const backupRoot = join(appHome, 'backups', 'coding-20260516-142530');
+
+    await runCli(userHome, ['init']);
+    await fs.writeFile(profilePaths.claudeMdPath, '# user edited profile\n', 'utf8');
+
+    const result = await runCliWithOptions(userHome, ['backup', 'coding'], {
+      clock: () => new Date('2026-05-16T14:25:30Z'),
+    });
+
+    await expect(fs.readFile(profilePaths.claudeMdPath, 'utf8')).resolves.toBe('# user edited profile\n');
+    await expect(fs.pathExists(join(backupRoot, 'profile.json'))).resolves.toBe(true);
+    await expect(fs.pathExists(join(backupRoot, 'claude-home', 'CLAUDE.md'))).resolves.toBe(true);
+    await expect(fs.pathExists(join(backupRoot, 'mcp.json'))).resolves.toBe(true);
+    await expect(fs.pathExists(join(backupRoot, 'plugins'))).resolves.toBe(true);
+    await expect(fs.readFile(join(backupRoot, 'claude-home', 'CLAUDE.md'), 'utf8')).resolves.toBe(
+      '# user edited profile\n',
+    );
+    expect(result.output).toContain(`Backup created: ${backupRoot}`);
+  });
+
+  it('edit opens only approved profile targets', async () => {
+    const userHome = await makeUserHome();
+    const appHome = join(userHome, '.cc-profile-switch');
+    const profilePaths = getProfileTemplatePaths(appHome, 'coding');
+    const openedTargets: string[] = [];
+
+    await runCli(userHome, ['init']);
+
+    await runCliWithOptions(userHome, ['edit', 'coding'], { openedTargets });
+    await runCliWithOptions(userHome, ['edit', 'coding', 'CLAUDE.md'], { openedTargets });
+    await runCliWithOptions(userHome, ['edit', 'coding', 'settings.json'], { openedTargets });
+    await runCliWithOptions(userHome, ['edit', 'coding', 'mcp.json'], { openedTargets });
+    await runCliWithOptions(userHome, ['edit', 'coding', 'profile.json'], { openedTargets });
+
+    expect(openedTargets).toEqual([
+      profilePaths.profileRootPath,
+      profilePaths.claudeMdPath,
+      profilePaths.settingsPath,
+      profilePaths.mcpConfigPath,
+      profilePaths.profileConfigPath,
+    ]);
+  });
+
+  it('edit rejects unapproved targets and path traversal without opening anything', async () => {
+    const userHome = await makeUserHome();
+    const openedTargets: string[] = [];
+
+    await runCli(userHome, ['init']);
+
+    await expect(
+      runCliWithOptions(userHome, ['edit', 'coding', '..\\settings.json'], { openedTargets }),
+    ).rejects.toMatchObject({
+      code: 'INVALID_EDIT_TARGET',
+    });
+    await expect(runCliWithOptions(userHome, ['edit', 'coding', 'tokens.json'], { openedTargets })).rejects.toMatchObject({
+      code: 'INVALID_EDIT_TARGET',
+    });
+    expect(openedTargets).toEqual([]);
   });
 });

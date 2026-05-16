@@ -2,13 +2,17 @@ import { Command } from 'commander';
 import fs from 'fs-extra';
 
 import { getAppHomePaths, loadAppConfig } from '../core/app-config';
-import { createProfile, initProfiles } from '../core/profile';
+import { backupProfile, createProfile, initProfiles, type Clock } from '../core/profile';
+import { getProfileTemplatePaths } from '../core/profile-template';
 import { validateProfile, type ValidationFinding } from '../core/validator';
+import { openWithDefaultEditor, type OpenTarget } from '../platform/editor';
 import { profileConfigSchema, profileTemplateSchema, type ProfileTemplateName } from '../schemas/profile';
 import { CcpsError } from '../utils/errors';
 
-export type CommandOutput = {
+export type CommandRuntime = {
   writeOut: (value: string) => void;
+  openTarget: OpenTarget;
+  clock: Clock;
 };
 
 type PlaceholderCommand = {
@@ -19,33 +23,30 @@ type PlaceholderCommand = {
 
 const placeholderCommands: PlaceholderCommand[] = [
   {
-    nameAndArgs: 'edit <name> [file]',
-    description: 'Open a profile file or directory with the default editor.',
-  },
-  {
-    nameAndArgs: 'backup <name>',
-    description: 'Copy a profile to a timestamped backup directory.',
-  },
-  {
     nameAndArgs: 'launch <profile>',
     description: 'Start Claude Code with the selected user-level profile.',
     options: [['--dry-run', 'Print the launch plan without starting Claude Code.']],
   },
 ];
 
-export function registerCommands(program: Command, output: CommandOutput = defaultOutput): void {
+export function registerCommands(program: Command, options: Partial<CommandRuntime> = {}): void {
+  const runtime: CommandRuntime = {
+    ...defaultRuntime,
+    ...options,
+  };
+
   program
     .command('init')
     .description('Create the ccps app home and default profiles.')
     .action(async () => {
-      const result = await initProfiles();
+      const result = await initProfiles({ clock: runtime.clock });
       const created = result.createdProfiles.length > 0 ? result.createdProfiles.join(', ') : 'none';
       const preserved = result.preservedProfiles.length > 0 ? result.preservedProfiles.join(', ') : 'none';
 
-      output.writeOut(`Initialized ccps app home: ${result.appHomePath}\n`);
-      output.writeOut(`Created default profiles: ${created}\n`);
-      output.writeOut(`Preserved existing profiles: ${preserved}\n`);
-      output.writeOut('Next: ccps list\n');
+      runtime.writeOut(`Initialized ccps app home: ${result.appHomePath}\n`);
+      runtime.writeOut(`Created default profiles: ${created}\n`);
+      runtime.writeOut(`Preserved existing profiles: ${preserved}\n`);
+      runtime.writeOut('Next: ccps list\n');
     });
 
   program
@@ -54,11 +55,11 @@ export function registerCommands(program: Command, output: CommandOutput = defau
     .requiredOption('--template <template>', 'Profile template to use.')
     .action(async (name: string, options: { template: string }) => {
       const template = parseTemplateName(options.template);
-      const result = await createProfile({ name, template });
+      const result = await createProfile({ name, template, clock: runtime.clock });
 
-      output.writeOut(`Created profile "${result.name}" from template "${result.template}".\n`);
-      output.writeOut(`Path: ${result.paths.profileRootPath}\n`);
-      output.writeOut(`Next: ccps launch ${result.name} --dry-run\n`);
+      runtime.writeOut(`Created profile "${result.name}" from template "${result.template}".\n`);
+      runtime.writeOut(`Path: ${result.paths.profileRootPath}\n`);
+      runtime.writeOut(`Next: ccps launch ${result.name} --dry-run\n`);
     });
 
   program
@@ -68,8 +69,8 @@ export function registerCommands(program: Command, output: CommandOutput = defau
       const appPaths = getAppHomePaths();
 
       if (!(await fs.pathExists(appPaths.appHomePath)) || !(await fs.pathExists(appPaths.profilesPath))) {
-        output.writeOut(`No ccps app home found: ${appPaths.appHomePath}\n`);
-        output.writeOut('Next: ccps init\n');
+        runtime.writeOut(`No ccps app home found: ${appPaths.appHomePath}\n`);
+        runtime.writeOut('Next: ccps init\n');
         return;
       }
 
@@ -77,20 +78,20 @@ export function registerCommands(program: Command, output: CommandOutput = defau
       const profileNames = await listProfileNames(appPaths.profilesPath);
 
       if (profileNames.length === 0) {
-        output.writeOut(`No profiles found: ${appPaths.profilesPath}\n`);
-        output.writeOut('Next: ccps init\n');
+        runtime.writeOut(`No profiles found: ${appPaths.profilesPath}\n`);
+        runtime.writeOut('Next: ccps init\n');
         return;
       }
 
-      output.writeOut(`Profiles in ${appPaths.profilesPath}\n`);
-      output.writeOut('Name\tStatus\tLast Used\tDescription\n');
+      runtime.writeOut(`Profiles in ${appPaths.profilesPath}\n`);
+      runtime.writeOut('Name\tStatus\tLast Used\tDescription\n');
 
       for (const profileName of profileNames) {
         const validation = await validateProfile({ appHomePath: appPaths.appHomePath, name: profileName });
         const description = validation.config?.description ?? '(invalid profile.json)';
         const lastUsed = config.lastUsedProfile === profileName ? 'last-used' : '-';
 
-        output.writeOut(`${profileName}\t${validation.status}\t${lastUsed}\t${description}\n`);
+        runtime.writeOut(`${profileName}\t${validation.status}\t${lastUsed}\t${description}\n`);
       }
     });
 
@@ -102,25 +103,25 @@ export function registerCommands(program: Command, output: CommandOutput = defau
       const validation = await validateProfile({ appHomePath: appPaths.appHomePath, name });
       const paths = validation.paths;
 
-      output.writeOut(`Profile: ${validation.profileName}\n`);
-      output.writeOut(`Profile path: ${validation.profileRootPath}\n`);
-      output.writeOut(`Claude home: ${validation.claudeHomePath}\n`);
-      output.writeOut('Required files:\n');
-      output.writeOut(`  profile.json: ${await pathStatus(paths.profileConfigPath, 'file')}\n`);
-      output.writeOut(`  CLAUDE.md: ${await pathStatus(paths.claudeMdPath, 'file')}\n`);
-      output.writeOut(`  settings.json: ${await jsonStatus(paths.settingsPath)}\n`);
-      output.writeOut(`  mcp.json: ${await jsonStatus(paths.mcpConfigPath)}\n`);
-      output.writeOut('Required directories:\n');
-      output.writeOut(`  claude-home: ${await pathStatus(paths.claudeHomePath, 'directory')}\n`);
-      output.writeOut(`  skills: ${await pathStatus(paths.skillsPath, 'directory')}\n`);
-      output.writeOut(`  agents: ${await pathStatus(paths.agentsPath, 'directory')}\n`);
-      output.writeOut(`  plugins: ${await pathStatus(paths.pluginsPath, 'directory')}\n`);
-      output.writeOut(`JSON validation: ${validation.status}\n`);
-      output.writeOut('Project config: preserved from the launch cwd\n');
-      output.writeOut('Real user config: never copied from or written to the real ~/.claude\n');
+      runtime.writeOut(`Profile: ${validation.profileName}\n`);
+      runtime.writeOut(`Profile path: ${validation.profileRootPath}\n`);
+      runtime.writeOut(`Claude home: ${validation.claudeHomePath}\n`);
+      runtime.writeOut('Required files:\n');
+      runtime.writeOut(`  profile.json: ${await pathStatus(paths.profileConfigPath, 'file')}\n`);
+      runtime.writeOut(`  CLAUDE.md: ${await pathStatus(paths.claudeMdPath, 'file')}\n`);
+      runtime.writeOut(`  settings.json: ${await jsonStatus(paths.settingsPath)}\n`);
+      runtime.writeOut(`  mcp.json: ${await jsonStatus(paths.mcpConfigPath)}\n`);
+      runtime.writeOut('Required directories:\n');
+      runtime.writeOut(`  claude-home: ${await pathStatus(paths.claudeHomePath, 'directory')}\n`);
+      runtime.writeOut(`  skills: ${await pathStatus(paths.skillsPath, 'directory')}\n`);
+      runtime.writeOut(`  agents: ${await pathStatus(paths.agentsPath, 'directory')}\n`);
+      runtime.writeOut(`  plugins: ${await pathStatus(paths.pluginsPath, 'directory')}\n`);
+      runtime.writeOut(`JSON validation: ${validation.status}\n`);
+      runtime.writeOut('Project config: preserved from the launch cwd\n');
+      runtime.writeOut('Real user config: never copied from or written to the real ~/.claude\n');
 
       if (validation.findings.length > 0) {
-        output.writeOut(formatFindings(validation.findings));
+        runtime.writeOut(formatFindings(validation.findings));
       }
     });
 
@@ -131,14 +132,37 @@ export function registerCommands(program: Command, output: CommandOutput = defau
       const appPaths = getAppHomePaths();
       const validation = await validateProfile({ appHomePath: appPaths.appHomePath, name });
 
-      output.writeOut(`Profile: ${validation.profileName}\n`);
-      output.writeOut(`Status: ${validation.status}\n`);
+      runtime.writeOut(`Profile: ${validation.profileName}\n`);
+      runtime.writeOut(`Status: ${validation.status}\n`);
 
       if (validation.findings.length === 0) {
-        output.writeOut('No findings.\n');
+        runtime.writeOut('No findings.\n');
       } else {
-        output.writeOut(formatFindings(validation.findings));
+        runtime.writeOut(formatFindings(validation.findings));
       }
+    });
+
+  program
+    .command('backup <name>')
+    .description('Copy a profile to a timestamped backup directory.')
+    .action(async (name: string) => {
+      const result = await backupProfile({ name, clock: runtime.clock });
+
+      runtime.writeOut(`Backup created: ${result.backupPath}\n`);
+      runtime.writeOut(`Source profile unchanged: ${result.sourcePath}\n`);
+    });
+
+  program
+    .command('edit <name> [file]')
+    .description('Open a profile file or directory with the default editor.')
+    .action(async (name: string, file?: string) => {
+      const appPaths = getAppHomePaths();
+      await loadAppConfig(appPaths.appHomePath);
+
+      const targetPath = resolveEditTarget(appPaths.appHomePath, name, file);
+      await runtime.openTarget(targetPath);
+
+      runtime.writeOut(`Opened: ${targetPath}\n`);
     });
 
   for (const spec of placeholderCommands) {
@@ -159,10 +183,12 @@ export function registerCommands(program: Command, output: CommandOutput = defau
 
 export const registerPlaceholderCommands = registerCommands;
 
-const defaultOutput: CommandOutput = {
+const defaultRuntime: CommandRuntime = {
   writeOut: (value) => {
     process.stdout.write(value);
   },
+  openTarget: openWithDefaultEditor,
+  clock: () => new Date(),
 };
 
 function parseTemplateName(value: string): ProfileTemplateName {
@@ -176,6 +202,36 @@ function parseTemplateName(value: string): ProfileTemplateName {
   }
 
   return parsed.data;
+}
+
+function resolveEditTarget(appHomePath: string, name: string, file?: string): string {
+  const paths = getProfileTemplatePaths(appHomePath, name);
+
+  if (!fs.pathExistsSync(paths.profileRootPath)) {
+    throw new CcpsError('PROFILE_NOT_FOUND', 'Profile does not exist.', {
+      guidance: `Create the profile first: ccps create ${name} --template blank`,
+    });
+  }
+
+  if (file === undefined) {
+    return paths.profileRootPath;
+  }
+
+  const targets: Record<string, string> = {
+    'CLAUDE.md': paths.claudeMdPath,
+    'settings.json': paths.settingsPath,
+    'mcp.json': paths.mcpConfigPath,
+    'profile.json': paths.profileConfigPath,
+  };
+  const targetPath = targets[file];
+
+  if (!targetPath) {
+    throw new CcpsError('INVALID_EDIT_TARGET', 'Edit target is not approved.', {
+      guidance: 'Use one of: CLAUDE.md, settings.json, mcp.json, profile.json.',
+    });
+  }
+
+  return targetPath;
 }
 
 async function listProfileNames(profilesPath: string): Promise<string[]> {

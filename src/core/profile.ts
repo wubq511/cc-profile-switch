@@ -1,5 +1,6 @@
 import fs from 'fs-extra';
 
+import { resolveInside, validateProfileName } from '../platform/windows-path';
 import {
   createAppConfig,
   ensureAppHomeStructure,
@@ -39,6 +40,18 @@ export type CreateProfileResult = {
   name: string;
   template: ProfileTemplateName;
   paths: ProfileTemplatePaths;
+};
+
+export type BackupProfileOptions = {
+  appHomePath?: string;
+  name: string;
+  clock?: Clock;
+};
+
+export type BackupProfileResult = {
+  profileName: string;
+  sourcePath: string;
+  backupPath: string;
 };
 
 export async function initProfiles(options: InitProfilesOptions = {}): Promise<InitProfilesResult> {
@@ -90,6 +103,53 @@ export async function createProfile(options: CreateProfileOptions): Promise<Crea
     template: config.template,
     paths,
   };
+}
+
+export async function backupProfile(options: BackupProfileOptions): Promise<BackupProfileResult> {
+  const appHomePath = options.appHomePath ?? getAppHomePaths().appHomePath;
+  const appPaths = await ensureAppHomeStructure(appHomePath);
+
+  await loadAppConfig(appPaths.appHomePath);
+
+  const paths = getProfileTemplatePaths(appPaths.appHomePath, options.name);
+  if (!(await fs.pathExists(paths.profileRootPath))) {
+    throw new CcpsError('PROFILE_NOT_FOUND', 'Profile does not exist.', {
+      guidance: `Create the profile first: ccps create ${options.name} --template blank`,
+    });
+  }
+
+  const backupPath = getBackupPath(appPaths.backupsPath, options.name, options.clock);
+  await fs.copy(paths.profileRootPath, backupPath, {
+    overwrite: false,
+    errorOnExist: true,
+  });
+
+  return {
+    profileName: options.name,
+    sourcePath: paths.profileRootPath,
+    backupPath,
+  };
+}
+
+function getBackupPath(backupsPath: string, profileName: string, clock: Clock = () => new Date()): string {
+  const safeName = validateProfileName(profileName);
+  const timestamp = formatBackupTimestamp(clock());
+  return resolveInside(backupsPath, `${safeName}-${timestamp}`);
+}
+
+function formatBackupTimestamp(date: Date): string {
+  const year = date.getUTCFullYear();
+  const month = padTimestampPart(date.getUTCMonth() + 1);
+  const day = padTimestampPart(date.getUTCDate());
+  const hours = padTimestampPart(date.getUTCHours());
+  const minutes = padTimestampPart(date.getUTCMinutes());
+  const seconds = padTimestampPart(date.getUTCSeconds());
+
+  return `${year}${month}${day}-${hours}${minutes}${seconds}`;
+}
+
+function padTimestampPart(value: number): string {
+  return value.toString().padStart(2, '0');
 }
 
 async function ensureConfig(appHomePath: string, clock?: Clock): Promise<boolean> {

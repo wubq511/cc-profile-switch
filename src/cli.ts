@@ -1,10 +1,10 @@
 import { Command } from 'commander';
 
-import { registerCommands, type CommandOutput } from './commands';
+import { registerCommands, type CommandRuntime } from './commands';
 
 export const cliVersion = '0.1.0';
 
-export type CreateProgramOptions = Partial<CommandOutput>;
+export type CreateProgramOptions = Partial<CommandRuntime>;
 
 export function createProgram(options: CreateProgramOptions = {}): Command {
   const program = new Command();
@@ -16,9 +16,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .showHelpAfterError()
     .showSuggestionAfterError();
 
-  registerCommands(program, {
-    writeOut: options.writeOut ?? ((value) => process.stdout.write(value)),
-  });
+  registerCommands(program, options);
 
   return program;
 }
