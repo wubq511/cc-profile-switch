@@ -16,6 +16,8 @@ for epic_dir in .claude/epics/*/; do
 
   for task_file in "$epic_dir"/[0-9]*.md; do
     [ -f "$task_file" ] || continue
+    task_base=$(basename "$task_file")
+    echo "$task_base" | grep -Eq '^[0-9]+\.md$' || continue
 
     # Check if task is open
     status=$(grep "^status:" "$task_file" | head -1 | sed 's/^status: *//')
