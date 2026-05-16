@@ -2,11 +2,16 @@ import { Command } from 'commander';
 import fs from 'fs-extra';
 
 import { getAppHomePaths, loadAppConfig } from '../core/app-config';
+import { buildLaunchPlan, formatLaunchDryRun } from '../core/launcher';
 import { backupProfile, createProfile, initProfiles, type Clock } from '../core/profile';
 import { getProfileTemplatePaths } from '../core/profile-template';
 import { validateProfile, type ValidationFinding } from '../core/validator';
 import { openWithDefaultEditor, type OpenTarget } from '../platform/editor';
-import { profileConfigSchema, profileTemplateSchema, type ProfileTemplateName } from '../schemas/profile';
+import {
+  profileConfigSchema,
+  profileTemplateSchema,
+  type ProfileTemplateName,
+} from '../schemas/profile';
 import { CcpsError } from '../utils/errors';
 
 export type CommandRuntime = {
@@ -14,20 +19,6 @@ export type CommandRuntime = {
   openTarget: OpenTarget;
   clock: Clock;
 };
-
-type PlaceholderCommand = {
-  nameAndArgs: string;
-  description: string;
-  options?: Array<[flags: string, description: string]>;
-};
-
-const placeholderCommands: PlaceholderCommand[] = [
-  {
-    nameAndArgs: 'launch <profile>',
-    description: 'Start Claude Code with the selected user-level profile.',
-    options: [['--dry-run', 'Print the launch plan without starting Claude Code.']],
-  },
-];
 
 export function registerCommands(program: Command, options: Partial<CommandRuntime> = {}): void {
   const runtime: CommandRuntime = {
@@ -40,8 +31,10 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
     .description('Create the ccps app home and default profiles.')
     .action(async () => {
       const result = await initProfiles({ clock: runtime.clock });
-      const created = result.createdProfiles.length > 0 ? result.createdProfiles.join(', ') : 'none';
-      const preserved = result.preservedProfiles.length > 0 ? result.preservedProfiles.join(', ') : 'none';
+      const created =
+        result.createdProfiles.length > 0 ? result.createdProfiles.join(', ') : 'none';
+      const preserved =
+        result.preservedProfiles.length > 0 ? result.preservedProfiles.join(', ') : 'none';
 
       runtime.writeOut(`Initialized ccps app home: ${result.appHomePath}\n`);
       runtime.writeOut(`Created default profiles: ${created}\n`);
@@ -68,7 +61,10 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
     .action(async () => {
       const appPaths = getAppHomePaths();
 
-      if (!(await fs.pathExists(appPaths.appHomePath)) || !(await fs.pathExists(appPaths.profilesPath))) {
+      if (
+        !(await fs.pathExists(appPaths.appHomePath)) ||
+        !(await fs.pathExists(appPaths.profilesPath))
+      ) {
         runtime.writeOut(`No ccps app home found: ${appPaths.appHomePath}\n`);
         runtime.writeOut('Next: ccps init\n');
         return;
@@ -87,7 +83,10 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
       runtime.writeOut('Name\tStatus\tLast Used\tDescription\n');
 
       for (const profileName of profileNames) {
-        const validation = await validateProfile({ appHomePath: appPaths.appHomePath, name: profileName });
+        const validation = await validateProfile({
+          appHomePath: appPaths.appHomePath,
+          name: profileName,
+        });
         const description = validation.config?.description ?? '(invalid profile.json)';
         const lastUsed = config.lastUsedProfile === profileName ? 'last-used' : '-';
 
@@ -165,20 +164,27 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
       runtime.writeOut(`Opened: ${targetPath}\n`);
     });
 
-  for (const spec of placeholderCommands) {
-    const command = program.command(spec.nameAndArgs).description(spec.description);
+  program
+    .command('launch <profile>')
+    .description('Start Claude Code with the selected user-level profile.')
+    .option('--dry-run', 'Print the launch plan without starting Claude Code.')
+    .option('--cwd <path>', 'Project directory to launch Claude Code from.')
+    .action(async (profile: string, options: { dryRun?: boolean; cwd?: string }) => {
+      if (!options.dryRun) {
+        throw new CcpsError('LAUNCH_REQUIRES_DRY_RUN', 'Real launch is not implemented yet.', {
+          guidance: `Use ccps launch ${profile} --dry-run until real launch support is available.`,
+        });
+      }
 
-    for (const [flags, description] of spec.options ?? []) {
-      command.option(flags, description);
-    }
-
-    command.action(() => {
-      program.error(`Command "${command.name()}" is not implemented in the project skeleton yet.`, {
-        code: 'ccps.notImplemented',
-        exitCode: 1,
+      const appPaths = getAppHomePaths();
+      const plan = await buildLaunchPlan({
+        appHomePath: appPaths.appHomePath,
+        profileName: profile,
+        cwd: options.cwd,
       });
+
+      runtime.writeOut(formatLaunchDryRun(plan));
     });
-  }
 }
 
 export const registerPlaceholderCommands = registerCommands;

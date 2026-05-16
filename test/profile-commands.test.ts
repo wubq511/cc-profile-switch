@@ -96,7 +96,9 @@ describe('profile lifecycle commands', () => {
 
     const result = await runCli(userHome, ['init']);
 
-    await expect(fs.readFile(codingPaths.claudeMdPath, 'utf8')).resolves.toBe('# user edited profile\n');
+    await expect(fs.readFile(codingPaths.claudeMdPath, 'utf8')).resolves.toBe(
+      '# user edited profile\n',
+    );
     expect(result.output).toContain('Preserved existing profiles');
   });
 
@@ -122,7 +124,9 @@ describe('profile lifecycle commands', () => {
     await runCli(userHome, ['init']);
     await runCli(userHome, ['create', 'focus', '--template', 'blank']);
 
-    await expect(runCli(userHome, ['create', 'focus', '--template', 'blank'])).rejects.toMatchObject({
+    await expect(
+      runCli(userHome, ['create', 'focus', '--template', 'blank']),
+    ).rejects.toMatchObject({
       code: 'PROFILE_ALREADY_EXISTS',
     });
   });
@@ -207,7 +211,9 @@ describe('profile lifecycle commands', () => {
       clock: () => new Date('2026-05-16T14:25:30Z'),
     });
 
-    await expect(fs.readFile(profilePaths.claudeMdPath, 'utf8')).resolves.toBe('# user edited profile\n');
+    await expect(fs.readFile(profilePaths.claudeMdPath, 'utf8')).resolves.toBe(
+      '# user edited profile\n',
+    );
     await expect(fs.pathExists(join(backupRoot, 'profile.json'))).resolves.toBe(true);
     await expect(fs.pathExists(join(backupRoot, 'claude-home', 'CLAUDE.md'))).resolves.toBe(true);
     await expect(fs.pathExists(join(backupRoot, 'mcp.json'))).resolves.toBe(true);
@@ -252,9 +258,42 @@ describe('profile lifecycle commands', () => {
     ).rejects.toMatchObject({
       code: 'INVALID_EDIT_TARGET',
     });
-    await expect(runCliWithOptions(userHome, ['edit', 'coding', 'tokens.json'], { openedTargets })).rejects.toMatchObject({
+    await expect(
+      runCliWithOptions(userHome, ['edit', 'coding', 'tokens.json'], { openedTargets }),
+    ).rejects.toMatchObject({
       code: 'INVALID_EDIT_TARGET',
     });
     expect(openedTargets).toEqual([]);
+  });
+
+  it('launch dry-run prints the launch plan without starting Claude Code', async () => {
+    const userHome = await makeUserHome();
+    const appHome = join(userHome, '.cc-profile-switch');
+    const profilePaths = getProfileTemplatePaths(appHome, 'coding');
+    const projectCwd = await makeUserHome();
+
+    await runCli(userHome, ['init']);
+
+    const result = await runCli(userHome, ['launch', 'coding', '--dry-run', '--cwd', projectCwd]);
+
+    expect(result.output).toContain('Launch dry-run for profile "coding"');
+    expect(result.output).toContain(`Profile path: ${profilePaths.profileRootPath}`);
+    expect(result.output).toContain(`Claude home: ${profilePaths.claudeHomePath}`);
+    expect(result.output).toContain(`Cwd: ${projectCwd}`);
+    expect(result.output).toContain('Command: claude');
+    expect(result.output).toContain('--mcp-config');
+    expect(result.output).toContain(`CLAUDE_CONFIG_DIR=${profilePaths.claudeHomePath}`);
+    expect(result.output).toContain('Validation: valid');
+    expect(result.output).toContain('Dry run: Claude Code was not started.');
+  });
+
+  it('launch refuses real process execution until real launch is implemented', async () => {
+    const userHome = await makeUserHome();
+
+    await runCli(userHome, ['init']);
+
+    await expect(runCli(userHome, ['launch', 'coding'])).rejects.toMatchObject({
+      code: 'LAUNCH_REQUIRES_DRY_RUN',
+    });
   });
 });
