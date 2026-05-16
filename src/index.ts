@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { createProgram } from './cli';
+import { formatError } from './utils/errors';
 
 async function main(): Promise<void> {
   const program = createProgram();
@@ -7,7 +8,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-  const message = error instanceof Error ? error.message : String(error);
-  console.error(message);
+  console.error(formatError(error));
   process.exitCode = 1;
 });
