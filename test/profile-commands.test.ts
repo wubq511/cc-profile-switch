@@ -121,4 +121,61 @@ describe('profile lifecycle commands', () => {
       code: 'INVALID_PROFILE_NAME',
     });
   });
+
+  it('list prompts for init when the app home is missing', async () => {
+    const userHome = await makeUserHome();
+
+    const result = await runCli(userHome, ['list']);
+
+    expect(result.output).toContain('No ccps app home found');
+    expect(result.output).toContain('Next: ccps init');
+  });
+
+  it('list shows profile status, last-used marker, and description', async () => {
+    const userHome = await makeUserHome();
+    const appHome = join(userHome, '.cc-profile-switch');
+    const appPaths = getAppHomePaths(appHome);
+
+    await runCli(userHome, ['init']);
+    const config = await fs.readJson(appPaths.configPath);
+    await fs.writeJson(appPaths.configPath, { ...config, lastUsedProfile: 'coding' });
+
+    const result = await runCli(userHome, ['list']);
+
+    expect(result.output).toContain('coding');
+    expect(result.output).toContain('valid');
+    expect(result.output).toContain('last-used');
+    expect(result.output).toContain('Focused software development profile.');
+  });
+
+  it('show displays profile paths, required file status, JSON status, and preservation notes', async () => {
+    const userHome = await makeUserHome();
+    const appHome = join(userHome, '.cc-profile-switch');
+    const profilePaths = getProfileTemplatePaths(appHome, 'coding');
+
+    await runCli(userHome, ['init']);
+
+    const result = await runCli(userHome, ['show', 'coding']);
+
+    expect(result.output).toContain(`Profile path: ${profilePaths.profileRootPath}`);
+    expect(result.output).toContain(`Claude home: ${profilePaths.claudeHomePath}`);
+    expect(result.output).toContain('profile.json: present');
+    expect(result.output).toContain('settings.json: valid JSON');
+    expect(result.output).toContain('Project config: preserved from the launch cwd');
+  });
+
+  it('validate reports error findings for invalid profiles', async () => {
+    const userHome = await makeUserHome();
+    const appHome = join(userHome, '.cc-profile-switch');
+    const profilePaths = getProfileTemplatePaths(appHome, 'coding');
+
+    await runCli(userHome, ['init']);
+    await fs.writeFile(profilePaths.settingsPath, '{not-json', 'utf8');
+
+    const result = await runCli(userHome, ['validate', 'coding']);
+
+    expect(result.output).toContain('Status: error');
+    expect(result.output).toContain('JSON_INVALID');
+    expect(result.output).toContain(profilePaths.settingsPath);
+  });
 });
