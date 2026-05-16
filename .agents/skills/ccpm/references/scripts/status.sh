@@ -29,9 +29,9 @@ fi
 echo ""
 echo "📝 Tasks:"
 if [ -d ".claude/epics" ]; then
-  total=$(find .claude/epics -path "*/archived/*" -prune -o -name "[0-9]*.md" -print 2>/dev/null | wc -l)
-  open=$(find .claude/epics -path "*/archived/*" -prune -o -name "[0-9]*.md" -print 2>/dev/null | xargs grep -l "^status: *open" 2>/dev/null | wc -l)
-  closed=$(find .claude/epics -path "*/archived/*" -prune -o -name "[0-9]*.md" -print 2>/dev/null | xargs grep -l "^status: *closed" 2>/dev/null | wc -l)
+  total=$(find .claude/epics -path "*/archived/*" -prune -o -name "*.md" -print 2>/dev/null | grep -E "/[0-9]+\.md$" | wc -l)
+  open=$(find .claude/epics -path "*/archived/*" -prune -o -name "*.md" -print 2>/dev/null | grep -E "/[0-9]+\.md$" | xargs grep -l "^status: *open" 2>/dev/null | wc -l)
+  closed=$(find .claude/epics -path "*/archived/*" -prune -o -name "*.md" -print 2>/dev/null | grep -E "/[0-9]+\.md$" | xargs grep -l "^status: *closed" 2>/dev/null | wc -l)
   echo "  Open: $open"
   echo "  Closed: $closed"
   echo "  Total: $total"

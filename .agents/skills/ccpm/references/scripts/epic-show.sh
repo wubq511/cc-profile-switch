@@ -51,6 +51,8 @@ closed_count=0
 
 for task_file in "$epic_dir"/[0-9]*.md; do
   [ -f "$task_file" ] || continue
+  task_base=$(basename "$task_file")
+  echo "$task_base" | grep -Eq '^[0-9]+\.md$' || continue
 
   task_num=$(basename "$task_file" .md)
   task_name=$(grep "^name:" "$task_file" | head -1 | sed 's/^name: *//')

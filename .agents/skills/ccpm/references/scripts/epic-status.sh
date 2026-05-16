@@ -48,6 +48,8 @@ else
   # Use find to safely iterate over task files
   for task_file in "$epic_dir"/[0-9]*.md; do
     [ -f "$task_file" ] || continue
+    task_base=$(basename "$task_file")
+    echo "$task_base" | grep -Eq '^[0-9]+\.md$' || continue
     ((total++))
 
     task_status=$(grep "^status:" "$task_file" | head -1 | sed 's/^status: *//')

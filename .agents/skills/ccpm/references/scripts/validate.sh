@@ -32,7 +32,7 @@ for epic_dir in .claude/epics/*/; do
 done
 
 # Check for tasks without epics
-orphaned=$(find .claude -name "[0-9]*.md" -not -path ".claude/epics/*/*" 2>/dev/null | wc -l)
+orphaned=$(find .claude -name "*.md" 2>/dev/null | grep -E "/[0-9]+\.md$" | grep -Ev "^\.claude/epics/[^/]+/[0-9]+\.md$" | wc -l)
 [ $orphaned -gt 0 ] && echo "  ⚠️ Found $orphaned orphaned task files" && ((warnings++))
 
 # Check for broken references
@@ -41,6 +41,8 @@ echo "🔗 Reference Check:"
 
 for task_file in .claude/epics/*/[0-9]*.md; do
   [ -f "$task_file" ] || continue
+  task_base=$(basename "$task_file")
+  echo "$task_base" | grep -Eq '^[0-9]+\.md$' || continue
 
   deps_line=$(grep "^depends_on:" "$task_file" | head -1)
   if [ -n "$deps_line" ]; then
