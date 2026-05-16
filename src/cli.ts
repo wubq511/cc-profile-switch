@@ -1,10 +1,12 @@
 import { Command } from 'commander';
 
-import { registerPlaceholderCommands } from './commands';
+import { registerCommands, type CommandOutput } from './commands';
 
 export const cliVersion = '0.1.0';
 
-export function createProgram(): Command {
+export type CreateProgramOptions = Partial<CommandOutput>;
+
+export function createProgram(options: CreateProgramOptions = {}): Command {
   const program = new Command();
 
   program
@@ -14,7 +16,9 @@ export function createProgram(): Command {
     .showHelpAfterError()
     .showSuggestionAfterError();
 
-  registerPlaceholderCommands(program);
+  registerCommands(program, {
+    writeOut: options.writeOut ?? ((value) => process.stdout.write(value)),
+  });
 
   return program;
 }
