@@ -1,7 +1,7 @@
 ---
 name: cc-profile-switch-mvp
 description: Windows-only Node.js CLI for switching Claude Code user-level config profiles while preserving project config
-status: backlog
+status: completed
 created: 2026-05-16T09:33:18Z
 ---
 

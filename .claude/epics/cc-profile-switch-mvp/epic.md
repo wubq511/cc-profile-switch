@@ -1,9 +1,9 @@
 ---
 name: cc-profile-switch-mvp
-status: in-progress
+status: completed
 created: 2026-05-16T09:33:18Z
-updated: 2026-05-16T15:03:28Z
-progress: 77%
+updated: 2026-05-17T05:02:46Z
+progress: 100%
 prd: .claude/prds/cc-profile-switch-mvp.md
 github: https://github.com/wubq511/cc-profile-switch/issues/1
 ---
@@ -209,10 +209,10 @@ Expected implementation shape:
 - [x] #4 - App Config and Profile Templates (parallel: false)
 - [x] #5 - Init and Create Commands (parallel: true)
 - [x] #6 - List, Show, and Validate Commands (parallel: true)
-- [ ] #7 - Backup and Edit Commands (parallel: true)
-- [ ] #8 - Launch Plan and Dry Run (parallel: false)
-- [ ] #9 - Claude Code Behavior Verification Document (parallel: true)
-- [ ] #10 - Real Launch and README (parallel: false)
+- [x] #7 - Backup and Edit Commands (parallel: true)
+- [x] #8 - Launch Plan and Dry Run (parallel: false)
+- [x] #9 - Claude Code Behavior Verification Document (parallel: true)
+- [x] #10 - Real Launch and README (parallel: false)
 
 Total tasks: 9
 Parallel tasks: 4

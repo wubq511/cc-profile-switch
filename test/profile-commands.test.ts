@@ -37,6 +37,7 @@ describe('profile lifecycle commands', () => {
     options: {
       openedTargets?: string[];
       clock?: () => Date;
+      spawnCalls?: Array<{ command: string; args: string[]; cwd: string }>;
     } = {},
   ): Promise<CliRun> {
     const originalUserProfile = process.env.USERPROFILE;
@@ -45,6 +46,10 @@ describe('profile lifecycle commands', () => {
       writeOut: (value) => output.push(value),
       openTarget: async (targetPath) => {
         options.openedTargets?.push(targetPath);
+      },
+      spawnProcess: async (command, args, spawnOptions) => {
+        options.spawnCalls?.push({ command, args, cwd: spawnOptions.cwd });
+        return { exitCode: 0 };
       },
       clock: options.clock,
     });
@@ -287,13 +292,25 @@ describe('profile lifecycle commands', () => {
     expect(result.output).toContain('Dry run: Claude Code was not started.');
   });
 
-  it('launch refuses real process execution until real launch is implemented', async () => {
+  it('launch starts Claude Code when dry-run is not requested', async () => {
     const userHome = await makeUserHome();
+    const projectCwd = await makeUserHome();
+    const spawnCalls: Array<{ command: string; args: string[]; cwd: string }> = [];
 
     await runCli(userHome, ['init']);
 
-    await expect(runCli(userHome, ['launch', 'coding'])).rejects.toMatchObject({
-      code: 'LAUNCH_REQUIRES_DRY_RUN',
+    const result = await runCliWithOptions(
+      userHome,
+      ['launch', 'coding', '--cwd', projectCwd],
+      { spawnCalls, clock: () => new Date('2026-05-16T15:45:00Z') },
+    );
+
+    expect(spawnCalls).toHaveLength(1);
+    expect(spawnCalls[0]).toMatchObject({
+      command: 'claude',
+      cwd: projectCwd,
     });
+    expect(spawnCalls[0].args).toContain('--mcp-config');
+    expect(result.output).toContain('Launching Claude Code with profile "coding"');
   });
 });

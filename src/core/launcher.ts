@@ -1,7 +1,8 @@
 import fs from 'fs-extra';
 import path from 'node:path';
 
-import { loadAppConfig } from './app-config';
+import { loadAppConfig, saveAppConfig, type Clock } from './app-config';
+import { spawnProcess as defaultSpawnProcess, type SpawnProcess } from '../platform/process';
 import { resolveInside } from '../platform/windows-path';
 import { type ProfileLaunchConfig } from '../schemas/profile';
 import { CcpsError } from '../utils/errors';
@@ -17,6 +18,16 @@ export type LaunchPlanOptions = {
   profileName: string;
   cwd?: string;
   command?: string;
+};
+
+export type LaunchProfileOptions = LaunchPlanOptions & {
+  spawnProcess?: SpawnProcess;
+  clock?: Clock;
+};
+
+export type LaunchProfileResult = {
+  plan: LaunchPlan;
+  exitCode: number | null;
 };
 
 export type LaunchPlan = {
@@ -64,11 +75,11 @@ export async function buildLaunchPlan(options: LaunchPlanOptions): Promise<Launc
     );
   }
 
-  const cwd = await resolveLaunchCwd(options.cwd);
-  const args = buildClaudeArgs(validation.config.launch, validation.paths.mcpConfigPath);
   const pluginDirs = validation.config.launch.pluginDirs.map((pluginDir) =>
     resolveInside(validation.profileRootPath, pluginDir),
   );
+  const cwd = await resolveLaunchCwd(options.cwd);
+  const args = buildClaudeArgs(validation.config.launch, validation.paths.mcpConfigPath, pluginDirs);
   const warnings = validation.findings.filter((finding) => finding.severity === 'warning');
 
   return {
@@ -114,7 +125,52 @@ export function formatLaunchDryRun(plan: LaunchPlan): string {
   return lines.join('\n');
 }
 
-function buildClaudeArgs(launch: ProfileLaunchConfig, mcpConfigPath: string): string[] {
+export async function launchProfile(options: LaunchProfileOptions): Promise<LaunchProfileResult> {
+  const plan = await buildLaunchPlan(options);
+  const runProcess = options.spawnProcess ?? defaultSpawnProcess;
+
+  let result: { exitCode: number | null };
+  try {
+    result = await runProcess(plan.command, plan.args, {
+      cwd: plan.cwd,
+      stdio: 'inherit',
+      shell: false,
+      env: {
+        ...process.env,
+        ...plan.envChanges,
+      },
+    });
+  } catch (error) {
+    throw new CcpsError('CLAUDE_LAUNCH_FAILED', 'Failed to start Claude Code.', {
+      guidance: 'Confirm Claude Code is installed and available on PATH, then retry the launch.',
+      cause: error,
+    });
+  }
+
+  const config = await loadAppConfig(options.appHomePath);
+  await saveAppConfig(
+    options.appHomePath,
+    {
+      ...config,
+      lastUsedProfile: plan.profileName,
+    },
+    { clock: options.clock },
+  );
+
+  if (result.exitCode !== null && result.exitCode !== 0) {
+    throw new CcpsError('CLAUDE_EXITED_WITH_ERROR', 'Claude Code exited with a non-zero status.', {
+      guidance: `Claude Code exited with status ${result.exitCode}. Review the Claude Code output above.`,
+    });
+  }
+
+  return { plan, exitCode: result.exitCode };
+}
+
+function buildClaudeArgs(
+  launch: ProfileLaunchConfig,
+  mcpConfigPath: string,
+  pluginDirs: string[],
+): string[] {
   const args = [...launch.claudeArgs];
 
   if (launch.mcpMode === 'merge' || launch.mcpMode === 'strict') {
@@ -123,6 +179,10 @@ function buildClaudeArgs(launch: ProfileLaunchConfig, mcpConfigPath: string): st
 
   if (launch.mcpMode === 'strict') {
     args.push('--strict-mcp-config');
+  }
+
+  for (const pluginDir of pluginDirs) {
+    args.push('--plugin-dir', pluginDir);
   }
 
   return args;

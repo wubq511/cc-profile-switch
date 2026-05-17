@@ -2,11 +2,12 @@ import { Command } from 'commander';
 import fs from 'fs-extra';
 
 import { getAppHomePaths, loadAppConfig } from '../core/app-config';
-import { buildLaunchPlan, formatLaunchDryRun } from '../core/launcher';
+import { buildLaunchPlan, formatLaunchDryRun, launchProfile } from '../core/launcher';
 import { backupProfile, createProfile, initProfiles, type Clock } from '../core/profile';
 import { getProfileTemplatePaths } from '../core/profile-template';
 import { validateProfile, type ValidationFinding } from '../core/validator';
 import { openWithDefaultEditor, type OpenTarget } from '../platform/editor';
+import { spawnProcess, type SpawnProcess } from '../platform/process';
 import {
   profileConfigSchema,
   profileTemplateSchema,
@@ -17,6 +18,7 @@ import { CcpsError } from '../utils/errors';
 export type CommandRuntime = {
   writeOut: (value: string) => void;
   openTarget: OpenTarget;
+  spawnProcess: SpawnProcess;
   clock: Clock;
 };
 
@@ -170,20 +172,29 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
     .option('--dry-run', 'Print the launch plan without starting Claude Code.')
     .option('--cwd <path>', 'Project directory to launch Claude Code from.')
     .action(async (profile: string, options: { dryRun?: boolean; cwd?: string }) => {
-      if (!options.dryRun) {
-        throw new CcpsError('LAUNCH_REQUIRES_DRY_RUN', 'Real launch is not implemented yet.', {
-          guidance: `Use ccps launch ${profile} --dry-run until real launch support is available.`,
+      const appPaths = getAppHomePaths();
+      if (options.dryRun) {
+        const plan = await buildLaunchPlan({
+          appHomePath: appPaths.appHomePath,
+          profileName: profile,
+          cwd: options.cwd,
         });
+
+        runtime.writeOut(formatLaunchDryRun(plan));
+        return;
       }
 
-      const appPaths = getAppHomePaths();
-      const plan = await buildLaunchPlan({
+      const result = await launchProfile({
         appHomePath: appPaths.appHomePath,
         profileName: profile,
         cwd: options.cwd,
+        spawnProcess: runtime.spawnProcess,
+        clock: runtime.clock,
       });
 
-      runtime.writeOut(formatLaunchDryRun(plan));
+      runtime.writeOut(`Launching Claude Code with profile "${result.plan.profileName}".\n`);
+      runtime.writeOut(`Cwd: ${result.plan.cwd}\n`);
+      runtime.writeOut(`CLAUDE_CONFIG_DIR=${result.plan.envChanges.CLAUDE_CONFIG_DIR}\n`);
     });
 }
 
@@ -194,6 +205,7 @@ const defaultRuntime: CommandRuntime = {
     process.stdout.write(value);
   },
   openTarget: openWithDefaultEditor,
+  spawnProcess,
   clock: () => new Date(),
 };
 

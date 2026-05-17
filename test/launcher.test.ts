@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { createAppConfig } from '../src/core/app-config';
 import { createProfileFromTemplate, getProfileTemplatePaths } from '../src/core/profile-template';
-import { buildLaunchPlan, formatLaunchDryRun } from '../src/core/launcher';
+import { buildLaunchPlan, formatLaunchDryRun, launchProfile } from '../src/core/launcher';
 
 describe('launcher', () => {
   const tempRoots: string[] = [];
@@ -140,6 +140,14 @@ describe('launcher', () => {
     });
 
     expect(plan.pluginDirs).toEqual([paths.pluginsPath, customPluginDir]);
+    expect(plan.args).toEqual([
+      '--mcp-config',
+      paths.mcpConfigPath,
+      '--plugin-dir',
+      paths.pluginsPath,
+      '--plugin-dir',
+      customPluginDir,
+    ]);
   });
 
   it('blocks launch plans when profile validation has errors', async () => {
@@ -178,5 +186,93 @@ describe('launcher', () => {
     expect(output).toContain('SENSITIVE_FILENAME_MEDIUM');
     expect(output).toContain('Project config: preserved because Claude starts in the launch cwd.');
     expect(output).toContain('Dry run: Claude Code was not started.');
+  });
+
+  it('spawns Claude Code with the launch plan cwd, args array, inherited stdio, and env changes', async () => {
+    const { appHome, paths } = await makeProfile();
+    const projectCwd = await makeTempRoot('ccps-project-');
+    const spawnCalls: Array<{
+      command: string;
+      args: string[];
+      options: { cwd: string; stdio: string; shell: boolean; env: NodeJS.ProcessEnv };
+    }> = [];
+
+    const result = await launchProfile({
+      appHomePath: appHome,
+      profileName: 'coding',
+      cwd: projectCwd,
+      spawnProcess: async (command, args, options) => {
+        spawnCalls.push({ command, args, options });
+        return { exitCode: 0 };
+      },
+      clock: () => new Date('2026-05-16T15:45:00Z'),
+    });
+
+    expect(result.plan.cwd).toBe(projectCwd);
+    expect(spawnCalls).toHaveLength(1);
+    expect(spawnCalls[0]).toMatchObject({
+      command: 'claude',
+      args: ['--mcp-config', paths.mcpConfigPath],
+      options: {
+        cwd: projectCwd,
+        stdio: 'inherit',
+        shell: false,
+      },
+    });
+    expect(spawnCalls[0].options.env.CLAUDE_CONFIG_DIR).toBe(paths.claudeHomePath);
+  });
+
+  it('updates last-used metadata only after the launch reaches process execution', async () => {
+    const { appHome } = await makeProfile();
+    const projectCwd = await makeTempRoot('ccps-project-');
+
+    await launchProfile({
+      appHomePath: appHome,
+      profileName: 'coding',
+      cwd: projectCwd,
+      spawnProcess: async () => ({ exitCode: 0 }),
+      clock: () => new Date('2026-05-16T15:45:00Z'),
+    });
+
+    await expect(fs.readJson(join(appHome, 'config.json'))).resolves.toMatchObject({
+      lastUsedProfile: 'coding',
+      updatedAt: '2026-05-16T15:45:00.000Z',
+    });
+  });
+
+  it('does not update last-used metadata when profile validation blocks launch', async () => {
+    const { appHome, paths } = await makeProfile();
+    const projectCwd = await makeTempRoot('ccps-project-');
+    await rm(paths.settingsPath);
+
+    await expect(
+      launchProfile({
+        appHomePath: appHome,
+        profileName: 'coding',
+        cwd: projectCwd,
+        spawnProcess: async () => ({ exitCode: 0 }),
+      }),
+    ).rejects.toMatchObject({ code: 'PROFILE_VALIDATION_FAILED' });
+    await expect(fs.readJson(join(appHome, 'config.json'))).resolves.toMatchObject({
+      lastUsedProfile: null,
+    });
+  });
+
+  it('wraps spawn failures with launch guidance', async () => {
+    const { appHome } = await makeProfile();
+    const projectCwd = await makeTempRoot('ccps-project-');
+
+    await expect(
+      launchProfile({
+        appHomePath: appHome,
+        profileName: 'coding',
+        cwd: projectCwd,
+        spawnProcess: async () => {
+          throw new Error('ENOENT');
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: 'CLAUDE_LAUNCH_FAILED',
+    });
   });
 });
