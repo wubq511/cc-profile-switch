@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import fs from 'fs-extra';
+import path from 'node:path';
 
 import { getAppHomePaths, loadAppConfig } from '../core/app-config';
 import { buildLaunchPlan, formatLaunchDryRun, launchProfile } from '../core/launcher';
@@ -8,6 +9,7 @@ import { getProfileTemplatePaths } from '../core/profile-template';
 import { validateProfile, type ValidationFinding } from '../core/validator';
 import { openWithDefaultEditor, type OpenTarget } from '../platform/editor';
 import { spawnProcess, type SpawnProcess } from '../platform/process';
+import { isPathInside } from '../platform/windows-path';
 import {
   profileConfigSchema,
   profileTemplateSchema,
@@ -160,7 +162,7 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
 
   program
     .command('edit <name> [file]')
-    .description('Open a profile file or directory with the default editor.')
+    .description('Open a profile file or directory in a new VS Code window.')
     .action(async (name: string, file?: string) => {
       const appPaths = getAppHomePaths();
       await loadAppConfig(appPaths.appHomePath);
@@ -240,21 +242,71 @@ function resolveEditTarget(appHomePath: string, name: string, file?: string): st
     return paths.profileRootPath;
   }
 
-  const targets: Record<string, string> = {
-    'CLAUDE.md': paths.claudeMdPath,
-    'settings.json': paths.settingsPath,
-    'mcp.json': paths.mcpConfigPath,
-    'profile.json': paths.profileConfigPath,
-  };
-  const targetPath = targets[file];
+  const aliasTarget = editTargetAliases(paths)[normalizeEditTargetKey(file)];
+  const targetPath =
+    aliasTarget ??
+    (path.win32.isAbsolute(file)
+      ? path.win32.resolve(file)
+      : path.win32.resolve(paths.profileRootPath, file));
 
-  if (!targetPath) {
-    throw new CcpsError('INVALID_EDIT_TARGET', 'Edit target is not approved.', {
-      guidance: 'Use one of: CLAUDE.md, settings.json, mcp.json, profile.json.',
+  if (
+    !isPathInside(paths.profileRootPath, targetPath) ||
+    hasSensitivePathSegment(paths.profileRootPath, targetPath)
+  ) {
+    throw invalidEditTarget();
+  }
+
+  if (!fs.pathExistsSync(targetPath)) {
+    throw new CcpsError('EDIT_TARGET_NOT_FOUND', 'Edit target does not exist.', {
+      guidance: `Open the profile folder or choose an existing file or directory under: ${paths.profileRootPath}`,
     });
   }
 
+  const realTargetPath = fs.realpathSync(targetPath);
+  const targetStats = fs.statSync(realTargetPath);
+  if (
+    !isPathInside(paths.profileRootPath, realTargetPath) ||
+    (!targetStats.isFile() && !targetStats.isDirectory())
+  ) {
+    throw invalidEditTarget();
+  }
+
   return targetPath;
+}
+
+function editTargetAliases(
+  paths: ReturnType<typeof getProfileTemplatePaths>,
+): Record<string, string> {
+  return {
+    'claude.md': paths.claudeMdPath,
+    'settings.json': paths.settingsPath,
+    'mcp.json': paths.mcpConfigPath,
+    'profile.json': paths.profileConfigPath,
+    'claude-home': paths.claudeHomePath,
+    memory: paths.memoryPath,
+    'memory\\auto': paths.autoMemoryPath,
+    skills: paths.skillsPath,
+    agents: paths.agentsPath,
+    plugins: paths.pluginsPath,
+  };
+}
+
+function normalizeEditTargetKey(value: string): string {
+  return value.replace(/\//g, '\\').replace(/\\+$/g, '').toLowerCase();
+}
+
+function hasSensitivePathSegment(profileRootPath: string, targetPath: string): boolean {
+  return path.win32
+    .relative(profileRootPath, targetPath)
+    .split(path.win32.sep)
+    .some((segment) => /(oauth|tokens?|secrets?|credentials?)/i.test(segment));
+}
+
+function invalidEditTarget(): CcpsError {
+  return new CcpsError('INVALID_EDIT_TARGET', 'Edit target is not approved.', {
+    guidance:
+      'Use an existing path inside the selected profile. Credential-like paths such as token, secret, credential, or oauth are blocked.',
+  });
 }
 
 async function listProfileNames(profilesPath: string): Promise<string[]> {

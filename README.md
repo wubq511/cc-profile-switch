@@ -34,12 +34,14 @@ ccps create <name> --template <coding|study|work|research|general|blank>
 ccps show <name>
 ccps validate <name>
 ccps backup <name>
-ccps edit <name> [CLAUDE.md|settings.json|mcp.json|profile.json]
+ccps edit <name> [file-or-folder]
 ccps launch <profile> --dry-run
 ccps launch <profile>
 ```
 
 在执行真正的启动前，建议使用 `ccps launch <profile> --dry-run` 检查计划。
+
+`ccps edit <name>` 会用新的 VS Code 窗口打开整个 profile 文件夹。带上文件或文件夹参数时，会打开该 profile 内的已有目标；常用别名包括 `CLAUDE.md`、`settings.json`、`mcp.json`、`profile.json`、`memory`、`skills`、`agents`、`plugins`。
 
 ## 配置布局
 

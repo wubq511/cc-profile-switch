@@ -231,7 +231,7 @@ describe('profile lifecycle commands', () => {
     expect(result.output).toContain(`Backup created: ${backupRoot}`);
   });
 
-  it('edit opens only approved profile targets', async () => {
+  it('edit opens the profile folder, known aliases, and existing relative targets', async () => {
     const userHome = await makeUserHome();
     const appHome = join(userHome, '.cc-profile-switch');
     const profilePaths = getProfileTemplatePaths(appHome, 'coding');
@@ -244,6 +244,8 @@ describe('profile lifecycle commands', () => {
     await runCliWithOptions(userHome, ['edit', 'coding', 'settings.json'], { openedTargets });
     await runCliWithOptions(userHome, ['edit', 'coding', 'mcp.json'], { openedTargets });
     await runCliWithOptions(userHome, ['edit', 'coding', 'profile.json'], { openedTargets });
+    await runCliWithOptions(userHome, ['edit', 'coding', 'claude-home'], { openedTargets });
+    await runCliWithOptions(userHome, ['edit', 'coding', 'claude-home\\skills'], { openedTargets });
 
     expect(openedTargets).toEqual([
       profilePaths.profileRootPath,
@@ -251,10 +253,12 @@ describe('profile lifecycle commands', () => {
       profilePaths.settingsPath,
       profilePaths.mcpConfigPath,
       profilePaths.profileConfigPath,
+      profilePaths.claudeHomePath,
+      profilePaths.skillsPath,
     ]);
   });
 
-  it('edit rejects unapproved targets and path traversal without opening anything', async () => {
+  it('edit rejects path traversal, sensitive targets, and missing targets without opening anything', async () => {
     const userHome = await makeUserHome();
     const openedTargets: string[] = [];
 
@@ -269,6 +273,11 @@ describe('profile lifecycle commands', () => {
       runCliWithOptions(userHome, ['edit', 'coding', 'tokens.json'], { openedTargets }),
     ).rejects.toMatchObject({
       code: 'INVALID_EDIT_TARGET',
+    });
+    await expect(
+      runCliWithOptions(userHome, ['edit', 'coding', 'missing.md'], { openedTargets }),
+    ).rejects.toMatchObject({
+      code: 'EDIT_TARGET_NOT_FOUND',
     });
     expect(openedTargets).toEqual([]);
   });
