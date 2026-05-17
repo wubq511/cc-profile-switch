@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { createAppConfig } from '../src/core/app-config';
+import { createAppConfig, getAppHomePaths } from '../src/core/app-config';
 import { createProfileFromTemplate, getProfileTemplatePaths } from '../src/core/profile-template';
 import { buildLaunchPlan, formatLaunchDryRun, launchProfile } from '../src/core/launcher';
 
@@ -70,6 +70,95 @@ describe('launcher', () => {
     });
     expect(plan.args).toEqual(['--mcp-config', paths.mcpConfigPath]);
     expect(plan.envChanges).toEqual({ CLAUDE_CONFIG_DIR: paths.claudeHomePath });
+  });
+
+  it('merges common API settings and profile settings env with profile values taking priority', async () => {
+    const { appHome, paths } = await makeProfile();
+    const projectCwd = await makeTempRoot('ccps-project-');
+    const appPaths = getAppHomePaths(appHome);
+    await fs.writeJson(appPaths.apiSettingsPath, {
+      env: {
+        ANTHROPIC_AUTH_TOKEN: 'common-token',
+        ANTHROPIC_BASE_URL: 'https://common.example.test',
+        ANTHROPIC_MODEL: 'common-model',
+      },
+    });
+    await fs.writeJson(paths.settingsPath, {
+      theme: 'dark',
+      env: {
+        ANTHROPIC_AUTH_TOKEN: 'profile-token',
+      },
+    });
+
+    const plan = await buildLaunchPlan({
+      appHomePath: appHome,
+      profileName: 'coding',
+      cwd: projectCwd,
+    });
+    const output = formatLaunchDryRun(plan);
+
+    expect(plan.apiEnv).toEqual({
+      ANTHROPIC_AUTH_TOKEN: 'profile-token',
+      ANTHROPIC_BASE_URL: 'https://common.example.test',
+      ANTHROPIC_MODEL: 'common-model',
+    });
+    expect(plan.apiConfig).toEqual({
+      common: { path: appPaths.apiSettingsPath, present: true, keys: [
+        'ANTHROPIC_AUTH_TOKEN',
+        'ANTHROPIC_BASE_URL',
+        'ANTHROPIC_MODEL',
+      ] },
+      profile: { path: paths.settingsPath, present: true, keys: ['ANTHROPIC_AUTH_TOKEN'] },
+      keys: ['ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_MODEL'],
+    });
+    expect(output).toContain('API config:');
+    expect(output).toContain('common: present');
+    expect(output).toContain('profile: present');
+    expect(output).toContain('ANTHROPIC_AUTH_TOKEN');
+    expect(output).toContain('ANTHROPIC_BASE_URL');
+    expect(output).not.toContain('common-token');
+    expect(output).not.toContain('profile-token');
+    expect(output).not.toContain('https://common.example.test');
+  });
+
+  it('rejects invalid API settings before launching Claude Code', async () => {
+    const { appHome } = await makeProfile();
+    const projectCwd = await makeTempRoot('ccps-project-');
+    await fs.writeJson(getAppHomePaths(appHome).apiSettingsPath, {
+      env: {
+        ANTHROPIC_AUTH_TOKEN: 123,
+      },
+    });
+
+    await expect(
+      buildLaunchPlan({
+        appHomePath: appHome,
+        profileName: 'coding',
+        cwd: projectCwd,
+      }),
+    ).rejects.toMatchObject({
+      code: 'API_SETTINGS_INVALID',
+    });
+  });
+
+  it('rejects invalid profile settings env before launching Claude Code', async () => {
+    const { appHome, paths } = await makeProfile();
+    const projectCwd = await makeTempRoot('ccps-project-');
+    await fs.writeJson(paths.settingsPath, {
+      env: {
+        ANTHROPIC_AUTH_TOKEN: 123,
+      },
+    });
+
+    await expect(
+      buildLaunchPlan({
+        appHomePath: appHome,
+        profileName: 'coding',
+        cwd: projectCwd,
+      }),
+    ).rejects.toMatchObject({
+      code: 'API_SETTINGS_INVALID',
+    });
   });
 
   it('uses the current process cwd when no explicit cwd is provided', async () => {
@@ -191,6 +280,17 @@ describe('launcher', () => {
   it('spawns Claude Code with the launch plan cwd, args array, inherited stdio, and env changes', async () => {
     const { appHome, paths } = await makeProfile();
     const projectCwd = await makeTempRoot('ccps-project-');
+    await fs.writeJson(getAppHomePaths(appHome).apiSettingsPath, {
+      env: {
+        ANTHROPIC_BASE_URL: 'https://common.example.test',
+        ANTHROPIC_MODEL: 'common-model',
+      },
+    });
+    await fs.writeJson(paths.settingsPath, {
+      env: {
+        ANTHROPIC_MODEL: 'profile-model',
+      },
+    });
     const spawnCalls: Array<{
       command: string;
       args: string[];
@@ -220,6 +320,8 @@ describe('launcher', () => {
       },
     });
     expect(spawnCalls[0].options.env.CLAUDE_CONFIG_DIR).toBe(paths.claudeHomePath);
+    expect(spawnCalls[0].options.env.ANTHROPIC_BASE_URL).toBe('https://common.example.test');
+    expect(spawnCalls[0].options.env.ANTHROPIC_MODEL).toBe('profile-model');
   });
 
   it('updates last-used metadata only after the launch reaches process execution', async () => {

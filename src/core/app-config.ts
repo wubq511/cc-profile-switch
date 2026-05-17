@@ -9,6 +9,7 @@ export type Clock = () => Date;
 export type AppHomePaths = {
   appHomePath: string;
   configPath: string;
+  apiSettingsPath: string;
   profilesPath: string;
   backupsPath: string;
 };
@@ -21,6 +22,7 @@ export function getAppHomePaths(appHomePath = getAppHomePath()): AppHomePaths {
   return {
     appHomePath,
     configPath: resolveInside(appHomePath, 'config.json'),
+    apiSettingsPath: resolveInside(appHomePath, 'api-settings.json'),
     profilesPath: resolveInside(appHomePath, 'profiles'),
     backupsPath: resolveInside(appHomePath, 'backups'),
   };

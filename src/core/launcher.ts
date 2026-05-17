@@ -2,6 +2,7 @@ import fs from 'fs-extra';
 import path from 'node:path';
 
 import { loadAppConfig, saveAppConfig, type Clock } from './app-config';
+import { resolveApiSettings, type ApiSettingsSource } from './api-settings';
 import { spawnProcess as defaultSpawnProcess, type SpawnProcess } from '../platform/process';
 import { resolveInside } from '../platform/windows-path';
 import { type ProfileLaunchConfig } from '../schemas/profile';
@@ -40,6 +41,12 @@ export type LaunchPlan = {
   envChanges: {
     CLAUDE_CONFIG_DIR: string;
   };
+  apiConfig: {
+    common: ApiSettingsSource;
+    profile: ApiSettingsSource;
+    keys: string[];
+  };
+  apiEnv: Record<string, string>;
   mcpMode: ProfileLaunchConfig['mcpMode'];
   pluginDirs: string[];
   validationStatus: ValidationStatus;
@@ -80,6 +87,10 @@ export async function buildLaunchPlan(options: LaunchPlanOptions): Promise<Launc
   );
   const cwd = await resolveLaunchCwd(options.cwd);
   const args = buildClaudeArgs(validation.config.launch, validation.paths.mcpConfigPath, pluginDirs);
+  const apiSettings = await resolveApiSettings({
+    appHomePath: options.appHomePath,
+    profileName: validation.profileName,
+  });
   const warnings = validation.findings.filter((finding) => finding.severity === 'warning');
 
   return {
@@ -92,6 +103,12 @@ export async function buildLaunchPlan(options: LaunchPlanOptions): Promise<Launc
     envChanges: {
       CLAUDE_CONFIG_DIR: validation.claudeHomePath,
     },
+    apiConfig: {
+      common: apiSettings.common,
+      profile: apiSettings.profile,
+      keys: apiSettings.keys,
+    },
+    apiEnv: apiSettings.env,
     mcpMode: validation.config.launch.mcpMode,
     pluginDirs,
     validationStatus: validation.status,
@@ -114,6 +131,11 @@ export function formatLaunchDryRun(plan: LaunchPlan): string {
     ...formatList(plan.args),
     'Env changes:',
     `  CLAUDE_CONFIG_DIR=${plan.envChanges.CLAUDE_CONFIG_DIR}`,
+    'API config:',
+    `  common: ${formatApiSource(plan.apiConfig.common)}`,
+    `  profile: ${formatApiSource(plan.apiConfig.profile)}`,
+    '  env keys:',
+    ...formatList(plan.apiConfig.keys),
     `Validation: ${plan.validationStatus}`,
     'Warnings:',
     ...formatWarnings(plan.warnings),
@@ -137,6 +159,7 @@ export async function launchProfile(options: LaunchProfileOptions): Promise<Laun
       shell: false,
       env: {
         ...process.env,
+        ...plan.apiEnv,
         ...plan.envChanges,
       },
     });
@@ -224,6 +247,13 @@ function formatWarnings(warnings: ValidationFinding[]): string[] {
     const pathSuffix = warning.path ? ` (${warning.path})` : '';
     return `  [${warning.severity}] ${warning.code}: ${warning.message}${pathSuffix}`;
   });
+}
+
+function formatApiSource(source: ApiSettingsSource): string {
+  const status = source.present ? 'present' : 'missing';
+  const keySummary = source.keys.length === 0 ? 'no env keys' : `${source.keys.length} env key(s)`;
+
+  return `${status} (${keySummary})`;
 }
 
 function invalidLaunchCwd(cwd: string, message: string): CcpsError {
