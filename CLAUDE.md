@@ -96,6 +96,7 @@ spawn('claude', args, {
   shell: false,
   env: {
     ...process.env,
+    ...apiEnv,                  // common api-settings.json, then profile settings.json env
     CLAUDE_CONFIG_DIR: profile.claudeHomePath
   }
 })
@@ -104,6 +105,8 @@ spawn('claude', args, {
 MCP default: `mcpMode = "merge"` — pass `--mcp-config <profile>\mcp.json` without `--strict-mcp-config`, so project `.mcp.json` still loads. Strict mode is opt-in only.
 Claude Code-managed plugins live under `<profile>\claude-home\plugins`. Optional `launch.pluginDirs` are extra session plugin directories and resolve relative to `<profile>\claude-home`.
 Launch default: add `--dangerously-skip-permissions` unless `profile.json` sets `launch.skipPermissions` to `false`.
+API env resolution: profile `claude-home\settings.json` `env` overrides `%USERPROFILE%\.cc-profile-switch\api-settings.json`, which overrides inherited process env keys.
+Memory: `claude-home\settings.json` must point `autoMemoryDirectory` to `<profile>\claude-home\memory\auto`.
 
 ## Safety rules (hard constraints)
 
@@ -121,9 +124,9 @@ Launch default: add `--dangerously-skip-permissions` unless `profile.json` sets 
 - Validate profile before launch
 - Support `--dry-run` on launch
 - Use args array for spawn, never shell string concatenation
-- Scan for sensitive filenames (token, secret, credential, session, oauth)
+- Scan for sensitive filenames; block high-risk credential names (`token`, `secret`, `credential`, `credentials`, `oauth`) and warn on Claude-created state/cache names (`.claude.json`, `session`, `history`, `cache`, `log`, `transcript`)
 
-## Implementation order (strict)
+## Implementation order (completed baseline)
 
 1. Project setup + path utilities
 2. App config
@@ -140,7 +143,7 @@ Launch default: add `--dangerously-skip-permissions` unless `profile.json` sets 
 13. Real `launch`
 14. README
 
-Do not implement real launch before dry-run and validation are stable.
+This historical order is complete. Future launch changes must preserve validation, dry-run parity, current-cwd launch, profile memory isolation, and README/verification updates.
 
 ## MVP exclusions
 

@@ -35,7 +35,10 @@ ccps launch coding
 3. 通过 CLAUDE_CONFIG_DIR 切换用户级 ~/.claude 配置来源
 4. 保留当前项目的 CLAUDE.md、.claude/settings.json、.claude/agents、.claude/skills 等项目级配置
 5. 不直接修改 C:\Users\h\.claude
-6. 不迁移 OAuth/session/token/history/cache
+6. 默认传递 --dangerously-skip-permissions，除非单个 profile 显式关闭
+7. 将 common API env 与 profile settings env 合并，profile 优先
+8. 将 profile memory、plugins 和 Claude Code 创建的用户状态限制在该 profile 的 claude-home 内
+9. 不迁移 OAuth/session/token/history/cache
 ```
 
 ### Core Product Boundary
@@ -322,12 +325,16 @@ ccps init
 ```text
 %USERPROFILE%\.cc-profile-switch\
   config.json
+  api-settings.json
   profiles\
     coding\
       profile.json
       claude-home\
         CLAUDE.md
         settings.json
+        memory\
+          auto\
+            MEMORY.md
         skills\
         agents\
         plugins\
@@ -345,7 +352,9 @@ ccps init
 [ ] 首次执行能生成完整目录结构
 [ ] 重复执行不会覆盖用户已有文件
 [ ] 默认 profile 都包含 claude-home
+[ ] 默认 profile 都包含 claude-home\memory\auto\MEMORY.md 和 claude-home\plugins
 [ ] 默认 settings.json 和 mcp.json 是合法 JSON
+[ ] settings.json 的 autoMemoryDirectory 指向本 profile 的 claude-home\memory\auto
 [ ] 不读取或复制 C:\Users\h\.claude
 ```
 
@@ -526,6 +535,9 @@ ccps launch coding
 ```text
 cwd = 当前用户所在目录
 CLAUDE_CONFIG_DIR = profiles\coding\claude-home
+args 默认包含 --dangerously-skip-permissions
+common api-settings.json 与 profile settings.json env 合并，profile 优先
+autoMemoryDirectory = profiles\coding\claude-home\memory\auto
 项目配置 = 保留
 真实 C:\Users\h\.claude = 不修改
 ```
@@ -537,9 +549,11 @@ CLAUDE_CONFIG_DIR = profiles\coding\claude-home
 2. validate profile
 3. 构造 launch plan
 4. 设置 CLAUDE_CONFIG_DIR
-5. 如果存在 profile mcp.json，则通过 --mcp-config 加载
-6. 默认不使用 --strict-mcp-config，避免吞掉项目 MCP
-7. 从当前 cwd 启动 claude
+5. 合并 API env：process.env < common api-settings.json < profile claude-home\settings.json env
+6. 默认添加 --dangerously-skip-permissions，除非 profile 显式关闭
+7. 通过 --mcp-config 加载 profile mcp.json
+8. 默认不使用 --strict-mcp-config，避免吞掉项目 MCP
+9. 从当前 cwd 启动 claude
 ```
 
 示例 dry-run：
@@ -563,7 +577,16 @@ Environment:
   CLAUDE_CONFIG_DIR=C:\Users\h\.cc-profile-switch\profiles\coding\claude-home
 
 Command:
-  claude --mcp-config C:\Users\h\.cc-profile-switch\profiles\coding\mcp.json
+  claude --dangerously-skip-permissions --mcp-config C:\Users\h\.cc-profile-switch\profiles\coding\mcp.json
+
+Memory:
+  user: C:\Users\h\.cc-profile-switch\profiles\coding\claude-home\CLAUDE.md
+  auto: C:\Users\h\.cc-profile-switch\profiles\coding\claude-home\memory\auto
+
+API config:
+  common: present/missing
+  profile: present/missing
+  env keys: key names only, never values
 
 Project config:
   Preserved. Claude Code will still discover project-level config from current cwd.
@@ -605,10 +628,13 @@ ccps validate study
 | 用户级配置目录存在 | `claude-home\` |
 | 核心文件存在 | `claude-home\CLAUDE.md`、`claude-home\settings.json`、`mcp.json` |
 | JSON 合法性 | `profile.json`、`claude-home\settings.json`、`mcp.json` |
+| memory 目录 | `claude-home\memory\auto\MEMORY.md` |
+| auto memory 指向 | `claude-home\settings.json` 的 `autoMemoryDirectory` 必须指向本 profile 的 `claude-home\memory\auto` |
 | skills 目录 | `claude-home\skills\` |
 | agents 目录 | `claude-home\agents\` |
 | plugins 目录 | `claude-home\plugins\` |
-| 敏感文件名 | token/session/oauth/credentials/history/cache 等 |
+| 高风险敏感文件名 | token/secret/credential/credentials/oauth，阻止 launch |
+| Claude 状态/缓存文件名 | .claude.json/session/history/cache/log/transcript，提示 warning |
 | 路径安全 | 不允许路径穿越 |
 
 验收标准：
@@ -832,12 +858,16 @@ tsup
 ```text
 %USERPROFILE%\.cc-profile-switch\
   config.json
+  api-settings.json
   profiles\
     coding\
       profile.json
       claude-home\
         CLAUDE.md
         settings.json
+        memory\
+          auto\
+            MEMORY.md
         skills\
         agents\
         plugins\
@@ -994,29 +1024,30 @@ PowerShell / Windows Terminal 优先
 
 ---
 
-## Open Questions & Assumptions
+## Verified Questions & Assumptions
 
 ### Assumptions
 
 ```text
 Claude Code 支持 CLAUDE_CONFIG_DIR 切换用户级配置目录
-设置 CLAUDE_CONFIG_DIR 后，用户级 CLAUDE.md/settings/skills/agents/plugins 从该目录读取
+设置 CLAUDE_CONFIG_DIR 后，用户级 CLAUDE.md/settings/skills/agents/plugins/memory 从该目录读取
 项目级配置仍按当前 cwd 原生加载
-用户接受不同 profile 可能需要独立认证或独立配置状态
+基于 API 的用户可以通过 common api-settings.json 与 profile settings.json env 提供 API 配置
+用户接受 OAuth/keychain 风格认证在不同 profile 下可能呈现为独立状态
 ```
 
-### Open Questions
+### Verified Questions
 
 ```text
-1. CLAUDE_CONFIG_DIR 是否会影响当前版本 Claude Code 的所有用户级配置源？
-2. 使用 CLAUDE_CONFIG_DIR 后是否会要求每个 profile 单独登录？
-3. profile 的 claude-home 是否会生成 session/history/cache？
-4. 如果生成，是否需要 validate 时提示但不阻止？
-5. --mcp-config 默认是否与项目 MCP 合并，还是存在覆盖行为？
-6. 用户级 plugins 在 CLAUDE_CONFIG_DIR 下的加载规则是否稳定？
+1. CLAUDE_CONFIG_DIR 会让 profile 的 claude-home 替代真实用户级 CLAUDE.md/settings/agents/skills。
+2. 无显式 API 设置时，隔离 profile 会提示 Not logged in，说明认证状态呈现为 profile 特有。
+3. Claude Code 会在 profile 的 claude-home 下创建 session-env/sessions 等状态；validate 提示 warning，不阻止。
+4. --mcp-config merge 模式下 profile MCP 与项目 MCP 共存；strict 模式只加载 profile MCP。
+5. 用户级 plugins 位于 profile 的 claude-home\plugins；launch.pluginDirs 仅作为额外 session plugin-dir。
+6. autoMemoryDirectory 固定为 profile 的 claude-home\memory\auto，避免 memory 串 profile。
 ```
 
-这些问题必须在技术设计和实现阶段通过 `VERIFY-CLAUDE-CODE-BEHAVIOR.md` 记录验证。
+验证证据见 `VERIFY-CLAUDE-CODE-BEHAVIOR.md`。
 
 ---
 
@@ -1057,14 +1088,17 @@ GUI
 [ ] ccps edit 可以打开 claude-home\CLAUDE.md / settings.json / mcp.json
 [ ] ccps validate 可以校验 JSON 和敏感文件名
 [ ] ccps backup 可以备份 profile
-[ ] ccps launch 可以在当前项目目录启动 Claude Code
-[ ] ccps launch 会设置 CLAUDE_CONFIG_DIR 指向 profile claude-home
-[ ] ccps launch 不会切换 cwd 到工具目录
-[ ] ccps launch 不会修改项目配置
-[ ] ccps launch 不会直接覆盖 C:\Users\h\.claude
-[ ] ccps launch --dry-run 可以展示启动计划
-[ ] 完成 GLOBAL_ORIGINAL_MARKER / PROFILE_CODING_MARKER / PROJECT_MARKER 验证
-[ ] README 可以指导 Windows 用户跑通完整流程
+[x] ccps launch 可以在当前项目目录启动 Claude Code
+[x] ccps launch 会设置 CLAUDE_CONFIG_DIR 指向 profile claude-home
+[x] ccps launch 默认传递 --dangerously-skip-permissions，且可由 profile 关闭
+[x] ccps launch 会合并 common/profile API env，且 dry-run 不显示值
+[x] ccps launch 会将 auto memory 指向当前 profile 的 claude-home\memory\auto
+[x] ccps launch 不会切换 cwd 到工具目录
+[x] ccps launch 不会修改项目配置
+[x] ccps launch 不会直接覆盖 C:\Users\h\.claude
+[x] ccps launch --dry-run 可以展示启动计划
+[x] 完成 GLOBAL_ORIGINAL_MARKER / PROFILE_CODING_MARKER / PROJECT_MARKER 验证
+[x] README 可以指导 Windows 用户跑通完整流程
 [ ] 错误提示清晰，包含下一步建议
 [ ] MVP 不包含 TUI
 [ ] MVP 不包含 GUI
@@ -1076,40 +1110,11 @@ GUI
 
 ## Next Steps
 
-下一步应交给 Codex / Claude Code 生成或更新：
+MVP 当前已进入收尾维护阶段。后续优先级：
 
 ```text
-TECH-DESIGN.md
-AGENTS.md
-VERIFY-CLAUDE-CODE-BEHAVIOR.md
-README.md
-```
-
-给 Codex 的下一步提示：
-
-```md
-请根据更新后的 `PRD.md`，重新生成 `TECH-DESIGN.md`。
-
-关键变更：
-- MVP 默认不是 runtime isolation
-- MVP 默认是 Global User Config Switch Mode
-- 用户在当前项目目录执行 `ccps launch <profile>`
-- cwd 必须保持为用户当前目录
-- 工具通过 CLAUDE_CONFIG_DIR 切换用户级 ~/.claude 配置来源
-- 项目级 CLAUDE.md / .claude/settings.json / .claude/agents / .claude/skills 继续按 Claude Code 原生规则生效
-- 不默认使用 --strict-mcp-config
-- 不使用 --add-dir 访问当前项目
-- 不修改真实 C:\Users\h\.claude
-- 不修改项目 .claude
-
-请输出：
-1. 技术架构
-2. profile 数据结构
-3. launch 策略
-4. CLAUDE_CONFIG_DIR 验证计划
-5. 每个 CLI 命令实现方案
-6. 安全策略
-7. 测试方案
-8. 开发任务拆分
-9. AGENTS.md 草案
+1. 保持 README、CLAUDE.md、TechDesign 和 VERIFY-CLAUDE-CODE-BEHAVIOR.md 与代码同步
+2. 用 npm run check 作为每次提交前的基线验证
+3. 新增 profile 管理命令前，先检查是否会触碰删除/迁移/密钥红线
+4. 如准备 npm publish，先单独做发布前审查
 ```

@@ -42,7 +42,7 @@ As a user, I want `ccps init` to create default profiles for `coding`, `study`, 
 Acceptance criteria:
 
 - The command creates `%USERPROFILE%\.cc-profile-switch`.
-- Each default profile contains `profile.json`, `claude-home\CLAUDE.md`, `claude-home\settings.json`, `claude-home\skills`, `claude-home\agents`, `mcp.json`, and `plugins`.
+- Each default profile contains `profile.json`, `claude-home\CLAUDE.md`, `claude-home\settings.json`, `claude-home\memory\auto\MEMORY.md`, `claude-home\skills`, `claude-home\agents`, `claude-home\plugins`, and `mcp.json`.
 - Re-running `ccps init` does not overwrite user-edited files.
 - The command never reads from or copies `C:\Users\h\.claude`.
 
@@ -66,6 +66,7 @@ As a user, I want `ccps launch <profile> --dry-run` to show the exact launch pla
 Acceptance criteria:
 
 - The dry-run output includes cwd, profile path, `claude-home`, environment changes, command, args, MCP mode, plugin dirs, warnings, and validation result.
+- The dry-run output includes memory paths and API env key names only, never API values.
 - The dry-run does not spawn Claude Code.
 - The dry-run clearly states that project config is preserved.
 
@@ -77,11 +78,14 @@ Acceptance criteria:
 - Use `CLAUDE_CONFIG_DIR=<profile>\claude-home` for launch.
 - Default MCP mode is merge: pass `--mcp-config <profile>\mcp.json` when present, without `--strict-mcp-config`.
 - `--strict-mcp-config` is opt-in only.
+- Launch passes `--dangerously-skip-permissions` by default unless `launch.skipPermissions=false`.
+- API env comes from `%USERPROFILE%\.cc-profile-switch\api-settings.json` and profile `claude-home\settings.json` `env`, with profile values taking priority.
+- Each profile's `autoMemoryDirectory` must point to its own `claude-home\memory\auto`.
 - Launch must validate the profile before spawning Claude Code.
 - Launch must use `child_process.spawn` with command and args array, `shell: false`, and `stdio: inherit`.
 - Profile names must be safe: lowercase or mixed-case letters, numbers, hyphen, and underscore, with no traversal.
 - All paths must resolve to absolute paths with Node `path` APIs.
-- Validation must scan for high-risk sensitive names such as `token`, `secret`, `credential`, `credentials`, `session`, `oauth`, and `.claude.json`.
+- Validation must block high-risk credential names such as `token`, `secret`, `credential`, `credentials`, and `oauth`; Claude-created state names such as `.claude.json`, `session`, `sessions`, `history`, `cache`, `log`, and `transcript` are warnings.
 
 ## Non-Functional Requirements
 
@@ -111,9 +115,9 @@ Acceptance criteria:
 - The runtime is Node.js LTS with TypeScript.
 - Recommended libraries are Commander, Zod, Vitest, tsup, fs-extra, and picocolors.
 - Claude Code supports `CLAUDE_CONFIG_DIR` for switching user-level config.
-- Whether each profile needs separate Claude authentication must be verified manually.
-- Whether profile MCP and project MCP merge as expected must be verified manually.
-- Whether auto memory reads from the profile or real global directory must be verified manually.
+- Verification has shown isolated profiles can require separate OAuth/keychain-style authentication unless API env is supplied.
+- Verification has shown profile MCP and project MCP merge in default mode, while strict mode excludes project MCP.
+- Auto memory is constrained through profile `autoMemoryDirectory`; future Claude Code changes should be rechecked in `VERIFY-CLAUDE-CODE-BEHAVIOR.md`.
 
 ## Out of Scope
 

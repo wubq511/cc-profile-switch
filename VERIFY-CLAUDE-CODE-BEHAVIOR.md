@@ -16,7 +16,7 @@
 - 通用 `api-settings.json` 与 profile `claude-home\settings.json` 的 `env` 应合并为启动环境变量，且 profile 优先、dry-run 只显示键名。
 - 认证、会话、历史和缓存行为仅作为文件位置或提示进行观察，绝不通过复制或读取敏感内容来获取。
 
-`ccps launch <profile> --dry-run` 目前已经实现。真实的 `ccps launch <profile>` 有意尚未实现，因此在推进 issue #10 之前，必须先使用等效的环境设置手动检查真实的 Claude Code 行为。
+`ccps launch <profile> --dry-run` 和真实的 `ccps launch <profile>` 均已实现。真实 launch 的行为必须继续与 dry-run 使用同一份 launch plan：相同 cwd、args、API env 合并、`CLAUDE_CONFIG_DIR` 和 memory 路径。
 
 ## 安全规则
 
@@ -282,9 +282,9 @@ Get-ChildItem -Force -Recurse (Join-Path $TempUser ".claude") |
 | ccps 通用 API 设置 | 通过 | `C:\Users\h\.cc-profile-switch\api-settings.json` 被 dry-run 识别为 common API config，输出只显示 `ANTHROPIC_*` 键名 |
 | 会话/历史/缓存位置 | 部分 | 运行创建了 profile 的 `session-env` 和 `sessions` 目录；未检视敏感内容 |
 
-## Issue #10 的准入条件
+## 真实 launch 保持条件
 
-Issue #10 可以按照以下约束实现真实启动：
+后续修改真实启动逻辑时必须保持以下约束：
 
 1. 保持 `CLAUDE_CONFIG_DIR=<profile>\claude-home`。
 2. 保持 cwd 为项目目录。

@@ -70,6 +70,9 @@ Global User Config Switch Mode
 用户在当前项目目录运行 ccps launch <profile>
 工具设置 CLAUDE_CONFIG_DIR 指向 profile 的 claude-home
 项目级配置继续生效
+默认传递 --dangerously-skip-permissions，除非 profile 显式关闭
+common api-settings.json 与 profile settings.json env 合并，profile 优先
+memory 和 Claude Code 自己管理的 plugins 位于当前 profile 的 claude-home 内
 ```
 
 MVP 不做：
@@ -434,6 +437,8 @@ Global User Config Switch Mode
 支持默认 profile
 支持 Global User Config Switch Mode
 支持启动、校验、备份
+支持 common/profile API env 合并
+支持 profile 级 memory 与 claude-home plugin 状态隔离
 ```
 
 范围：
