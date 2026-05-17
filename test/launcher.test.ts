@@ -68,8 +68,17 @@ describe('launcher', () => {
       validationStatus: 'valid',
       warnings: [],
     });
-    expect(plan.args).toEqual(['--mcp-config', paths.mcpConfigPath]);
+    expect(plan.args).toEqual([
+      '--dangerously-skip-permissions',
+      '--mcp-config',
+      paths.mcpConfigPath,
+    ]);
     expect(plan.envChanges).toEqual({ CLAUDE_CONFIG_DIR: paths.claudeHomePath });
+    expect(plan.memoryConfig).toEqual({
+      userMemoryPath: paths.claudeMdPath,
+      autoMemoryDirectory: paths.autoMemoryPath,
+      autoMemoryEntrypointPath: paths.autoMemoryEntrypointPath,
+    });
   });
 
   it('merges common API settings and profile settings env with profile values taking priority', async () => {
@@ -85,6 +94,7 @@ describe('launcher', () => {
     });
     await fs.writeJson(paths.settingsPath, {
       theme: 'dark',
+      autoMemoryDirectory: paths.autoMemoryPath,
       env: {
         ANTHROPIC_AUTH_TOKEN: 'profile-token',
       },
@@ -145,6 +155,7 @@ describe('launcher', () => {
     const { appHome, paths } = await makeProfile();
     const projectCwd = await makeTempRoot('ccps-project-');
     await fs.writeJson(paths.settingsPath, {
+      autoMemoryDirectory: paths.autoMemoryPath,
       env: {
         ANTHROPIC_AUTH_TOKEN: 123,
       },
@@ -195,10 +206,15 @@ describe('launcher', () => {
     });
 
     expect(plan.mcpMode).toBe('strict');
-    expect(plan.args).toEqual(['--mcp-config', paths.mcpConfigPath, '--strict-mcp-config']);
+    expect(plan.args).toEqual([
+      '--dangerously-skip-permissions',
+      '--mcp-config',
+      paths.mcpConfigPath,
+      '--strict-mcp-config',
+    ]);
   });
 
-  it('omits MCP args when the profile selects none mode', async () => {
+  it('omits MCP args but keeps default permission skipping when the profile selects none mode', async () => {
     const { appHome, paths } = await makeProfile();
     const projectCwd = await makeTempRoot('ccps-project-');
     await updateLaunchConfig(paths.profileConfigPath, { mcpMode: 'none' });
@@ -210,13 +226,27 @@ describe('launcher', () => {
     });
 
     expect(plan.mcpMode).toBe('none');
-    expect(plan.args).toEqual([]);
+    expect(plan.args).toEqual(['--dangerously-skip-permissions']);
   });
 
-  it('resolves configured plugin dirs inside the selected profile root', async () => {
+  it('does not add permission skipping when the profile disables it', async () => {
     const { appHome, paths } = await makeProfile();
     const projectCwd = await makeTempRoot('ccps-project-');
-    const customPluginDir = join(paths.profileRootPath, 'custom-plugins');
+    await updateLaunchConfig(paths.profileConfigPath, { skipPermissions: false });
+
+    const plan = await buildLaunchPlan({
+      appHomePath: appHome,
+      profileName: 'coding',
+      cwd: projectCwd,
+    });
+
+    expect(plan.args).toEqual(['--mcp-config', paths.mcpConfigPath]);
+  });
+
+  it('resolves configured plugin dirs inside the selected Claude home', async () => {
+    const { appHome, paths } = await makeProfile();
+    const projectCwd = await makeTempRoot('ccps-project-');
+    const customPluginDir = join(paths.claudeHomePath, 'custom-plugins');
     await fs.ensureDir(customPluginDir);
     await updateLaunchConfig(paths.profileConfigPath, {
       pluginDirs: ['plugins', 'custom-plugins'],
@@ -230,6 +260,7 @@ describe('launcher', () => {
 
     expect(plan.pluginDirs).toEqual([paths.pluginsPath, customPluginDir]);
     expect(plan.args).toEqual([
+      '--dangerously-skip-permissions',
       '--mcp-config',
       paths.mcpConfigPath,
       '--plugin-dir',
@@ -269,8 +300,12 @@ describe('launcher', () => {
     expect(output).toContain(`Cwd: ${projectCwd}`);
     expect(output).toContain('MCP mode: merge');
     expect(output).toContain('Command: claude');
+    expect(output).toContain('--dangerously-skip-permissions');
     expect(output).toContain('--mcp-config');
     expect(output).toContain(`CLAUDE_CONFIG_DIR=${paths.claudeHomePath}`);
+    expect(output).toContain('Memory:');
+    expect(output).toContain(`user: ${paths.claudeMdPath}`);
+    expect(output).toContain(`auto: ${paths.autoMemoryPath}`);
     expect(output).toContain('Validation: warning');
     expect(output).toContain('SENSITIVE_FILENAME_MEDIUM');
     expect(output).toContain('Project config: preserved because Claude starts in the launch cwd.');
@@ -287,6 +322,7 @@ describe('launcher', () => {
       },
     });
     await fs.writeJson(paths.settingsPath, {
+      autoMemoryDirectory: paths.autoMemoryPath,
       env: {
         ANTHROPIC_MODEL: 'profile-model',
       },
@@ -312,7 +348,7 @@ describe('launcher', () => {
     expect(spawnCalls).toHaveLength(1);
     expect(spawnCalls[0]).toMatchObject({
       command: 'claude',
-      args: ['--mcp-config', paths.mcpConfigPath],
+      args: ['--dangerously-skip-permissions', '--mcp-config', paths.mcpConfigPath],
       options: {
         cwd: projectCwd,
         stdio: 'inherit',

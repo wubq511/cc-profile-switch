@@ -44,6 +44,7 @@ describe('profile templates', () => {
         mcpMode: 'merge',
         pluginDirs: [],
         disableAutoMemory: false,
+        skipPermissions: true,
         claudeArgs: [],
       },
       createdAt: '2026-01-02T03:04:05.000Z',
@@ -52,6 +53,12 @@ describe('profile templates', () => {
     await expect(fs.pathExists(paths.profileConfigPath)).resolves.toBe(true);
     await expect(fs.pathExists(paths.claudeMdPath)).resolves.toBe(true);
     await expect(fs.pathExists(paths.settingsPath)).resolves.toBe(true);
+    expect(paths.memoryPath).toBe(join(paths.claudeHomePath, 'memory'));
+    expect(paths.autoMemoryPath).toBe(join(paths.claudeHomePath, 'memory', 'auto'));
+    expect(paths.pluginsPath).toBe(join(paths.claudeHomePath, 'plugins'));
+    await expect(fs.pathExists(paths.memoryPath)).resolves.toBe(true);
+    await expect(fs.pathExists(paths.autoMemoryPath)).resolves.toBe(true);
+    await expect(fs.pathExists(paths.autoMemoryEntrypointPath)).resolves.toBe(true);
     await expect(fs.pathExists(paths.skillsPath)).resolves.toBe(true);
     await expect(fs.pathExists(paths.agentsPath)).resolves.toBe(true);
     await expect(fs.pathExists(paths.mcpConfigPath)).resolves.toBe(true);
@@ -71,11 +78,13 @@ describe('profile templates', () => {
       name: 'research',
       template: 'research',
     });
-    await expect(fs.readJson(paths.settingsPath)).resolves.toEqual({});
+    await expect(fs.readJson(paths.settingsPath)).resolves.toEqual({
+      autoMemoryDirectory: paths.autoMemoryPath,
+    });
     await expect(fs.readJson(paths.mcpConfigPath)).resolves.toEqual({ mcpServers: {} });
   });
 
-  it('makes CLAUDE.md explicit about user-level global config', async () => {
+  it('makes CLAUDE.md explicit about profile-scoped memory and user-level global config', async () => {
     const appHome = await makeAppHome();
     const { paths } = await createProfileFromTemplate({
       appHomePath: appHome,
@@ -88,6 +97,7 @@ describe('profile templates', () => {
 
     expect(claudeMd).toContain('user-level global profile');
     expect(claudeMd).toContain('CLAUDE_CONFIG_DIR');
+    expect(claudeMd).toContain('profile-scoped user memory');
     expect(claudeMd).toContain('Project-level CLAUDE.md');
   });
 

@@ -183,6 +183,8 @@ describe('profile lifecycle commands', () => {
 
     expect(result.output).toContain(`Profile path: ${profilePaths.profileRootPath}`);
     expect(result.output).toContain(`Claude home: ${profilePaths.claudeHomePath}`);
+    expect(result.output).toContain(`User memory: ${profilePaths.claudeMdPath}`);
+    expect(result.output).toContain(`Auto memory: ${profilePaths.autoMemoryPath}`);
     expect(result.output).toContain('profile.json: present');
     expect(result.output).toContain('settings.json: valid JSON');
     expect(result.output).toContain('Project config: preserved from the launch cwd');
@@ -222,7 +224,7 @@ describe('profile lifecycle commands', () => {
     await expect(fs.pathExists(join(backupRoot, 'profile.json'))).resolves.toBe(true);
     await expect(fs.pathExists(join(backupRoot, 'claude-home', 'CLAUDE.md'))).resolves.toBe(true);
     await expect(fs.pathExists(join(backupRoot, 'mcp.json'))).resolves.toBe(true);
-    await expect(fs.pathExists(join(backupRoot, 'plugins'))).resolves.toBe(true);
+    await expect(fs.pathExists(join(backupRoot, 'claude-home', 'plugins'))).resolves.toBe(true);
     await expect(fs.readFile(join(backupRoot, 'claude-home', 'CLAUDE.md'), 'utf8')).resolves.toBe(
       '# user edited profile\n',
     );
@@ -288,6 +290,7 @@ describe('profile lifecycle commands', () => {
     expect(result.output).toContain('Command: claude');
     expect(result.output).toContain('--mcp-config');
     expect(result.output).toContain(`CLAUDE_CONFIG_DIR=${profilePaths.claudeHomePath}`);
+    expect(result.output).toContain(`auto: ${profilePaths.autoMemoryPath}`);
     expect(result.output).toContain('Validation: valid');
     expect(result.output).toContain('Dry run: Claude Code was not started.');
   });

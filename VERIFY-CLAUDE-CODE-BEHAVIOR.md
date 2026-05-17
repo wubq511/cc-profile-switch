@@ -10,7 +10,9 @@
 
 - `CLAUDE_CONFIG_DIR` 应将用户级 Claude Code 配置源替换为所选 profile 的 `claude-home`。
 - 项目级配置仍应从启动时的当前工作目录（cwd）加载。
+- 用户级 memory 应来自所选 profile 的 `claude-home\CLAUDE.md`，auto memory 应写入所选 profile 的 `claude-home\memory\auto`。
 - Profile 的 MCP 配置默认应是增加式的，仅在显式要求时才启用严格模式（strict）。
+- 默认启动应传递 `--dangerously-skip-permissions`；单个 profile 可用 `launch.skipPermissions=false` 关闭。
 - 通用 `api-settings.json` 与 profile `claude-home\settings.json` 的 `env` 应合并为启动环境变量，且 profile 优先、dry-run 只显示键名。
 - 认证、会话、历史和缓存行为仅作为文件位置或提示进行观察，绝不通过复制或读取敏感内容来获取。
 
@@ -64,8 +66,10 @@ npm run dev -- launch coding --dry-run --cwd <temp-project>
   - `claude-home`
   - 启动 cwd
   - MCP 模式 `merge`
+  - `--dangerously-skip-permissions`
   - `--mcp-config <profile>\mcp.json`
   - `CLAUDE_CONFIG_DIR=<profile>\claude-home`
+  - profile 用户 memory 路径和 auto memory 路径
   - API 配置状态和 API 环境变量键名（不打印值）
   - 验证结果 `valid`
   - `Dry run: Claude Code was not started.`
@@ -126,9 +130,11 @@ npm run dev -- launch coding --dry-run --cwd $Project
 - `Profile path` 指向 `$TempUser\.cc-profile-switch\profiles\coding` 内部。
 - `Claude home` 指向 `$TempUser\.cc-profile-switch\profiles\coding\claude-home`。
 - `Cwd` 等于 `$Project`。
+- `Args` 包含 `--dangerously-skip-permissions`，除非 profile 显式关闭 `launch.skipPermissions`。
 - `Args` 包含 `--mcp-config` 和 profile 的 `mcp.json`。
 - 对于默认的合并模式，`Args` 不包含 `--strict-mcp-config`。
 - `CLAUDE_CONFIG_DIR` 等于 profile 的 `claude-home`。
+- Memory 区域显示用户 memory 为 profile 的 `claude-home\CLAUDE.md`，auto memory 为 profile 的 `claude-home\memory\auto`。
 - API 配置区域只显示 common/profile 是否存在和环境变量键名，不显示 token 或其他值。
 - 输出显示 Claude Code 未被启动。
 
@@ -213,10 +219,11 @@ Not logged in · Please run /login
 | 区域 | 计划检查 | 预期结果 | 当前结果 |
 |---|---|---|---|
 | 用户设置 | 在 `$ProfileClaudeHome\settings.json` 中添加一个良性的可观测 `env` 标记；要求 Claude Code 运行 `node -e` 并报告环境。 | Profile 中的用户设置生效。 | 通过：`CCPS_PROFILE_SETTINGS_MARKER=profile-settings-visible` 到达了工具子进程 |
+| Auto memory 设置 | 在 `$ProfileClaudeHome\settings.json` 中设置 `autoMemoryDirectory=$ProfileClaudeHome\memory\auto`；启动时观察 dry-run 和 settings。 | Claude Code auto memory 被指向当前 profile 的 claude-home memory 目录。 | 已由 ccps 模板和验证器强制；真实 Claude 写入仍需手动验证 |
 | 项目设置 | 在 `$Project\.claude\settings.json` 中添加一个良性项目 `env` 标记；要求 Claude Code 运行 `node -e` 并报告环境。 | 项目设置在 profile 用户配置下保持有效。 | 通过：`CCPS_PROJECT_SETTINGS_MARKER=project-settings-visible` 到达了工具子进程 |
 | Agents | 在 `$ProfileClaudeHome\agents` 下添加 `ccps-marker-agent`；询问加载的上下文中是否可见。 | Profile 用户级 agent 可用。 | 通过：Claude Code 报告了 `ccps-marker-agent: true` |
 | Skills | 在 `$ProfileClaudeHome\skills` 下添加 `ccps-marker-skill`；询问加载的上下文中是否可见。 | Profile 用户级 skill 可用。 | 通过：Claude Code 报告了 `ccps-marker-skill: true` |
-| Plugins | 运行 `claude --plugin-dir=<profile>\plugins plugin list --json`. | 显式指定的插件目录在会话中被识别。 | 通过：插件列表包含 `plugins@inline` 且其 `scope` 为 `session`，路径为 profile 插件路径 |
+| Plugins | 从 profile 启动 Claude Code 后观察 `$ProfileClaudeHome\plugins`。 | Claude Code 自己安装/管理的用户级 plugin 状态位于当前 profile 的 `claude-home\plugins`。 | 通过：真实 `study` profile 中已创建 `claude-home\plugins\installed_plugins.json`、`known_marketplaces.json`、`cache` 和 `marketplaces` |
 | MCP 项目发现 | 在 `$Project\.mcp.json` 中添加一个无害的项目 MCP server；从 `$Project` 运行 `claude mcp list`。 | 项目 MCP 配置对 Claude Code 可见。 | 通过：项目 MCP server 被列出 |
 | MCP 合并 | 在 profile `mcp.json` 中添加一个无害的 profile MCP server，在 `$Project\.mcp.json` 中添加一个无害的项目 MCP server；使用 profile `--mcp-config` 运行。 | Profile 和项目 MCP 配置均可用。 | 通过：`claude -p` 返回了 profile 和项目 MCP 标记 |
 | MCP 严格 | 使用 `--strict-mcp-config` 重复上述操作。 | 在严格模式下不加载项目 MCP 配置。 | 通过：`claude -p` 返回了 profile MCP 标记且 `projectAvailable: false` |
@@ -256,8 +263,10 @@ Get-ChildItem -Force -Recurse (Join-Path $TempUser ".claude") |
 |---|---|---|
 | `ccps launch --dry-run` 在计划前验证 profile | 通过 | 隔离 dry-run 打印了 `Validation: valid` |
 | Dry-run 将 `CLAUDE_CONFIG_DIR` 设置为 profile 的 `claude-home` | 通过 | 隔离 dry-run 打印了预期的环境变量更改 |
+| Dry-run 显示 profile memory 路径 | 通过 | dry-run 打印了 `claude-home\CLAUDE.md` 和 `claude-home\memory\auto` |
 | Dry-run 保持项目 cwd 为启动 cwd | 通过 | 隔离 dry-run 打印了显式的临时项目路径 |
 | 默认 MCP 模式避免使用 `--strict-mcp-config` | 通过 | 隔离 dry-run 参数中仅包含 `--mcp-config` |
+| 默认跳过权限确认 | 通过 | dry-run 参数包含 `--dangerously-skip-permissions` |
 | Dry-run 永远不启动 Claude Code | 通过 | 输出中包含 `Dry run: Claude Code was not started.` |
 | Profile 的 `CLAUDE.md` 替换了全局真实的 `CLAUDE.md` | 通过 | 标记结果：global false, profile true |
 | 项目 `CLAUDE.md` 仍从 cwd 加载 | 通过 | 标记结果：project true |
@@ -265,7 +274,7 @@ Get-ChildItem -Force -Recurse (Join-Path $TempUser ".claude") |
 | 项目设置行为 | 通过 | 项目设置中的环境变量标记到达了工具子进程 |
 | Agents 行为 | 通过 | Profile agent 标记夹具可见 |
 | Skills 行为 | 通过 | Profile skill 标记夹具可见 |
-| Plugins 行为 | 通过 | 显式的 `--plugin-dir=<profile>\plugins` 出现在会话插件路径中 |
+| Plugins 行为 | 通过 | Claude Code 自己管理的 plugin 状态出现在 `claude-home\plugins`；`--plugin-dir` 只作为显式额外 session plugin-dir |
 | MCP 项目发现 | 通过 | `claude mcp list` 在无认证状态下列出了项目 `.mcp.json` 对应的 server |
 | MCP 合并/严格行为 | 通过 | 合并模式下暴露了 profile 和项目 MCP 标记；严格模式下仅暴露 profile 标记 |
 | 每个 profile 独立的认证 | 通过 | 隔离的 `CLAUDE_CONFIG_DIR` 返回了 `Not logged in`（在没有显式 API 设置的情况下），即使使用了真实的 `USERPROFILE` |
@@ -284,3 +293,4 @@ Issue #10 可以按照以下约束实现真实启动：
 5. 文档说明 OAuth/keychain 风格的认证在 `CLAUDE_CONFIG_DIR` 下呈现为 profile 特有。
 6. 文档说明基于 API 的用户可以通过通用 `api-settings.json` 或 profile `claude-home\settings.json` 的 `env` 传递 API 环境变量，且 profile 优先。
 7. 将 `session-env` 和 `sessions` 视为 Claude Code 创建的 profile 状态，不要检视或迁移其内容。
+8. 将 `autoMemoryDirectory` 固定为当前 profile 的 `claude-home\memory\auto`，防止 auto memory 串到其他 profile。

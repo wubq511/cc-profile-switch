@@ -107,13 +107,18 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
       runtime.writeOut(`Profile: ${validation.profileName}\n`);
       runtime.writeOut(`Profile path: ${validation.profileRootPath}\n`);
       runtime.writeOut(`Claude home: ${validation.claudeHomePath}\n`);
+      runtime.writeOut(`User memory: ${paths.claudeMdPath}\n`);
+      runtime.writeOut(`Auto memory: ${paths.autoMemoryPath}\n`);
       runtime.writeOut('Required files:\n');
       runtime.writeOut(`  profile.json: ${await pathStatus(paths.profileConfigPath, 'file')}\n`);
       runtime.writeOut(`  CLAUDE.md: ${await pathStatus(paths.claudeMdPath, 'file')}\n`);
       runtime.writeOut(`  settings.json: ${await jsonStatus(paths.settingsPath)}\n`);
+      runtime.writeOut(`  MEMORY.md: ${await pathStatus(paths.autoMemoryEntrypointPath, 'file')}\n`);
       runtime.writeOut(`  mcp.json: ${await jsonStatus(paths.mcpConfigPath)}\n`);
       runtime.writeOut('Required directories:\n');
       runtime.writeOut(`  claude-home: ${await pathStatus(paths.claudeHomePath, 'directory')}\n`);
+      runtime.writeOut(`  memory: ${await pathStatus(paths.memoryPath, 'directory')}\n`);
+      runtime.writeOut(`  memory\\auto: ${await pathStatus(paths.autoMemoryPath, 'directory')}\n`);
       runtime.writeOut(`  skills: ${await pathStatus(paths.skillsPath, 'directory')}\n`);
       runtime.writeOut(`  agents: ${await pathStatus(paths.agentsPath, 'directory')}\n`);
       runtime.writeOut(`  plugins: ${await pathStatus(paths.pluginsPath, 'directory')}\n`);

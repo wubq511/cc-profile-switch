@@ -12,6 +12,9 @@ describe('README', () => {
     expect(readme).toContain('当前工作目录');
     expect(readme).toContain('api-settings.json');
     expect(readme).toContain('claude-home\\settings.json');
+    expect(readme).toContain('autoMemoryDirectory');
+    expect(readme).toContain('claude-home\\memory\\auto');
+    expect(readme).toContain('claude-home\\plugins');
     expect(readme).toContain('profile 优先');
     expect(readme).toContain('OAuth');
     expect(readme).toContain('session');

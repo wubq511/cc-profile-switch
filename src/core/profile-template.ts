@@ -18,6 +18,9 @@ export type ProfileTemplatePaths = {
   claudeHomePath: string;
   claudeMdPath: string;
   settingsPath: string;
+  memoryPath: string;
+  autoMemoryPath: string;
+  autoMemoryEntrypointPath: string;
   skillsPath: string;
   agentsPath: string;
   mcpConfigPath: string;
@@ -72,6 +75,8 @@ export function getProfileTemplatePaths(appHomePath: string, profileName: string
   const safeName = validateProfileName(profileName);
   const profileRootPath = resolveInside(appHomePath, 'profiles', safeName);
   const claudeHomePath = resolveInside(profileRootPath, 'claude-home');
+  const memoryPath = resolveInside(claudeHomePath, 'memory');
+  const autoMemoryPath = resolveInside(memoryPath, 'auto');
 
   return {
     profileRootPath,
@@ -79,10 +84,13 @@ export function getProfileTemplatePaths(appHomePath: string, profileName: string
     claudeHomePath,
     claudeMdPath: resolveInside(claudeHomePath, 'CLAUDE.md'),
     settingsPath: resolveInside(claudeHomePath, 'settings.json'),
+    memoryPath,
+    autoMemoryPath,
+    autoMemoryEntrypointPath: resolveInside(autoMemoryPath, 'MEMORY.md'),
     skillsPath: resolveInside(claudeHomePath, 'skills'),
     agentsPath: resolveInside(claudeHomePath, 'agents'),
     mcpConfigPath: resolveInside(profileRootPath, 'mcp.json'),
-    pluginsPath: resolveInside(profileRootPath, 'plugins'),
+    pluginsPath: resolveInside(claudeHomePath, 'plugins'),
   };
 }
 
@@ -112,13 +120,19 @@ export async function createProfileFromTemplate(
 
   await fs.ensureDir(paths.profileRootPath);
   await fs.ensureDir(paths.claudeHomePath);
+  await fs.ensureDir(paths.memoryPath);
+  await fs.ensureDir(paths.autoMemoryPath);
   await fs.ensureDir(paths.skillsPath);
   await fs.ensureDir(paths.agentsPath);
   await fs.ensureDir(paths.pluginsPath);
 
   await writeJsonFile(paths.profileConfigPath, config, { overwrite: false });
   await fs.writeFile(paths.claudeMdPath, template.claudeMd, { encoding: 'utf8', flag: 'wx' });
-  await writeJsonFile(paths.settingsPath, {}, { overwrite: false });
+  await writeJsonFile(paths.settingsPath, { autoMemoryDirectory: paths.autoMemoryPath }, { overwrite: false });
+  await fs.writeFile(paths.autoMemoryEntrypointPath, autoMemoryEntrypoint(profileName), {
+    encoding: 'utf8',
+    flag: 'wx',
+  });
   await writeJsonFile(paths.mcpConfigPath, { mcpServers: {} }, { overwrite: false });
 
   return { config, paths };
@@ -129,8 +143,17 @@ function profileClaudeMd(title: string, usage: string): string {
 
 This file belongs to a ccps-managed Claude Code user-level global profile.
 ccps loads it through CLAUDE_CONFIG_DIR when launching Claude Code.
+This is the profile-scoped user memory file for this profile.
 Project-level CLAUDE.md and project settings remain active separately.
 
 ${usage}
+`;
+}
+
+function autoMemoryEntrypoint(profileName: string): string {
+  return `# ${profileName} Auto Memory
+
+This file is the entrypoint for Claude Code auto memory for the "${profileName}" ccps profile.
+Claude Code may update this file and create topic files in this directory during sessions.
 `;
 }

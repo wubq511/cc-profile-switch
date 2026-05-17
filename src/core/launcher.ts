@@ -41,6 +41,11 @@ export type LaunchPlan = {
   envChanges: {
     CLAUDE_CONFIG_DIR: string;
   };
+  memoryConfig: {
+    userMemoryPath: string;
+    autoMemoryDirectory: string;
+    autoMemoryEntrypointPath: string;
+  };
   apiConfig: {
     common: ApiSettingsSource;
     profile: ApiSettingsSource;
@@ -83,7 +88,7 @@ export async function buildLaunchPlan(options: LaunchPlanOptions): Promise<Launc
   }
 
   const pluginDirs = validation.config.launch.pluginDirs.map((pluginDir) =>
-    resolveInside(validation.profileRootPath, pluginDir),
+    resolveInside(validation.claudeHomePath, pluginDir),
   );
   const cwd = await resolveLaunchCwd(options.cwd);
   const args = buildClaudeArgs(validation.config.launch, validation.paths.mcpConfigPath, pluginDirs);
@@ -102,6 +107,11 @@ export async function buildLaunchPlan(options: LaunchPlanOptions): Promise<Launc
     args,
     envChanges: {
       CLAUDE_CONFIG_DIR: validation.claudeHomePath,
+    },
+    memoryConfig: {
+      userMemoryPath: validation.paths.claudeMdPath,
+      autoMemoryDirectory: validation.paths.autoMemoryPath,
+      autoMemoryEntrypointPath: validation.paths.autoMemoryEntrypointPath,
     },
     apiConfig: {
       common: apiSettings.common,
@@ -131,6 +141,10 @@ export function formatLaunchDryRun(plan: LaunchPlan): string {
     ...formatList(plan.args),
     'Env changes:',
     `  CLAUDE_CONFIG_DIR=${plan.envChanges.CLAUDE_CONFIG_DIR}`,
+    'Memory:',
+    `  user: ${plan.memoryConfig.userMemoryPath}`,
+    `  auto: ${plan.memoryConfig.autoMemoryDirectory}`,
+    `  auto entrypoint: ${plan.memoryConfig.autoMemoryEntrypointPath}`,
     'API config:',
     `  common: ${formatApiSource(plan.apiConfig.common)}`,
     `  profile: ${formatApiSource(plan.apiConfig.profile)}`,
@@ -194,7 +208,16 @@ function buildClaudeArgs(
   mcpConfigPath: string,
   pluginDirs: string[],
 ): string[] {
-  const args = [...launch.claudeArgs];
+  const args: string[] = [];
+
+  if (
+    launch.skipPermissions &&
+    !launch.claudeArgs.includes('--dangerously-skip-permissions')
+  ) {
+    args.push('--dangerously-skip-permissions');
+  }
+
+  args.push(...launch.claudeArgs);
 
   if (launch.mcpMode === 'merge' || launch.mcpMode === 'strict') {
     args.push('--mcp-config', mcpConfigPath);

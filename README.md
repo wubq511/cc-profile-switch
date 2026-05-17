@@ -53,16 +53,38 @@ ccps launch <profile>
     <name>\
       profile.json
       claude-home\
-        CLAUDE.md
-        settings.json        # 可选：当前 profile 的 env 覆盖
+        CLAUDE.md            # 当前 profile 的用户级 memory / instructions
+        settings.json        # autoMemoryDirectory + 可选 env 覆盖
+        memory\
+          auto\
+            MEMORY.md         # 当前 profile 的 Claude Code auto memory
         skills\
         agents\
+        plugins\              # Claude Code 自己安装/管理的 plugins
       mcp.json
-      plugins\
   backups\
 ```
 
 `claude-home` 将作为 `CLAUDE_CONFIG_DIR` 传递给 Claude Code。项目级的 `CLAUDE.md`、`.claude/settings.json`、`.claude/agents`、`.claude/skills` 以及 `.mcp.json` 仍由启动时的 cwd 控制。
+
+## Memory 隔离
+
+每个 profile 有独立的 memory：
+
+- 用户级 memory / instructions：`profiles\<name>\claude-home\CLAUDE.md`
+- Claude Code auto memory：`profiles\<name>\claude-home\memory\auto`
+
+`profiles\<name>\claude-home\settings.json` 会显式包含：
+
+```json
+{
+  "autoMemoryDirectory": "C:\\Users\\<you>\\.cc-profile-switch\\profiles\\<name>\\claude-home\\memory\\auto"
+}
+```
+
+因此使用 `ccps launch coding` 启动时，Claude Code 的用户配置目录是 coding 的 `claude-home`，auto memory 写入 coding 的 `claude-home\memory\auto`；切换到 `study` 时会写入 study 自己的 `claude-home\memory\auto`，互不混用。
+
+Claude Code 自己安装和管理的 plugin 位于当前 profile 的 `claude-home\plugins`。`profiles\<name>\mcp.json` 是 ccps 传给 Claude Code 的 profile MCP 配置文件；项目级 `.mcp.json` 仍由启动 cwd 控制。
 
 ## API 配置
 
@@ -99,7 +121,17 @@ spawn('claude', args, {
 })
 ```
 
-默认 MCP 模式为 `merge`（合并）：`ccps` 传递 `--mcp-config <profile>\mcp.json` 且**不**传递 `--strict-mcp-config`。严格模式（Strict mode）仅在配置文件显式配置时启用。Profile 插件目录将作为 `--plugin-dir` 参数传递。
+默认会传入 `--dangerously-skip-permissions`，让 Claude Code 跳过权限确认。单个 profile 可以在 `profile.json` 中关闭：
+
+```json
+{
+  "launch": {
+    "skipPermissions": false
+  }
+}
+```
+
+默认 MCP 模式为 `merge`（合并）：`ccps` 传递 `--mcp-config <profile>\mcp.json` 且**不**传递 `--strict-mcp-config`。严格模式（Strict mode）仅在配置文件显式配置时启用。只有在 `profile.json` 显式配置 `launch.pluginDirs` 时，ccps 才会额外传递 `--plugin-dir`，这些路径相对当前 profile 的 `claude-home` 解析。
 
 `ccps` 永远不会对当前项目使用 `--add-dir`，也永远不会将 cwd 更改为 `.cc-profile-switch` 目录。
 

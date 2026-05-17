@@ -39,6 +39,32 @@ describe('profile validator', () => {
     expect(result.findings).toEqual([]);
   });
 
+  it('requires profile-scoped auto memory files and settings', async () => {
+    const { appHome, paths } = await makeProfile();
+    await rm(paths.autoMemoryPath, { recursive: true, force: true });
+    await fs.writeJson(paths.settingsPath, {
+      autoMemoryDirectory: join(paths.profileRootPath, 'elsewhere'),
+    });
+
+    const result = await validateProfile({ appHomePath: appHome, name: 'coding' });
+
+    expect(result.status).toBe('error');
+    expect(result.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          severity: 'error',
+          code: 'REQUIRED_DIRECTORY_MISSING',
+          path: paths.autoMemoryPath,
+        }),
+        expect.objectContaining({
+          severity: 'error',
+          code: 'PROFILE_MEMORY_DIRECTORY_MISMATCH',
+          path: paths.settingsPath,
+        }),
+      ]),
+    );
+  });
+
   it('reports errors for missing required files and directories', async () => {
     const { appHome, paths } = await makeProfile();
     await rm(paths.settingsPath);
@@ -101,6 +127,28 @@ describe('profile validator', () => {
       expect.arrayContaining([
         expect.objectContaining({ severity: 'error', code: 'SENSITIVE_FILENAME_HIGH' }),
         expect.objectContaining({ severity: 'warning', code: 'SENSITIVE_FILENAME_MEDIUM' }),
+      ]),
+    );
+  });
+
+  it('warns but does not block Claude-created profile state names', async () => {
+    const { appHome, paths } = await makeProfile();
+    await fs.writeFile(join(paths.claudeHomePath, '.claude.json'), '{}', 'utf8');
+    await fs.ensureDir(join(paths.claudeHomePath, 'sessions'));
+    await fs.ensureDir(join(paths.pluginsPath, 'example-plugin'));
+    await fs.writeFile(join(paths.pluginsPath, 'example-plugin', 'session-start.sh'), '', 'utf8');
+
+    const result = await validateProfile({ appHomePath: appHome, name: 'coding' });
+
+    expect(result.status).toBe('warning');
+    expect(result.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ severity: 'warning', code: 'SENSITIVE_FILENAME_MEDIUM' }),
+      ]),
+    );
+    expect(result.findings).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ severity: 'error', code: 'SENSITIVE_FILENAME_HIGH' }),
       ]),
     );
   });

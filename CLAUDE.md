@@ -57,16 +57,22 @@ test/
     <name>\
       profile.json          # name, description, template, launch config
       claude-home\          # simulates ~/.claude for this profile
-        CLAUDE.md
-        settings.json
+        CLAUDE.md           # profile-scoped user memory / instructions
+        settings.json       # profile settings, including autoMemoryDirectory and env overrides
+        memory\
+          auto\             # profile-scoped Claude Code auto memory
         skills\
         agents\
-      mcp.json
-      plugins\
+        plugins\            # Claude Code-managed user plugin state for this profile
+        projects\           # Claude Code-created project/session state for this profile
+        sessions\           # Claude Code-created session state for this profile
+      mcp.json              # ccps-provided profile MCP config passed with --mcp-config
   backups\
 ```
 
 `claude-home` is the user-level config source per profile. It maps to `CLAUDE_CONFIG_DIR` at launch.
+Claude Code-created user state such as plugins, projects, sessions, telemetry, history, and `.claude.json` belongs under this profile's `claude-home`.
+`profiles\<name>\mcp.json` is the ccps-managed MCP bundle passed at launch; project `.mcp.json` still comes from the launch cwd.
 
 ## MVP commands
 
@@ -96,6 +102,8 @@ spawn('claude', args, {
 ```
 
 MCP default: `mcpMode = "merge"` — pass `--mcp-config <profile>\mcp.json` without `--strict-mcp-config`, so project `.mcp.json` still loads. Strict mode is opt-in only.
+Claude Code-managed plugins live under `<profile>\claude-home\plugins`. Optional `launch.pluginDirs` are extra session plugin directories and resolve relative to `<profile>\claude-home`.
+Launch default: add `--dangerously-skip-permissions` unless `profile.json` sets `launch.skipPermissions` to `false`.
 
 ## Safety rules (hard constraints)
 

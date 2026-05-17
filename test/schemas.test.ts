@@ -33,12 +33,14 @@ describe('config schemas', () => {
         mcpMode: 'merge',
         pluginDirs: ['plugins'],
         disableAutoMemory: true,
+        skipPermissions: false,
       },
     });
 
     expect(profile.launch.mcpMode).toBe('merge');
     expect(profile.launch.pluginDirs).toEqual(['plugins']);
     expect(profile.launch.disableAutoMemory).toBe(true);
+    expect(profile.launch.skipPermissions).toBe(false);
   });
 
   it('applies safe launch defaults', () => {
@@ -52,6 +54,7 @@ describe('config schemas', () => {
       mcpMode: 'merge',
       pluginDirs: [],
       disableAutoMemory: false,
+      skipPermissions: true,
       claudeArgs: [],
     });
   });

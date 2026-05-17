@@ -10,6 +10,7 @@ export const profileLaunchConfigSchema = z
     mcpMode: mcpModeSchema.default('merge'),
     pluginDirs: z.array(z.string().min(1)).default([]),
     disableAutoMemory: z.boolean().default(false),
+    skipPermissions: z.boolean().default(true),
     claudeArgs: z.array(z.string()).default([]),
   })
   .strict()
@@ -17,6 +18,7 @@ export const profileLaunchConfigSchema = z
     mcpMode: 'merge',
     pluginDirs: [],
     disableAutoMemory: false,
+    skipPermissions: true,
     claudeArgs: [],
   });
 
