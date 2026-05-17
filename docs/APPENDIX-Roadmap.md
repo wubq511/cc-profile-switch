@@ -40,7 +40,7 @@ ccps init
 ccps list
 ccps create <name>
 ccps show <name>
-ccps edit <name> [file]
+ccps edit <name> [file-or-folder]
 ccps launch <name>
 ccps validate <name>
 ccps backup <name>
@@ -72,6 +72,7 @@ Global User Config Switch Mode
 项目级配置继续生效
 默认传递 --dangerously-skip-permissions，除非 profile 显式关闭
 common api-settings.json 与 profile settings.json env 合并，profile 优先
+默认 profile settings env 包含 CLAUDE_CODE_ATTRIBUTION_HEADER=0
 memory 和 Claude Code 自己管理的 plugins 位于当前 profile 的 claude-home 内
 ```
 

@@ -125,9 +125,10 @@ ccps launch coding
 2. 读取 profile：%USERPROFILE%\.cc-profile-switch\profiles\coding
 3. 设置环境变量：
    CLAUDE_CONFIG_DIR=%USERPROFILE%\.cc-profile-switch\profiles\coding\claude-home
-4. 从当前工作目录启动 claude
-5. 项目级配置继续按 Claude Code 原生规则加载
-6. 用户级全局配置改为来自 coding profile
+4. 默认 profile settings env 包含 CLAUDE_CODE_ATTRIBUTION_HEADER=0
+5. 从当前工作目录启动 claude
+6. 项目级配置继续按 Claude Code 原生规则加载
+7. 用户级全局配置改为来自 coding profile
 ```
 
 也就是说：
@@ -552,6 +553,19 @@ MVP 只校验：
 必须是 object
 ```
 
+默认模板会写入：
+
+```json
+{
+  "autoMemoryDirectory": "%USERPROFILE%\\.cc-profile-switch\\profiles\\<name>\\claude-home\\memory\\auto",
+  "env": {
+    "CLAUDE_CODE_ATTRIBUTION_HEADER": "0"
+  }
+}
+```
+
+重复执行 `ccps init` 时，已存在的默认 profile 如果缺少 `CLAUDE_CODE_ATTRIBUTION_HEADER`，会补齐该键，并保留原有 settings 字段和已有 env 键。
+
 不复制完整 Claude Code settings schema。
 
 ## 5.8 `claude-home\skills\`
@@ -819,7 +833,7 @@ plugins dir exists?
 
 ---
 
-## Feature 5: `ccps edit <name> [file]`
+## Feature 5: `ccps edit <name> [file-or-folder]`
 
 ### Complexity
 
@@ -829,16 +843,24 @@ Medium
 
 ### Goal
 
-用默认编辑器打开 profile 文件或目录。
+用新的 VS Code 窗口打开 profile 文件夹、常用配置文件，或 profile 内已有文件/文件夹。
 
-### Allowed files
+### Built-in aliases
 
 ```text
 profile.json
 CLAUDE.md
 settings.json
 mcp.json
+claude-home
+memory
+memory\auto
+skills
+agents
+plugins
 ```
+
+此外允许打开 selected profile 目录内已经存在的相对路径。路径必须留在 `profiles\<name>` 内，且 token/secret/credential/oauth 等敏感命名目标应被阻止。
 
 ### File mapping
 
@@ -848,6 +870,10 @@ mcp.json
 | `settings.json` | `profiles\<name>\claude-home\settings.json` |
 | `mcp.json` | `profiles\<name>\mcp.json` |
 | `profile.json` | `profiles\<name>\profile.json` |
+| `claude-home` | `profiles\<name>\claude-home` |
+| `skills` | `profiles\<name>\claude-home\skills` |
+| 未指定 | `profiles\<name>` |
+| profile 内已有相对路径 | 对应文件或文件夹 |
 
 ---
 
@@ -1042,9 +1068,12 @@ type LaunchPlan = {
 ```ts
 env: {
   ...process.env,
+  ...apiEnv,
   CLAUDE_CONFIG_DIR: profile.claudeHomePath
 }
 ```
+
+`apiEnv` 来自 common `api-settings.json` 与 profile `claude-home\settings.json` `env` 的合并；profile 优先。新建 profile 的 settings env 默认包含 `CLAUDE_CODE_ATTRIBUTION_HEADER=0`。
 
 ### Default cwd
 
@@ -1587,8 +1616,8 @@ spawnClaude(plan)
 负责：
 
 ```text
-open file or directory with configured editor
-fallback to Windows default open
+open file or directory in a new VS Code window through code -n
+report a clear error when the code/code.cmd command is unavailable
 ```
 
 ---
@@ -1691,17 +1720,22 @@ Plugins:
 
 ---
 
-## 10.5 `ccps edit <name> [file]`
+## 10.5 `ccps edit <name> [file-or-folder]`
 
 映射：
 
 ```text
+ccps edit coding                 → profiles\coding\
 ccps edit coding CLAUDE.md       → profiles\coding\claude-home\CLAUDE.md
 ccps edit coding settings.json   → profiles\coding\claude-home\settings.json
 ccps edit coding mcp.json        → profiles\coding\mcp.json
 ccps edit coding profile.json    → profiles\coding\profile.json
-ccps edit coding                 → profiles\coding\
+ccps edit coding claude-home     → profiles\coding\claude-home
+ccps edit coding skills          → profiles\coding\claude-home\skills
+ccps edit coding claude-home\skills → profiles\coding\claude-home\skills
 ```
+
+`edit` only opens existing targets inside the selected profile. It blocks path traversal and credential-like target names such as token, secret, credential, and oauth. The platform opener uses VS Code's `code -n` so each invocation opens a new window.
 
 ---
 
@@ -2243,7 +2277,7 @@ ccps init
 ccps list
 ccps create <name>
 ccps show <name>
-ccps edit <name> [file]
+ccps edit <name> [file-or-folder]
 ccps launch <name>
 ccps validate <name>
 ccps backup <name>

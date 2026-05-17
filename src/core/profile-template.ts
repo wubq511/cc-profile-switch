@@ -12,6 +12,12 @@ type TemplateDefinition = {
   claudeMd: string;
 };
 
+const defaultAttributionEnvKey = 'CLAUDE_CODE_ATTRIBUTION_HEADER';
+
+export const defaultProfileSettingsEnv = {
+  [defaultAttributionEnvKey]: '0',
+} as const;
+
 export type ProfileTemplatePaths = {
   profileRootPath: string;
   profileConfigPath: string;
@@ -128,7 +134,7 @@ export async function createProfileFromTemplate(
 
   await writeJsonFile(paths.profileConfigPath, config, { overwrite: false });
   await fs.writeFile(paths.claudeMdPath, template.claudeMd, { encoding: 'utf8', flag: 'wx' });
-  await writeJsonFile(paths.settingsPath, { autoMemoryDirectory: paths.autoMemoryPath }, { overwrite: false });
+  await writeJsonFile(paths.settingsPath, createInitialProfileSettings(paths), { overwrite: false });
   await fs.writeFile(paths.autoMemoryEntrypointPath, autoMemoryEntrypoint(profileName), {
     encoding: 'utf8',
     flag: 'wx',
@@ -136,6 +142,61 @@ export async function createProfileFromTemplate(
   await writeJsonFile(paths.mcpConfigPath, { mcpServers: {} }, { overwrite: false });
 
   return { config, paths };
+}
+
+export async function ensureDefaultProfileSettingsEnv(settingsPath: string): Promise<boolean> {
+  let settingsJson: unknown;
+
+  try {
+    settingsJson = await fs.readJson(settingsPath);
+  } catch (error) {
+    if (isNodeError(error) && error.code === 'ENOENT') {
+      return false;
+    }
+
+    if (error instanceof SyntaxError) {
+      return false;
+    }
+
+    throw error;
+  }
+
+  if (!isRecord(settingsJson)) {
+    return false;
+  }
+
+  const currentEnv = settingsJson.env;
+  if (currentEnv !== undefined && !isRecord(currentEnv)) {
+    return false;
+  }
+
+  const env = currentEnv ?? {};
+  if (Object.hasOwn(env, defaultAttributionEnvKey)) {
+    return false;
+  }
+
+  await writeJsonFile(
+    settingsPath,
+    {
+      ...settingsJson,
+      env: {
+        ...env,
+        ...defaultProfileSettingsEnv,
+      },
+    },
+    { overwrite: true },
+  );
+
+  return true;
+}
+
+function createInitialProfileSettings(paths: ProfileTemplatePaths): Record<string, unknown> {
+  return {
+    autoMemoryDirectory: paths.autoMemoryPath,
+    env: {
+      ...defaultProfileSettingsEnv,
+    },
+  };
 }
 
 function profileClaudeMd(title: string, usage: string): string {
@@ -156,4 +217,12 @@ function autoMemoryEntrypoint(profileName: string): string {
 This file is the entrypoint for Claude Code auto memory for the "${profileName}" ccps profile.
 Claude Code may update this file and create topic files in this directory during sessions.
 `;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && 'code' in error;
 }

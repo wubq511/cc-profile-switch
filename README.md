@@ -25,6 +25,8 @@ npm run dev -- init
 npm run dev -- launch coding --dry-run
 ```
 
+`ccps edit` 需要 VS Code 的 `code` 命令可用；VS Code 安装后可通过命令面板启用 Shell Command。
+
 ## 命令
 
 ```powershell
@@ -41,7 +43,7 @@ ccps launch <profile>
 
 在执行真正的启动前，建议使用 `ccps launch <profile> --dry-run` 检查计划。
 
-`ccps edit <name>` 会用新的 VS Code 窗口打开整个 profile 文件夹。带上文件或文件夹参数时，会打开该 profile 内的已有目标；常用别名包括 `CLAUDE.md`、`settings.json`、`mcp.json`、`profile.json`、`memory`、`skills`、`agents`、`plugins`。
+`ccps edit <name>` 会用新的 VS Code 窗口打开整个 profile 文件夹。带上文件或文件夹参数时，会打开该 profile 内的已有目标；常用别名包括 `CLAUDE.md`、`settings.json`、`mcp.json`、`profile.json`、`claude-home`、`memory`、`skills`、`agents`、`plugins`。
 
 ## 配置布局
 
@@ -56,7 +58,7 @@ ccps launch <profile>
       profile.json
       claude-home\
         CLAUDE.md            # 当前 profile 的用户级 memory / instructions
-        settings.json        # autoMemoryDirectory + 可选 env 覆盖
+        settings.json        # autoMemoryDirectory + 默认 env + 可选 API env 覆盖
         memory\
           auto\
             MEMORY.md         # 当前 profile 的 Claude Code auto memory
@@ -80,11 +82,16 @@ ccps launch <profile>
 
 ```json
 {
-  "autoMemoryDirectory": "C:\\Users\\<you>\\.cc-profile-switch\\profiles\\<name>\\claude-home\\memory\\auto"
+  "autoMemoryDirectory": "C:\\Users\\<you>\\.cc-profile-switch\\profiles\\<name>\\claude-home\\memory\\auto",
+  "env": {
+    "CLAUDE_CODE_ATTRIBUTION_HEADER": "0"
+  }
 }
 ```
 
 因此使用 `ccps launch coding` 启动时，Claude Code 的用户配置目录是 coding 的 `claude-home`，auto memory 写入 coding 的 `claude-home\memory\auto`；切换到 `study` 时会写入 study 自己的 `claude-home\memory\auto`，互不混用。
+
+新建 profile 会默认写入 `CLAUDE_CODE_ATTRIBUTION_HEADER=0`。对已经存在的 profile，重新运行 `ccps init` 会在缺失时补齐这个 env 键，并保留已有 `settings.json` 字段。
 
 Claude Code 自己安装和管理的 plugin 位于当前 profile 的 `claude-home\plugins`。`profiles\<name>\mcp.json` 是 ccps 传给 Claude Code 的 profile MCP 配置文件；项目级 `.mcp.json` 仍由启动 cwd 控制。
 

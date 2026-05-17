@@ -55,7 +55,7 @@ Acceptance criteria:
 - `ccps list` shows profiles with validation status and last-used information when available.
 - `ccps create <name> --template <template>` supports `coding`, `study`, `work`, `research`, `general`, and `blank`.
 - `ccps show <name>` displays absolute paths, core file status, JSON validation status, and that project config is preserved.
-- `ccps edit <name> [file]` only opens approved files or the selected profile directory.
+- `ccps edit <name> [file-or-folder]` opens the selected profile directory, built-in aliases, or an existing target inside the profile in a new VS Code window.
 - `ccps validate <name>` detects invalid JSON, missing required files, unsafe profile names, path traversal, and sensitive filenames.
 - `ccps backup <name>` copies the selected profile into a timestamped backup directory without modifying the source.
 
@@ -80,6 +80,7 @@ Acceptance criteria:
 - `--strict-mcp-config` is opt-in only.
 - Launch passes `--dangerously-skip-permissions` by default unless `launch.skipPermissions=false`.
 - API env comes from `%USERPROFILE%\.cc-profile-switch\api-settings.json` and profile `claude-home\settings.json` `env`, with profile values taking priority.
+- New profile settings include `env.CLAUDE_CODE_ATTRIBUTION_HEADER=0`; re-running `ccps init` backfills the key for preserved default profiles when missing.
 - Each profile's `autoMemoryDirectory` must point to its own `claude-home\memory\auto`.
 - Launch must validate the profile before spawning Claude Code.
 - Launch must use `child_process.spawn` with command and args array, `shell: false`, and `stdio: inherit`.
@@ -138,5 +139,5 @@ Acceptance criteria:
 - Node.js LTS and npm.
 - Claude Code CLI installed on the user's machine for real launch verification.
 - Windows filesystem and process APIs.
-- Local editor or Windows default opener for `ccps edit`.
+- VS Code `code` or `code.cmd` command available on PATH for `ccps edit`.
 - Existing source documents in `docs/`.

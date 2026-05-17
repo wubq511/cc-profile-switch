@@ -218,6 +218,7 @@ Not logged in · Please run /login
 
 | 区域 | 计划检查 | 预期结果 | 当前结果 |
 |---|---|---|---|
+| 默认 profile settings env | 检查 `ccps init` 和 `ccps create` 生成的 `claude-home\settings.json`。 | 新建 profile 包含 `env.CLAUDE_CODE_ATTRIBUTION_HEADER=0`；重复 `init` 会给已存在的默认 profile 补齐缺失键且保留已有 env。 | 通过：自动化测试覆盖新建 profile 和保留 profile 补齐行为 |
 | 用户设置 | 在 `$ProfileClaudeHome\settings.json` 中添加一个良性的可观测 `env` 标记；要求 Claude Code 运行 `node -e` 并报告环境。 | Profile 中的用户设置生效。 | 通过：`CCPS_PROFILE_SETTINGS_MARKER=profile-settings-visible` 到达了工具子进程 |
 | Auto memory 设置 | 在 `$ProfileClaudeHome\settings.json` 中设置 `autoMemoryDirectory=$ProfileClaudeHome\memory\auto`；启动时观察 dry-run 和 settings。 | Claude Code auto memory 被指向当前 profile 的 claude-home memory 目录。 | 已由 ccps 模板和验证器强制；真实 Claude 写入仍需手动验证 |
 | 项目设置 | 在 `$Project\.claude\settings.json` 中添加一个良性项目 `env` 标记；要求 Claude Code 运行 `node -e` 并报告环境。 | 项目设置在 profile 用户配置下保持有效。 | 通过：`CCPS_PROJECT_SETTINGS_MARKER=project-settings-visible` 到达了工具子进程 |

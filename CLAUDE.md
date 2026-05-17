@@ -58,7 +58,7 @@ test/
       profile.json          # name, description, template, launch config
       claude-home\          # simulates ~/.claude for this profile
         CLAUDE.md           # profile-scoped user memory / instructions
-        settings.json       # profile settings, including autoMemoryDirectory and env overrides
+        settings.json       # profile settings, including autoMemoryDirectory, default env, and env overrides
         memory\
           auto\             # profile-scoped Claude Code auto memory
         skills\
@@ -73,6 +73,7 @@ test/
 `claude-home` is the user-level config source per profile. It maps to `CLAUDE_CONFIG_DIR` at launch.
 Claude Code-created user state such as plugins, projects, sessions, telemetry, history, and `.claude.json` belongs under this profile's `claude-home`.
 `profiles\<name>\mcp.json` is the ccps-managed MCP bundle passed at launch; project `.mcp.json` still comes from the launch cwd.
+New profiles include `CLAUDE_CODE_ATTRIBUTION_HEADER=0` in `claude-home\settings.json` `env`. Re-running `ccps init` backfills this key for preserved default profiles when missing, without overwriting existing settings fields or env keys.
 
 ## MVP commands
 
@@ -82,7 +83,7 @@ Claude Code-created user state such as plugins, projects, sessions, telemetry, h
 | `ccps list` | List profiles with status (valid/warning/error) |
 | `ccps create <name> --template <t>` | Create profile from template (coding/study/work/research/general/blank) |
 | `ccps show <name>` | Display profile structure and file status |
-| `ccps edit <name> [file]` | Open profile file with default editor |
+| `ccps edit <name> [file-or-folder]` | Open the profile folder or an existing profile target in a new VS Code window |
 | `ccps validate <name>` | Check JSON validity, required files, sensitive filenames |
 | `ccps backup <name>` | Copy profile to backups/<name>-YYYYMMDD-HHmmss/ |
 | `ccps launch <name>` | Start Claude Code from cwd with profile's CLAUDE_CONFIG_DIR |
@@ -105,7 +106,7 @@ spawn('claude', args, {
 MCP default: `mcpMode = "merge"` — pass `--mcp-config <profile>\mcp.json` without `--strict-mcp-config`, so project `.mcp.json` still loads. Strict mode is opt-in only.
 Claude Code-managed plugins live under `<profile>\claude-home\plugins`. Optional `launch.pluginDirs` are extra session plugin directories and resolve relative to `<profile>\claude-home`.
 Launch default: add `--dangerously-skip-permissions` unless `profile.json` sets `launch.skipPermissions` to `false`.
-API env resolution: profile `claude-home\settings.json` `env` overrides `%USERPROFILE%\.cc-profile-switch\api-settings.json`, which overrides inherited process env keys.
+API env resolution: profile `claude-home\settings.json` `env` overrides `%USERPROFILE%\.cc-profile-switch\api-settings.json`, which overrides inherited process env keys. Profile settings include the default `CLAUDE_CODE_ATTRIBUTION_HEADER=0` unless the user already set that key.
 Memory: `claude-home\settings.json` must point `autoMemoryDirectory` to `<profile>\claude-home\memory\auto`.
 
 ## Safety rules (hard constraints)

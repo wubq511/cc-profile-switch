@@ -85,6 +85,11 @@ describe('profile lifecycle commands', () => {
 
       expect(await fs.pathExists(profilePaths.profileConfigPath)).toBe(true);
       expect(await fs.pathExists(profilePaths.claudeMdPath)).toBe(true);
+      await expect(fs.readJson(profilePaths.settingsPath)).resolves.toMatchObject({
+        env: {
+          CLAUDE_CODE_ATTRIBUTION_HEADER: '0',
+        },
+      });
     }
 
     expect(result.output).toContain('Initialized ccps app home');
@@ -107,6 +112,70 @@ describe('profile lifecycle commands', () => {
     expect(result.output).toContain('Preserved existing profiles');
   });
 
+  it('init adds default attribution env to preserved default profile settings', async () => {
+    const userHome = await makeUserHome();
+    const appHome = join(userHome, '.cc-profile-switch');
+    const codingPaths = getProfileTemplatePaths(appHome, 'coding');
+
+    await runCli(userHome, ['init']);
+    await fs.writeJson(codingPaths.settingsPath, {
+      autoMemoryDirectory: codingPaths.autoMemoryPath,
+      theme: 'dark',
+      env: {
+        ANTHROPIC_MODEL: 'profile-model',
+      },
+    });
+
+    await runCli(userHome, ['init']);
+
+    await expect(fs.readJson(codingPaths.settingsPath)).resolves.toEqual({
+      autoMemoryDirectory: codingPaths.autoMemoryPath,
+      theme: 'dark',
+      env: {
+        ANTHROPIC_MODEL: 'profile-model',
+        CLAUDE_CODE_ATTRIBUTION_HEADER: '0',
+      },
+    });
+  });
+
+  it('init adds default attribution env to preserved custom profile settings', async () => {
+    const userHome = await makeUserHome();
+    const appHome = join(userHome, '.cc-profile-switch');
+    const focusPaths = getProfileTemplatePaths(appHome, 'focus');
+
+    await runCli(userHome, ['init']);
+    await runCli(userHome, ['create', 'focus', '--template', 'blank']);
+    await fs.writeJson(focusPaths.settingsPath, {
+      autoMemoryDirectory: focusPaths.autoMemoryPath,
+      env: {
+        ANTHROPIC_MODEL: 'profile-model',
+      },
+    });
+
+    await runCli(userHome, ['init']);
+
+    await expect(fs.readJson(focusPaths.settingsPath)).resolves.toMatchObject({
+      env: {
+        ANTHROPIC_MODEL: 'profile-model',
+        CLAUDE_CODE_ATTRIBUTION_HEADER: '0',
+      },
+    });
+  });
+
+  it('init leaves invalid preserved profile settings untouched', async () => {
+    const userHome = await makeUserHome();
+    const appHome = join(userHome, '.cc-profile-switch');
+    const codingPaths = getProfileTemplatePaths(appHome, 'coding');
+
+    await runCli(userHome, ['init']);
+    await fs.writeFile(codingPaths.settingsPath, '{not-json', 'utf8');
+
+    const result = await runCli(userHome, ['init']);
+
+    await expect(fs.readFile(codingPaths.settingsPath, 'utf8')).resolves.toBe('{not-json');
+    expect(result.output).toContain('Preserved existing profiles');
+  });
+
   it('create makes a profile from the selected template', async () => {
     const userHome = await makeUserHome();
     const appHome = join(userHome, '.cc-profile-switch');
@@ -118,6 +187,11 @@ describe('profile lifecycle commands', () => {
     await expect(fs.readJson(profilePaths.profileConfigPath)).resolves.toMatchObject({
       name: 'deep_work',
       template: 'work',
+    });
+    await expect(fs.readJson(profilePaths.settingsPath)).resolves.toMatchObject({
+      env: {
+        CLAUDE_CODE_ATTRIBUTION_HEADER: '0',
+      },
     });
     expect(result.output).toContain('Created profile "deep_work"');
     expect(result.output).toContain('Next: ccps launch deep_work --dry-run');

@@ -10,6 +10,7 @@ import {
 } from './app-config';
 import {
   createProfileFromTemplate,
+  ensureDefaultProfileSettingsEnv,
   getProfileTemplatePaths,
   type ProfileTemplateName,
   type ProfileTemplatePaths,
@@ -58,6 +59,8 @@ export async function initProfiles(options: InitProfilesOptions = {}): Promise<I
   const appHomePath = options.appHomePath;
   const paths = await ensureAppHomeStructure(appHomePath);
   const configCreated = await ensureConfig(paths.appHomePath, options.clock);
+  await ensureExistingProfileSettingsEnv(paths.appHomePath, paths.profilesPath);
+
   const createdProfiles: ProfileTemplateName[] = [];
   const preservedProfiles: ProfileTemplateName[] = [];
 
@@ -84,6 +87,26 @@ export async function initProfiles(options: InitProfilesOptions = {}): Promise<I
     createdProfiles,
     preservedProfiles,
   };
+}
+
+async function ensureExistingProfileSettingsEnv(appHomePath: string, profilesPath: string): Promise<void> {
+  const entries = await fs.readdir(profilesPath, { withFileTypes: true });
+
+  await Promise.all(
+    entries
+      .filter((entry) => entry.isDirectory())
+      .map(async (entry) => {
+        let profilePaths: ProfileTemplatePaths;
+
+        try {
+          profilePaths = getProfileTemplatePaths(appHomePath, entry.name);
+        } catch {
+          return;
+        }
+
+        await ensureDefaultProfileSettingsEnv(profilePaths.settingsPath);
+      }),
+  );
 }
 
 export async function createProfile(options: CreateProfileOptions): Promise<CreateProfileResult> {

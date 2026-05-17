@@ -80,8 +80,30 @@ describe('profile templates', () => {
     });
     await expect(fs.readJson(paths.settingsPath)).resolves.toEqual({
       autoMemoryDirectory: paths.autoMemoryPath,
+      env: {
+        CLAUDE_CODE_ATTRIBUTION_HEADER: '0',
+      },
     });
     await expect(fs.readJson(paths.mcpConfigPath)).resolves.toEqual({ mcpServers: {} });
+  });
+
+  it('writes the default attribution env for every profile template', async () => {
+    const appHome = await makeAppHome();
+
+    for (const template of listProfileTemplates()) {
+      const { paths } = await createProfileFromTemplate({
+        appHomePath: appHome,
+        name: `${template}_profile`,
+        template,
+        clock: fixedClock,
+      });
+
+      await expect(fs.readJson(paths.settingsPath)).resolves.toMatchObject({
+        env: {
+          CLAUDE_CODE_ATTRIBUTION_HEADER: '0',
+        },
+      });
+    }
   });
 
   it('makes CLAUDE.md explicit about profile-scoped memory and user-level global config', async () => {

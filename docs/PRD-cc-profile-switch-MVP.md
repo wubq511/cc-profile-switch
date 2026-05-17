@@ -37,8 +37,9 @@ ccps launch coding
 5. 不直接修改 C:\Users\h\.claude
 6. 默认传递 --dangerously-skip-permissions，除非单个 profile 显式关闭
 7. 将 common API env 与 profile settings env 合并，profile 优先
-8. 将 profile memory、plugins 和 Claude Code 创建的用户状态限制在该 profile 的 claude-home 内
-9. 不迁移 OAuth/session/token/history/cache
+8. 默认在 profile settings env 中写入 CLAUDE_CODE_ATTRIBUTION_HEADER=0
+9. 将 profile memory、plugins 和 Claude Code 创建的用户状态限制在该 profile 的 claude-home 内
+10. 不迁移 OAuth/session/token/history/cache
 ```
 
 ### Core Product Boundary
@@ -235,15 +236,19 @@ ccps init
 用户编辑某个 profile：
 
 ```powershell
+ccps edit study
 ccps edit study CLAUDE.md
 ccps edit coding settings.json
+ccps edit coding claude-home\skills
 ```
 
-工具实际打开的是 profile 中的用户级配置镜像：
+工具会用新的 VS Code 窗口打开整个 profile 文件夹，或打开 profile 内指定的已有文件/文件夹：
 
 ```text
+profiles\study\
 profiles\study\claude-home\CLAUDE.md
 profiles\coding\claude-home\settings.json
+profiles\coding\claude-home\skills
 ```
 
 #### 4. Validate
@@ -355,6 +360,8 @@ ccps init
 [ ] 默认 profile 都包含 claude-home\memory\auto\MEMORY.md 和 claude-home\plugins
 [ ] 默认 settings.json 和 mcp.json 是合法 JSON
 [ ] settings.json 的 autoMemoryDirectory 指向本 profile 的 claude-home\memory\auto
+[ ] settings.json 默认包含 env.CLAUDE_CODE_ATTRIBUTION_HEADER=0
+[ ] 重复执行 init 会给已存在的默认 profile 补齐缺失的 CLAUDE_CODE_ATTRIBUTION_HEADER，且不覆盖已有 settings 字段
 [ ] 不读取或复制 C:\Users\h\.claude
 ```
 
@@ -477,18 +484,20 @@ Launch:
 
 ---
 
-#### 5. `ccps edit <name> [file]`
+#### 5. `ccps edit <name> [file-or-folder]`
 
-用默认编辑器打开 profile 文件。
+用新的 VS Code 窗口打开 profile 文件夹、常用配置文件，或 profile 内已有文件/文件夹。
 
 输入：
 
 ```powershell
+ccps edit study
 ccps edit study CLAUDE.md
 ccps edit study settings.json
 ccps edit study mcp.json
 ccps edit study profile.json
-ccps edit study
+ccps edit study claude-home
+ccps edit study claude-home\skills
 ```
 
 文件映射：
@@ -500,13 +509,16 @@ ccps edit study
 | `mcp.json` | `profiles\<name>\mcp.json` |
 | `profile.json` | `profiles\<name>\profile.json` |
 | 未指定文件 | 打开 profile 目录 |
+| profile 内已有相对路径 | 打开该文件或文件夹 |
 
 验收标准：
 
 ```text
-[ ] 能打开指定文件
-[ ] 文件不存在时提示是否创建
+[ ] 能用新的 VS Code 窗口打开 profile 目录
+[ ] 能打开指定文件或 profile 内已有文件夹
+[ ] 文件不存在时报错并提示选择已有目标
 [ ] 不允许编辑 profile 目录外的路径
+[ ] 不允许编辑 token/secret/credential/oauth 等敏感命名目标
 [ ] 不编辑 C:\Users\h\.claude
 [ ] 错误提示清楚
 ```
@@ -537,6 +549,7 @@ cwd = 当前用户所在目录
 CLAUDE_CONFIG_DIR = profiles\coding\claude-home
 args 默认包含 --dangerously-skip-permissions
 common api-settings.json 与 profile settings.json env 合并，profile 优先
+默认 profile settings env 包含 CLAUDE_CODE_ATTRIBUTION_HEADER=0
 autoMemoryDirectory = profiles\coding\claude-home\memory\auto
 项目配置 = 保留
 真实 C:\Users\h\.claude = 不修改
@@ -549,7 +562,7 @@ autoMemoryDirectory = profiles\coding\claude-home\memory\auto
 2. validate profile
 3. 构造 launch plan
 4. 设置 CLAUDE_CONFIG_DIR
-5. 合并 API env：process.env < common api-settings.json < profile claude-home\settings.json env
+5. 合并 env：process.env < common api-settings.json < profile claude-home\settings.json env；新建 profile 默认带 CLAUDE_CODE_ATTRIBUTION_HEADER=0
 6. 默认添加 --dangerously-skip-permissions，除非 profile 显式关闭
 7. 通过 --mcp-config 加载 profile mcp.json
 8. 默认不使用 --strict-mcp-config，避免吞掉项目 MCP
@@ -1033,6 +1046,7 @@ Claude Code 支持 CLAUDE_CONFIG_DIR 切换用户级配置目录
 设置 CLAUDE_CONFIG_DIR 后，用户级 CLAUDE.md/settings/skills/agents/plugins/memory 从该目录读取
 项目级配置仍按当前 cwd 原生加载
 基于 API 的用户可以通过 common api-settings.json 与 profile settings.json env 提供 API 配置
+新建 profile settings.json 默认包含 CLAUDE_CODE_ATTRIBUTION_HEADER=0，重复 init 会为保留的默认 profile 补齐缺失键
 用户接受 OAuth/keychain 风格认证在不同 profile 下可能呈现为独立状态
 ```
 
@@ -1085,13 +1099,14 @@ GUI
 [ ] ccps list 可以列出 profiles
 [ ] ccps create 可以创建新 profile
 [ ] ccps show 可以展示 profile 状态
-[ ] ccps edit 可以打开 claude-home\CLAUDE.md / settings.json / mcp.json
+[x] ccps edit 可以用新的 VS Code 窗口打开 profile 目录、claude-home\CLAUDE.md、settings.json、mcp.json、profile.json 和 profile 内已有目标
 [ ] ccps validate 可以校验 JSON 和敏感文件名
 [ ] ccps backup 可以备份 profile
 [x] ccps launch 可以在当前项目目录启动 Claude Code
 [x] ccps launch 会设置 CLAUDE_CONFIG_DIR 指向 profile claude-home
 [x] ccps launch 默认传递 --dangerously-skip-permissions，且可由 profile 关闭
 [x] ccps launch 会合并 common/profile API env，且 dry-run 不显示值
+[x] 默认 profile settings env 包含 CLAUDE_CODE_ATTRIBUTION_HEADER=0，重复 init 会在缺失时补齐
 [x] ccps launch 会将 auto memory 指向当前 profile 的 claude-home\memory\auto
 [x] ccps launch 不会切换 cwd 到工具目录
 [x] ccps launch 不会修改项目配置
