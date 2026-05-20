@@ -24,11 +24,13 @@ import {
   profileTemplateSchema,
   type ProfileTemplateName,
 } from '../schemas/profile';
+import { runTerminalTui, type RunTerminalTuiOptions } from '../tui/terminal';
 import { CcpsError } from '../utils/errors';
 
 export type CommandRuntime = {
   writeOut: (value: string) => void;
   readInput: (prompt: string) => Promise<string>;
+  runTui: (options: Pick<RunTerminalTuiOptions, 'appHomePath'>) => Promise<void>;
   openTarget: OpenTarget;
   spawnProcess: SpawnProcess;
   clock: Clock;
@@ -267,6 +269,16 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
     });
 
   program
+    .command('tui')
+    .description('Open the interactive profile management TUI.')
+    .action(async () => {
+      const appPaths = getAppHomePaths();
+
+      runtime.writeOut('Starting ccps TUI.\n');
+      await runtime.runTui({ appHomePath: appPaths.appHomePath });
+    });
+
+  program
     .command('edit <name> [file]')
     .description('Open a profile file or directory in a new VS Code window.')
     .action(async (name: string, file?: string) => {
@@ -329,6 +341,7 @@ const defaultRuntime: CommandRuntime = {
       readline.close();
     }
   },
+  runTui: runTerminalTui,
   openTarget: openWithDefaultEditor,
   spawnProcess,
   clock: () => new Date(),

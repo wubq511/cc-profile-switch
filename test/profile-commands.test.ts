@@ -39,6 +39,7 @@ describe('profile lifecycle commands', () => {
       clock?: () => Date;
       promptInputs?: string[];
       prompts?: string[];
+      tuiCalls?: Array<{ appHomePath: string }>;
       spawnCalls?: Array<{ command: string; args: string[]; cwd: string }>;
     } = {},
   ): Promise<CliRun> {
@@ -56,6 +57,9 @@ describe('profile lifecycle commands', () => {
       readInput: async (prompt) => {
         options.prompts?.push(prompt);
         return options.promptInputs?.shift() ?? '';
+      },
+      runTui: async (tuiOptions) => {
+        options.tuiCalls?.push({ appHomePath: tuiOptions.appHomePath });
       },
       clock: options.clock,
     });
@@ -445,6 +449,19 @@ describe('profile lifecycle commands', () => {
         defaultProfile: expect.any(String),
       }),
     );
+  });
+
+  it('tui starts the TUI flow through the injected terminal adapter runner', async () => {
+    const userHome = await makeUserHome();
+    const appHome = join(userHome, '.cc-profile-switch');
+    const tuiCalls: Array<{ appHomePath: string }> = [];
+
+    await runCli(userHome, ['init']);
+
+    const result = await runCliWithOptions(userHome, ['tui'], { tuiCalls });
+
+    expect(tuiCalls).toEqual([{ appHomePath: appHome }]);
+    expect(result.output).toContain('Starting ccps TUI.');
   });
 
   it('edit opens the profile folder, known aliases, and existing relative targets', async () => {

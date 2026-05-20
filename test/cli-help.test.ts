@@ -19,6 +19,7 @@ describe('ccps help', () => {
     expect(help).toContain('rename');
     expect(help).toContain('remove');
     expect(help).toContain('default');
+    expect(help).toContain('tui');
     expect(help).toContain('launch');
     expect(help).toContain('[profile]');
   });
