@@ -1,9 +1,9 @@
 ---
 name: profile-management-tui
-status: backlog
+status: in-progress
 created: 2026-05-20T07:54:16Z
-updated: 2026-05-20T08:03:13Z
-progress: 0%
+updated: 2026-05-20T08:26:10Z
+progress: 14%
 prd: .claude/prds/profile-management-tui.md
 github: https://github.com/wubq511/cc-profile-switch/issues/16
 ---
@@ -129,7 +129,7 @@ Medium. The filesystem and config mutations are straightforward, but the work to
 
 ## Tasks Created
 
-- [ ] 17.md - Core Profile Management Services (parallel: false)
+- [x] 17.md - Core Profile Management Services (parallel: false)
 - [ ] 18.md - CLI Profile Management Commands (parallel: true)
 - [ ] 19.md - Default Launch Resolution (parallel: true)
 - [ ] 20.md - TUI Flow Controller (parallel: true)
