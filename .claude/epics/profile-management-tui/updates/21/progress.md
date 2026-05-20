@@ -1,7 +1,7 @@
 ---
 issue: 21
 started: 2026-05-20T09:01:59Z
-last_sync: 2026-05-20T09:05:16Z
+last_sync: 2026-05-20T09:08:55Z
 completion: 100%
 ---
 
@@ -13,4 +13,4 @@ Verification:
 - `npm run test -- tui-terminal profile-commands cli-help` passed.
 - `npm run check` passed.
 
-GitHub issue remains open until explicitly closed.
+Closed locally and queued for GitHub closure.
