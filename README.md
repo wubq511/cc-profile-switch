@@ -51,6 +51,8 @@ ccps tui
 
 在执行真正的启动前，建议使用 `ccps launch <profile> --dry-run` 或 `ccps launch --dry-run` 检查计划。
 
+`ccps validate <name>` 是启动可用性检查：验证必需文件/目录、JSON/schema、auto memory 指向和 launch 路径安全。它不做敏感文件名审计，也不会因为 Claude Code 自己创建的 session、history、cache 或 `.claude.json` 改变 profile 状态。
+
 `ccps copy <from> <to>` 会基于已有 profile 创建变体，目标已存在时会拒绝覆盖。`ccps rename <old> <new>` 会移动 profile，并同步更新 `config.json` 中指向旧名称的 default / last-used 引用。
 
 `ccps default [name]` 用于查看或设置默认 profile；`ccps default --clear` 会清除默认值。没有传入 profile 时，`ccps launch` 会使用已设置的默认 profile；如果没有默认 profile，会提示先传入 profile 名称或运行 `ccps default <profile>`。

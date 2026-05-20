@@ -1,21 +1,21 @@
-This file provides guidance to Coding Agents(claude code, codex...) when working with code in this repository.
+This file provides guidance to Coding Agents (Claude Code, Codex, and other coding agents) when working with this repository.
 
 ## Project
 
-CC-Profile-Switch (`ccps`) — Windows-only Node.js CLI that switches Claude Code user-level global configuration by profile (coding/study/work/research/general), while preserving project-level config.
+CC-Profile-Switch (`ccps`) is a Windows-only Node.js CLI that switches Claude Code user-level global configuration by profile while preserving project-level config.
 
-## Core concept
+## Core Concept
 
-```
+```powershell
 cd D:\Projects\my-app
 ccps launch coding
 ```
 
-This starts Claude Code from `D:\Projects\my-app`, sets `CLAUDE_CONFIG_DIR` to the profile's `claude-home`, keeps project config active, and never touches the real `C:\Users\h\.claude`.
+This starts Claude Code from `D:\Projects\my-app`, sets `CLAUDE_CONFIG_DIR` to the selected profile's `claude-home`, keeps project config active, and never touches the real `C:\Users\h\.claude`.
 
-**Default launch mode: Global User Config Switch Mode** — switch user scope only, preserve project scope.
+Default launch mode: **Global User Config Switch Mode**. Switch user scope only, preserve project scope.
 
-## Tech stack
+## Tech Stack
 
 TypeScript, Node.js LTS, Commander, Zod, Vitest, tsup, fs-extra, picocolors. Windows-only; PowerShell / Windows Terminal.
 
@@ -34,118 +34,124 @@ npm run check        # lint + test + build
 
 Binary entry: `"bin": { "ccps": "dist/index.js" }`. Use `npm link` for local dev.
 
-## Source structure
+## Source Structure
 
-```
+```text
 src/
   index.ts          # CLI entry, commander setup
-  commands/         # CLI command handlers (parse args → call core → output)
-  core/             # Business logic: app-config, profile, validator, launcher
-  platform/         # Windows-specific: paths, process spawn, editor
+  commands/         # CLI command handlers (parse args -> call core -> output)
+  core/             # app-config, profile, profile-management, validator, launcher
+  platform/         # Windows-specific paths, process spawn, editor
   schemas/          # Zod schemas for config.json, profile.json
   templates/        # Profile template files
+  tui/              # Lightweight terminal UI controller and readline adapter
   utils/            # Logger, error formatting
 test/
 ```
 
-## Profile data structure
+## Profile Data Structure
 
-```
+```text
 %USERPROFILE%\.cc-profile-switch\
   config.json
+  api-settings.json          # optional common API env
   profiles\
     <name>\
-      profile.json          # name, description, template, launch config
-      claude-home\          # simulates ~/.claude for this profile
-        CLAUDE.md           # profile-scoped user memory / instructions
-        settings.json       # profile settings, including autoMemoryDirectory, default env, and env overrides
+      profile.json           # name, description, template, launch config
+      claude-home\           # profile-scoped user config source
+        CLAUDE.md            # profile-scoped user memory / instructions
+        settings.json        # autoMemoryDirectory + env overrides
         memory\
-          auto\             # profile-scoped Claude Code auto memory
+          auto\
         skills\
         agents\
-        plugins\            # Claude Code-managed user plugin state for this profile
-        projects\           # Claude Code-created project/session state for this profile
-        sessions\           # Claude Code-created session state for this profile
-      mcp.json              # ccps-provided profile MCP config passed with --mcp-config
+        plugins\             # Claude Code-managed user plugin state
+        projects\            # Claude Code-created user/project state
+        sessions\            # Claude Code-created session state
+      mcp.json               # ccps-provided profile MCP config passed with --mcp-config
   backups\
 ```
 
-`claude-home` is the user-level config source per profile. It maps to `CLAUDE_CONFIG_DIR` at launch.
-Claude Code-created user state such as plugins, projects, sessions, telemetry, history, and `.claude.json` belongs under this profile's `claude-home`.
-`profiles\<name>\mcp.json` is the ccps-managed MCP bundle passed at launch; project `.mcp.json` still comes from the launch cwd.
+`claude-home` maps to `CLAUDE_CONFIG_DIR` at launch. Project `CLAUDE.md`, `.claude/settings.json`, `.claude/agents`, `.claude/skills`, and `.mcp.json` still come from the launch cwd.
+
 New profiles include `CLAUDE_CODE_ATTRIBUTION_HEADER=0` in `claude-home\settings.json` `env`. Re-running `ccps init` backfills this key for preserved default profiles when missing, without overwriting existing settings fields or env keys.
 
-## MVP commands
+## Current CLI Surface
 
 | Command | Purpose |
 |---|---|
-| `ccps init` | Create app home + 5 default profiles (coding/study/work/research/general) |
-| `ccps list` | List profiles with status (valid/warning/error) |
-| `ccps create <name> --template <t>` | Create profile from template (coding/study/work/research/general/blank) |
-| `ccps show <name>` | Display profile structure and file status |
-| `ccps edit <name> [file-or-folder]` | Open the profile folder or an existing profile target in a new VS Code window |
-| `ccps validate <name>` | Check JSON validity, required files, sensitive filenames |
-| `ccps backup <name>` | Copy profile to backups/<name>-YYYYMMDD-HHmmss/ |
-| `ccps launch <name>` | Start Claude Code from cwd with profile's CLAUDE_CONFIG_DIR |
+| `ccps init` | Create app home and default profiles. |
+| `ccps list` | List profiles with launch-readiness status. |
+| `ccps create <name> --template <t>` | Create a profile from a built-in template. |
+| `ccps show <name>` | Display profile structure and file status. |
+| `ccps edit <name> [file-or-folder]` | Open the profile folder or an existing safe target in VS Code. |
+| `ccps validate <name>` | Check launch readiness: required files/dirs, JSON/schema, auto memory path, launch path safety. |
+| `ccps backup <name>` | Copy profile to `backups\<name>-YYYYMMDD-HHmmss\`. |
+| `ccps copy <from> <to>` | Copy a profile to a new name without overwriting existing profiles. |
+| `ccps rename <old> <new>` | Rename a profile and update default/last-used references. |
+| `ccps remove <name>` | Back up, exact-name confirm, then remove a profile; default/last-used references are cleared. |
+| `ccps default [name]` | Show or set the default profile; `--clear` clears it. |
+| `ccps launch [profile]` | Start Claude Code from cwd with the selected/default profile. |
+| `ccps tui` | Lightweight terminal helper over the same core services; not a GUI or separate product mode. |
 
-## Launch behavior
+## Launch Behavior
 
 ```ts
 spawn('claude', args, {
-  cwd: process.cwd(),           // never change to tool runtime dir
+  cwd,
   stdio: 'inherit',
   shell: false,
   env: {
     ...process.env,
-    ...apiEnv,                  // common api-settings.json, then profile settings.json env
-    CLAUDE_CONFIG_DIR: profile.claudeHomePath
-  }
-})
+    ...apiEnv,
+    CLAUDE_CONFIG_DIR: profileClaudeHome,
+  },
+});
 ```
 
-MCP default: `mcpMode = "merge"` — pass `--mcp-config <profile>\mcp.json` without `--strict-mcp-config`, so project `.mcp.json` still loads. Strict mode is opt-in only.
-Claude Code-managed plugins live under `<profile>\claude-home\plugins`. Optional `launch.pluginDirs` are extra session plugin directories and resolve relative to `<profile>\claude-home`.
-Launch default: add `--dangerously-skip-permissions` unless `profile.json` sets `launch.skipPermissions` to `false`.
-API env resolution: profile `claude-home\settings.json` `env` overrides `%USERPROFILE%\.cc-profile-switch\api-settings.json`, which overrides inherited process env keys. Profile settings include the default `CLAUDE_CODE_ATTRIBUTION_HEADER=0` unless the user already set that key.
-Memory: `claude-home\settings.json` must point `autoMemoryDirectory` to `<profile>\claude-home\memory\auto`.
+MCP default: `mcpMode = "merge"` passes `--mcp-config <profile>\mcp.json` without `--strict-mcp-config`, so project `.mcp.json` still loads. Strict mode is opt-in only.
 
-## Safety rules (hard constraints)
+Launch defaults:
 
-**Never:**
-- Copy or overwrite `C:\Users\h\.claude`
-- Modify project `.claude` or project config files
-- Read/migrate OAuth, session, token, history, cache
-- Use `--strict-mcp-config` as default
-- Change cwd to tool runtime directory
-- Use `--add-dir` to access current project
+- Add `--dangerously-skip-permissions` unless `profile.json` sets `launch.skipPermissions` to `false`.
+- Use `ccps default <profile>` when `ccps launch` omits `[profile]`.
+- Common `%USERPROFILE%\.cc-profile-switch\api-settings.json` env merges with profile `claude-home\settings.json` env; profile wins.
+- `autoMemoryDirectory` must point to `<profile>\claude-home\memory\auto`.
 
-**Always:**
-- Resolve paths to absolute with Node `path` API
-- Block path traversal
-- Validate profile before launch
-- Support `--dry-run` on launch
-- Use args array for spawn, never shell string concatenation
-- Scan for sensitive filenames; block high-risk credential names (`token`, `secret`, `credential`, `credentials`, `oauth`) and warn on Claude-created state/cache names (`.claude.json`, `session`, `history`, `cache`, `log`, `transcript`)
+## Safety Rules
 
-## Implementation order (completed baseline)
+Never:
 
-1. Project setup + path utilities
-2. App config
-3. Profile templates (claude-home structure)
-4. `init`
-5. `list`
-6. `create`
-7. `show`
-8. `validate`
-9. `backup`
-10. `edit`
-11. `launch --dry-run`
-12. Claude Code behavior verification
-13. Real `launch`
-14. README
+- Copy or overwrite `C:\Users\h\.claude`.
+- Modify project `.claude` or project config files.
+- Read/migrate OAuth, session, token, history, cache, or credential contents.
+- Use `--strict-mcp-config` as default.
+- Change cwd to the tool runtime directory.
+- Use `--add-dir` for current-project access.
 
-This historical order is complete. Future launch changes must preserve validation, dry-run parity, current-cwd launch, profile memory isolation, and README/verification updates.
+Always:
 
-## MVP exclusions
+- Resolve paths to absolute paths with Node `path` APIs.
+- Block path traversal.
+- Validate profile launch readiness before launch.
+- Keep dry-run and real launch plan behavior in parity.
+- Use args arrays for spawn, never shell string concatenation.
+- Keep CLI and TUI behavior routed through shared core services.
 
-No TUI, GUI, cloud sync, multi-account switching, OAuth/session migration, plugin marketplace, macOS/Linux support, or runtime project isolation mode.
+`ccps validate` is launch-readiness only. Runtime/cache/session filename matches do not block launch. `ccps edit` still blocks path traversal and credential-like target names; future export/import flows must handle sensitive filenames before packaging or exposing profile contents.
+
+## Completed Baselines
+
+MVP baseline is complete: init, list, create, show, validate, backup, edit, dry-run launch, real launch, README, and Claude Code behavior verification.
+
+V0.2 profile-management-tui is complete:
+
+- Core profile management services for copy, rename, remove, default, and launch default resolution.
+- CLI commands for `copy`, `rename`, `remove`, `default`, optional-profile `launch`, and `tui`.
+- TUI controller and terminal adapter share the same core services as CLI.
+- V0.2 README and roadmap updates.
+- Final regression verification recorded in `.claude/epics/profile-management-tui/updates/23/progress.md`.
+
+## Still Excluded
+
+No GUI, cloud sync, multi-account switching, OAuth/session migration, plugin marketplace, macOS/Linux support, or runtime project isolation mode. TUI exists only as a lightweight terminal helper over CLI/core behavior.

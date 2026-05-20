@@ -253,7 +253,7 @@ profiles\coding\claude-home\skills
 
 #### 4. Validate
 
-用户检查 profile 是否完整、安全：
+用户检查 profile 是否具备正常启动 Claude Code 的结构：
 
 ```powershell
 ccps validate study
@@ -269,8 +269,9 @@ mcp.json
 claude-home\skills\
 claude-home\agents\
 claude-home\plugins\
-敏感文件名
 JSON 合法性
+autoMemoryDirectory 指向本 profile 的 claude-home\memory\auto
+launch pluginDirs 不发生路径穿越
 ```
 
 #### 5. Launch in Current Project
@@ -1054,7 +1055,7 @@ Claude Code 支持 CLAUDE_CONFIG_DIR 切换用户级配置目录
 ```text
 1. CLAUDE_CONFIG_DIR 会让 profile 的 claude-home 替代真实用户级 CLAUDE.md/settings/agents/skills。
 2. 无显式 API 设置时，隔离 profile 会提示 Not logged in，说明认证状态呈现为 profile 特有。
-3. Claude Code 会在 profile 的 claude-home 下创建 session-env/sessions 等状态；validate 提示 warning，不阻止。
+3. Claude Code 会在 profile 的 claude-home 下创建 session-env/sessions 等状态；validate 不审计这些运行时文件名，也不阻止。
 4. --mcp-config merge 模式下 profile MCP 与项目 MCP 共存；strict 模式只加载 profile MCP。
 5. 用户级 plugins 位于 profile 的 claude-home\plugins；launch.pluginDirs 仅作为额外 session plugin-dir。
 6. autoMemoryDirectory 固定为 profile 的 claude-home\memory\auto，避免 memory 串 profile。
@@ -1099,7 +1100,7 @@ GUI
 [ ] ccps create 可以创建新 profile
 [ ] ccps show 可以展示 profile 状态
 [x] ccps edit 可以用新的 VS Code 窗口打开 profile 目录、claude-home\CLAUDE.md、settings.json、mcp.json、profile.json 和 profile 内已有目标
-[ ] ccps validate 可以校验 JSON 和敏感文件名
+[x] ccps validate 可以校验 JSON、必需文件/目录、auto memory 指向和 launch 路径安全
 [ ] ccps backup 可以备份 profile
 [x] ccps launch 可以在当前项目目录启动 Claude Code
 [x] ccps launch 会设置 CLAUDE_CONFIG_DIR 指向 profile claude-home

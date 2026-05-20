@@ -1575,7 +1575,8 @@ validateProfile()
 validateJsonFile()
 validateRequiredFiles()
 validateRequiredDirs()
-validateSensitiveFiles()
+validateProfileMemorySettings()
+validateLaunchPaths()
 ```
 
 ## 9.5 `core/launcher.ts`
@@ -1749,9 +1750,9 @@ warning
 error
 ```
 
-error 阻止 launch。
+`validate` 是 launch-readiness 检查。error 阻止 launch。
 
-warning 可以 launch，但会提示。
+当前实现不会因为 Claude Code runtime/cache/session 文件名给出 warning；敏感文件名处理保留给 edit/export/import 这类会打开、移动或打包 profile 内容的流程。
 
 ---
 
@@ -2347,7 +2348,7 @@ Always:
 - Resolve paths to absolute paths.
 - Prevent path traversal.
 - Validate JSON before launch.
-- Scan for sensitive file names.
+- Treat `validate` as launch readiness only; handle sensitive filenames only in flows that open, move, export, import, or package profile contents.
 - Provide `--dry-run` for launch.
 - Show clear next-step hints in errors.
 
@@ -2483,4 +2484,5 @@ init
 → launch --dry-run
 → verify Claude Code behavior
 → launch
+→ V0.2 profile management commands and lightweight TUI
 ```

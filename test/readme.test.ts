@@ -14,6 +14,8 @@ describe('README', () => {
     expect(readme).toContain('ccps default [name]');
     expect(readme).toContain('ccps tui');
     expect(readme).toContain('ccps launch --dry-run');
+    expect(readme).toContain('`ccps validate <name>` 是启动可用性检查');
+    expect(readme).toContain('不做敏感文件名审计');
     expect(readme).toContain('没有传入 profile 时，`ccps launch` 会使用已设置的默认 profile');
     expect(readme).toContain('精确输入 profile 名称');
     expect(readme).toContain('删除前会先创建备份');
