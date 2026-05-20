@@ -1,7 +1,7 @@
 ---
 issue: 20
 started: 2026-05-20T08:48:53Z
-last_sync: 2026-05-20T08:52:53Z
+last_sync: 2026-05-20T08:59:58Z
 completion: 100%
 ---
 
@@ -13,4 +13,4 @@ Verification:
 - `npm run test -- tui-controller` passed.
 - `npm run check` passed.
 
-GitHub issue remains open until explicitly closed.
+Closed locally and queued for GitHub closure.
