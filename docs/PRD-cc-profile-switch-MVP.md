@@ -646,16 +646,15 @@ ccps validate study
 | skills 目录 | `claude-home\skills\` |
 | agents 目录 | `claude-home\agents\` |
 | plugins 目录 | `claude-home\plugins\` |
-| 高风险敏感文件名 | token/secret/credential/credentials/oauth，阻止 launch |
-| Claude 状态/缓存文件名 | .claude.json/session/history/cache/log/transcript，提示 warning |
 | 路径安全 | 不允许路径穿越 |
+
+`ccps validate` 只判断 profile 结构是否足够让 Claude Code 正常使用和正常启动。它不做敏感文件名审计，也不因为 `token`、`secret`、`credential`、`oauth`、`.claude.json`、`session`、`history`、`cache`、`log`、`transcript` 这类文件名改变 profile 状态。
 
 验收标准：
 
 ```text
 [ ] 能识别非法 JSON
 [ ] 能识别缺失核心文件
-[ ] 能识别常见敏感文件名
 [ ] 能给出修复建议
 [ ] 能被 launch 自动调用
 ```

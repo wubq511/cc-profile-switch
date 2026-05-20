@@ -15,6 +15,7 @@ import {
   type ProfileTemplateName,
   type ProfileTemplatePaths,
 } from './profile-template';
+import { CcpsError } from '../utils/errors';
 
 export const defaultProfileNames: ProfileTemplateName[] = ['coding', 'study', 'work', 'research', 'general'];
 

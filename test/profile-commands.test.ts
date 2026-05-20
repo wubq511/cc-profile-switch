@@ -37,6 +37,9 @@ describe('profile lifecycle commands', () => {
     options: {
       openedTargets?: string[];
       clock?: () => Date;
+      promptInputs?: string[];
+      prompts?: string[];
+      tuiCalls?: Array<{ appHomePath: string }>;
       spawnCalls?: Array<{ command: string; args: string[]; cwd: string }>;
     } = {},
   ): Promise<CliRun> {
@@ -51,7 +54,18 @@ describe('profile lifecycle commands', () => {
         options.spawnCalls?.push({ command, args, cwd: spawnOptions.cwd });
         return { exitCode: 0 };
       },
+      readInput: async (prompt) => {
+        options.prompts?.push(prompt);
+        return options.promptInputs?.shift() ?? '';
+      },
+      runTui: async (tuiOptions) => {
+        options.tuiCalls?.push({ appHomePath: tuiOptions.appHomePath });
+      },
       clock: options.clock,
+    });
+    program.configureOutput({
+      writeOut: (value) => output.push(value),
+      writeErr: (value) => output.push(value),
     });
 
     process.env.USERPROFILE = userHome;
@@ -305,6 +319,151 @@ describe('profile lifecycle commands', () => {
     expect(result.output).toContain(`Backup created: ${backupRoot}`);
   });
 
+  it('copy duplicates a profile through the shared profile management service', async () => {
+    const userHome = await makeUserHome();
+    const appHome = join(userHome, '.cc-profile-switch');
+    const targetPaths = getProfileTemplatePaths(appHome, 'deep_work');
+
+    await runCli(userHome, ['init']);
+    const result = await runCliWithOptions(userHome, ['copy', 'coding', 'deep_work'], {
+      clock: () => new Date('2026-05-20T10:15:00Z'),
+    });
+
+    await expect(fs.readJson(targetPaths.profileConfigPath)).resolves.toMatchObject({
+      name: 'deep_work',
+      createdAt: '2026-05-20T10:15:00.000Z',
+      updatedAt: '2026-05-20T10:15:00.000Z',
+    });
+    await expect(fs.readJson(targetPaths.settingsPath)).resolves.toMatchObject({
+      autoMemoryDirectory: targetPaths.autoMemoryPath,
+    });
+    expect(result.output).toContain('Copied profile "coding" to "deep_work".');
+    expect(result.output).toContain(`Target: ${targetPaths.profileRootPath}`);
+    expect(result.output).toContain('Next: ccps launch deep_work --dry-run');
+  });
+
+  it('rename moves a profile and reports config reference updates', async () => {
+    const userHome = await makeUserHome();
+    const appHome = join(userHome, '.cc-profile-switch');
+    const appPaths = getAppHomePaths(appHome);
+    const renamedPaths = getProfileTemplatePaths(appHome, 'focus');
+
+    await runCli(userHome, ['init']);
+    const config = await fs.readJson(appPaths.configPath);
+    await fs.writeJson(appPaths.configPath, {
+      ...config,
+      defaultProfile: 'coding',
+      lastUsedProfile: 'coding',
+    });
+
+    const result = await runCliWithOptions(userHome, ['rename', 'coding', 'focus'], {
+      clock: () => new Date('2026-05-20T10:30:00Z'),
+    });
+
+    await expect(fs.readJson(renamedPaths.profileConfigPath)).resolves.toMatchObject({
+      name: 'focus',
+      updatedAt: '2026-05-20T10:30:00.000Z',
+    });
+    await expect(fs.readJson(appPaths.configPath)).resolves.toMatchObject({
+      defaultProfile: 'focus',
+      lastUsedProfile: 'focus',
+    });
+    expect(result.output).toContain('Renamed profile "coding" to "focus".');
+    expect(result.output).toContain('Updated default profile reference: focus');
+    expect(result.output).toContain('Updated last-used profile reference: focus');
+    expect(result.output).toContain('Next: ccps launch focus --dry-run');
+  });
+
+  it('remove prompts for exact-name confirmation, deletes the profile, and reports the backup path', async () => {
+    const userHome = await makeUserHome();
+    const appHome = join(userHome, '.cc-profile-switch');
+    const profilePaths = getProfileTemplatePaths(appHome, 'coding');
+    const backupPath = join(appHome, 'backups', 'coding-20260520-104500');
+    const prompts: string[] = [];
+
+    await runCli(userHome, ['init']);
+
+    const result = await runCliWithOptions(userHome, ['remove', 'coding'], {
+      clock: () => new Date('2026-05-20T10:45:00Z'),
+      promptInputs: ['coding'],
+      prompts,
+    });
+
+    expect(prompts).toEqual(['Type the exact profile name to remove "coding": ']);
+    await expect(fs.pathExists(profilePaths.profileRootPath)).resolves.toBe(false);
+    await expect(fs.pathExists(join(backupPath, 'profile.json'))).resolves.toBe(true);
+    expect(result.output).toContain('Removed profile "coding".');
+    expect(result.output).toContain(`Backup: ${backupPath}`);
+  });
+
+  it('remove has no yes or force bypass and refuses wrong confirmation', async () => {
+    const userHome = await makeUserHome();
+    const appHome = join(userHome, '.cc-profile-switch');
+    const profilePaths = getProfileTemplatePaths(appHome, 'coding');
+
+    await runCli(userHome, ['init']);
+
+    await expect(
+      runCliWithOptions(userHome, ['remove', 'coding'], {
+        promptInputs: ['wrong'],
+      }),
+    ).rejects.toMatchObject({
+      code: 'PROFILE_DELETE_CONFIRMATION_MISMATCH',
+    });
+    const removeCommand = createProgram().commands.find((command) => command.name() === 'remove');
+    const removeHelp = removeCommand?.helpInformation() ?? '';
+    expect(removeHelp).not.toContain('--yes');
+    expect(removeHelp).not.toContain('--force');
+    await expect(fs.pathExists(profilePaths.profileRootPath)).resolves.toBe(true);
+  });
+
+  it('default shows, sets, and clears the default profile', async () => {
+    const userHome = await makeUserHome();
+    const appHome = join(userHome, '.cc-profile-switch');
+
+    await runCli(userHome, ['init']);
+
+    const emptyResult = await runCli(userHome, ['default']);
+    expect(emptyResult.output).toContain('No default profile set.');
+    expect(emptyResult.output).toContain('Next: ccps default <profile>');
+
+    const setResult = await runCliWithOptions(userHome, ['default', 'coding'], {
+      clock: () => new Date('2026-05-20T11:00:00Z'),
+    });
+    expect(setResult.output).toContain('Default profile set: coding');
+    await expect(fs.readJson(join(appHome, 'config.json'))).resolves.toMatchObject({
+      defaultProfile: 'coding',
+      updatedAt: '2026-05-20T11:00:00.000Z',
+    });
+
+    const showResult = await runCli(userHome, ['default']);
+    expect(showResult.output).toContain('Default profile: coding');
+    expect(showResult.output).toContain('Next: ccps launch');
+
+    const clearResult = await runCliWithOptions(userHome, ['default', '--clear'], {
+      clock: () => new Date('2026-05-20T11:05:00Z'),
+    });
+    expect(clearResult.output).toContain('Default profile cleared.');
+    await expect(fs.readJson(join(appHome, 'config.json'))).resolves.toEqual(
+      expect.not.objectContaining({
+        defaultProfile: expect.any(String),
+      }),
+    );
+  });
+
+  it('tui starts the TUI flow through the injected terminal adapter runner', async () => {
+    const userHome = await makeUserHome();
+    const appHome = join(userHome, '.cc-profile-switch');
+    const tuiCalls: Array<{ appHomePath: string }> = [];
+
+    await runCli(userHome, ['init']);
+
+    const result = await runCliWithOptions(userHome, ['tui'], { tuiCalls });
+
+    expect(tuiCalls).toEqual([{ appHomePath: appHome }]);
+    expect(result.output).toContain('Starting ccps TUI.');
+  });
+
   it('edit opens the profile folder, known aliases, and existing relative targets', async () => {
     const userHome = await makeUserHome();
     const appHome = join(userHome, '.cc-profile-switch');
@@ -378,6 +537,28 @@ describe('profile lifecycle commands', () => {
     expect(result.output).toContain('Dry run: Claude Code was not started.');
   });
 
+  it('launch dry-run uses the default profile when no profile argument is provided', async () => {
+    const userHome = await makeUserHome();
+    const appHome = join(userHome, '.cc-profile-switch');
+    const appPaths = getAppHomePaths(appHome);
+    const profilePaths = getProfileTemplatePaths(appHome, 'coding');
+    const projectCwd = await makeUserHome();
+
+    await runCli(userHome, ['init']);
+    const config = await fs.readJson(appPaths.configPath);
+    await fs.writeJson(appPaths.configPath, {
+      ...config,
+      defaultProfile: 'coding',
+    });
+
+    const result = await runCli(userHome, ['launch', '--dry-run', '--cwd', projectCwd]);
+
+    expect(result.output).toContain('Launch dry-run for profile "coding"');
+    expect(result.output).toContain(`Profile path: ${profilePaths.profileRootPath}`);
+    expect(result.output).toContain(`Cwd: ${projectCwd}`);
+    expect(result.output).toContain('Dry run: Claude Code was not started.');
+  });
+
   it('launch starts Claude Code when dry-run is not requested', async () => {
     const userHome = await makeUserHome();
     const projectCwd = await makeUserHome();
@@ -398,5 +579,45 @@ describe('profile lifecycle commands', () => {
     });
     expect(spawnCalls[0].args).toContain('--mcp-config');
     expect(result.output).toContain('Launching Claude Code with profile "coding"');
+  });
+
+  it('launch starts Claude Code with the default profile when no profile argument is provided', async () => {
+    const userHome = await makeUserHome();
+    const appHome = join(userHome, '.cc-profile-switch');
+    const appPaths = getAppHomePaths(appHome);
+    const projectCwd = await makeUserHome();
+    const spawnCalls: Array<{ command: string; args: string[]; cwd: string }> = [];
+
+    await runCli(userHome, ['init']);
+    const config = await fs.readJson(appPaths.configPath);
+    await fs.writeJson(appPaths.configPath, {
+      ...config,
+      defaultProfile: 'coding',
+    });
+
+    const result = await runCliWithOptions(userHome, ['launch', '--cwd', projectCwd], {
+      spawnCalls,
+      clock: () => new Date('2026-05-20T11:45:00Z'),
+    });
+
+    expect(spawnCalls).toHaveLength(1);
+    expect(spawnCalls[0]).toMatchObject({
+      command: 'claude',
+      cwd: projectCwd,
+    });
+    expect(result.output).toContain('Launching Claude Code with profile "coding"');
+    await expect(fs.readJson(appPaths.configPath)).resolves.toMatchObject({
+      lastUsedProfile: 'coding',
+    });
+  });
+
+  it('launch without a profile fails clearly when no default is configured', async () => {
+    const userHome = await makeUserHome();
+
+    await runCli(userHome, ['init']);
+
+    await expect(runCli(userHome, ['launch', '--dry-run'])).rejects.toMatchObject({
+      code: 'DEFAULT_PROFILE_NOT_SET',
+    });
   });
 });

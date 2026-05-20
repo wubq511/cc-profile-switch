@@ -106,18 +106,19 @@ MVP 不做：
 
 ## 2. P1 功能池：Profile 管理增强
 
-P1 重点是增强本地 profile 管理能力，不改变产品形态，不引入 TUI / GUI。
+P1 重点是增强本地 profile 管理能力，不改变产品形态。V0.2 已实现 `copy`、`rename`、`remove`、`default`，并加入只覆盖同一套 core service 的轻量 TUI；GUI、云同步和账号切换仍不进入当前产品边界。
 
-| 功能 | 命令建议 | 价值 | 风险 |
-|---|---|---|---|
-| 复制 profile | `ccps copy <from> <to>` | 基于已有配置快速创建变体 | 可能复制敏感文件，需要复用 validate |
-| 重命名 profile | `ccps rename <old> <new>` | 管理 profile 名称 | 需要处理引用关系 |
-| 删除 profile | `ccps remove <name>` | 清理不用的 profile | 有误删风险，必须删除前备份 |
-| 设置默认 profile | `ccps default <name>` | 支持 `ccps launch` 默认启动 | 需要更新 config.json |
-| 最近使用记录 | `ccps recent` | 快速查看使用历史 | 只记录 profile 名，不记录任务内容 |
-| 生成 PowerShell 函数 | `ccps alias <name>` | 让用户用 `cc-study` 这类短命令启动 | 需要注意路径转义 |
-| 导出 profile | `ccps export <name>` | 本地迁移、备份 | 必须排除敏感文件 |
-| 导入 profile | `ccps import <path>` | 复用他人配置包 | 需要安全检查 |
+| 功能 | 命令建议 | 当前状态 | 价值 | 风险 |
+|---|---|---|---|---|
+| 复制 profile | `ccps copy <from> <to>` | V0.2 已实现 | 基于已有配置快速创建变体 | 可能复制敏感文件，需要复用 validate |
+| 重命名 profile | `ccps rename <old> <new>` | V0.2 已实现 | 管理 profile 名称 | 需要处理引用关系 |
+| 删除 profile | `ccps remove <name>` | V0.2 已实现 | 清理不用的 profile | 有误删风险，必须删除前备份和精确确认 |
+| 设置默认 profile | `ccps default <name>` | V0.2 已实现 | 支持 `ccps launch` 默认启动 | 需要更新 config.json |
+| 轻量 TUI | `ccps tui` | V0.2 已实现 | 终端内操作常用 profile 管理动作 | 不能扩展成独立 GUI 或第二套业务逻辑 |
+| 最近使用记录 | `ccps recent` | 后续版本 | 快速查看使用历史 | 只记录 profile 名，不记录任务内容 |
+| 生成 PowerShell 函数 | `ccps alias <name>` | 后续版本 | 让用户用 `cc-study` 这类短命令启动 | 需要注意路径转义 |
+| 导出 profile | `ccps export <name>` | 后续版本 | 本地迁移、备份 | 必须排除敏感文件 |
+| 导入 profile | `ccps import <path>` | 后续版本 | 复用他人配置包 | 需要安全检查 |
 
 ---
 
@@ -184,15 +185,60 @@ ccps remove old-study
 
 ```text
 删除前必须自动备份
-必须二次确认
-不允许删除最后一个 profile
-不允许删除 defaultProfile，除非先修改 default
+必须精确输入 profile 名称确认
+允许删除最后一个 profile，并让 list / tui 给出空状态指引
+允许删除 defaultProfile，删除后自动清理 defaultProfile / lastUsedProfile 引用
 不得删除真实 C:\Users\h\.claude
 ```
 
 ---
 
-## 2.4 `ccps alias`
+## 2.4 `ccps default`
+
+### 目标
+
+设置、查看或清除默认启动 profile。
+
+示例：
+
+```powershell
+ccps default coding
+ccps default
+ccps default --clear
+ccps launch
+```
+
+### 约束
+
+```text
+默认 profile 必须指向存在的 profile
+ccps launch 未传 profile 时才使用默认 profile
+未设置默认 profile 时，ccps launch 必须给出明确错误和下一步
+remove / rename 必须同步处理 config.json 中的引用
+```
+
+---
+
+## 2.5 `ccps tui`
+
+### 目标
+
+提供终端里的轻量菜单入口，减少用户记忆命令参数的成本。
+
+### 约束
+
+```text
+只调用与 CLI 相同的 profile management / launcher core service
+不做 GUI
+不引入独立产品模式
+删除仍必须走精确名称确认和备份
+启动只提供 dry-run 入口，不绕过 launch 的验证和 cwd 规则
+空 profile 状态必须给出 init / create 指引
+```
+
+---
+
+## 2.6 `ccps alias`
 
 ### 目标
 
@@ -357,7 +403,7 @@ P3 是更远期的增强，不建议早做。
 | 功能 | 价值 | 风险 |
 |---|---|---|
 | GUI 管理台 | 降低门槛 | 开发成本高，容易偏离核心 |
-| TUI 菜单 | 交互更友好 | 增加依赖和状态复杂度 |
+| TUI 增强 | 已有 V0.2 轻量入口，后续可改善体验 | 必须继续复用 core service，不能形成第二套业务逻辑 |
 | VS Code 集成 | 方便开发者使用 | 需要插件开发 |
 | Windows Terminal 集成 | 每个 profile 一个启动入口 | 需要修改系统级配置 |
 | 模板市场 | 分享 profile 模板 | 安全审核成本高 |
@@ -465,26 +511,25 @@ PRD-CC-Profile-Switch-MVP-v3-global-config-switch.md
 
 ## 6.2 V0.2：Profile 管理增强
 
-建议加入：
+实际加入：
 
 ```text
 copy
 rename
 remove
 default
-recent
-alias
+轻量 TUI
 ```
 
-优先级建议：
+继续延后：
 
 ```text
-1. copy
-2. remove
-3. rename
-4. default
-5. recent
-6. alias
+recent
+alias
+export
+import
+doctor
+diff
 ```
 
 原因：
@@ -493,8 +538,10 @@ alias
 copy 最实用，可以快速创建变体
 remove / rename 是基础管理能力
 default 提升日常启动效率
-recent 是锦上添花
-alias 对 PowerShell 用户很有价值，但不是核心
+轻量 TUI 只作为终端辅助入口，不改变 CLI-first 产品形态
+recent / alias 是锦上添花
+export / import 涉及敏感文件过滤，放到单独版本更稳妥
+doctor / diff 属于诊断与对比能力，放入后续安全与诊断版本
 ```
 
 ---
@@ -694,20 +741,20 @@ GUI 可能把工具膨胀成配置平台
 
 ## 7.6 TUI
 
-不建议进入 MVP。
+不进入 MVP；V0.2 已以轻量终端入口形式落地。
 
 原因：
 
 ```text
-当前用户明确要求 MVP 不做 TUI
-明确命令更适合 Codex 实现和维护
-TUI 会增加状态管理和依赖复杂度
+MVP 先保证明确命令可维护
+V0.2 TUI 只能作为同一套 core service 的轻量入口
+TUI 不应演变成 GUI 或独立产品模式
 ```
 
 结论：
 
 ```text
-TUI 可作为远期可选项，不进入 MVP。
+TUI 可以保留和小步增强，但必须继续服从 CLI-first、Windows-only、本地 profile 管理边界。
 ```
 
 ---
