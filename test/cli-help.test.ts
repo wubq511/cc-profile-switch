@@ -22,6 +22,8 @@ describe('ccps help', () => {
     expect(help).toContain('tui');
     expect(help).toContain('launch');
     expect(help).toContain('[profile]');
+    expect(help).toContain('launch readiness');
+    expect(help).not.toContain('sensitive filenames');
   });
 
   it('does not create profile files when displaying help', () => {

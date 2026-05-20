@@ -147,7 +147,7 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
 
   program
     .command('validate <name>')
-    .description('Check profile JSON, required files, and sensitive filenames.')
+    .description('Check profile launch readiness: required files, JSON, memory, and launch paths.')
     .action(async (name: string) => {
       const appPaths = getAppHomePaths();
       const validation = await validateProfile({ appHomePath: appPaths.appHomePath, name });
