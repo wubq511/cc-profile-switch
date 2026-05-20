@@ -1,8 +1,8 @@
 ---
 name: profile-management-tui
-status: in-progress
+status: completed
 created: 2026-05-20T07:54:16Z
-updated: 2026-05-20T13:41:15Z
+updated: 2026-05-20T14:06:26Z
 progress: 100%
 prd: .claude/prds/profile-management-tui.md
 github: https://github.com/wubq511/cc-profile-switch/issues/16
