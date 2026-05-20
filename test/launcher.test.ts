@@ -180,6 +180,107 @@ describe('launcher', () => {
     expect(plan.cwd).toBe(process.cwd());
   });
 
+  it('resolves an omitted launch profile from the configured default profile', async () => {
+    const { appHome, paths } = await makeProfile('coding');
+    const projectCwd = await makeTempRoot('ccps-project-');
+    const config = await fs.readJson(join(appHome, 'config.json'));
+    await fs.writeJson(join(appHome, 'config.json'), {
+      ...config,
+      defaultProfile: 'coding',
+    });
+
+    const plan = await buildLaunchPlan({
+      appHomePath: appHome,
+      cwd: projectCwd,
+    });
+    const output = formatLaunchDryRun(plan);
+
+    expect(plan).toMatchObject({
+      profileName: 'coding',
+      profileRootPath: paths.profileRootPath,
+      claudeHomePath: paths.claudeHomePath,
+      cwd: projectCwd,
+    });
+    expect(output).toContain('Launch dry-run for profile "coding"');
+  });
+
+  it('lets an explicit launch profile take precedence over the configured default profile', async () => {
+    const { appHome } = await makeProfile('coding');
+    await createProfileFromTemplate({ appHomePath: appHome, name: 'study', template: 'study' });
+    const studyPaths = getProfileTemplatePaths(appHome, 'study');
+    const projectCwd = await makeTempRoot('ccps-project-');
+    const config = await fs.readJson(join(appHome, 'config.json'));
+    await fs.writeJson(join(appHome, 'config.json'), {
+      ...config,
+      defaultProfile: 'coding',
+    });
+
+    const plan = await buildLaunchPlan({
+      appHomePath: appHome,
+      profileName: 'study',
+      cwd: projectCwd,
+    });
+
+    expect(plan.profileName).toBe('study');
+    expect(plan.profileRootPath).toBe(studyPaths.profileRootPath);
+  });
+
+  it('launches with the configured default profile when no profile is requested', async () => {
+    const { appHome, paths } = await makeProfile('coding');
+    const projectCwd = await makeTempRoot('ccps-project-');
+    const config = await fs.readJson(join(appHome, 'config.json'));
+    await fs.writeJson(join(appHome, 'config.json'), {
+      ...config,
+      defaultProfile: 'coding',
+    });
+    const spawnCalls: Array<{ command: string; args: string[]; cwd: string }> = [];
+
+    const result = await launchProfile({
+      appHomePath: appHome,
+      cwd: projectCwd,
+      spawnProcess: async (command, args, options) => {
+        spawnCalls.push({ command, args, cwd: options.cwd });
+        return { exitCode: 0 };
+      },
+      clock: () => new Date('2026-05-20T11:30:00Z'),
+    });
+
+    expect(result.plan.profileName).toBe('coding');
+    expect(spawnCalls).toEqual([
+      {
+        command: 'claude',
+        args: ['--dangerously-skip-permissions', '--mcp-config', paths.mcpConfigPath],
+        cwd: projectCwd,
+      },
+    ]);
+    await expect(fs.readJson(join(appHome, 'config.json'))).resolves.toMatchObject({
+      lastUsedProfile: 'coding',
+      updatedAt: '2026-05-20T11:30:00.000Z',
+    });
+  });
+
+  it('rejects omitted launch profiles when no default profile is configured', async () => {
+    const { appHome } = await makeProfile('coding');
+
+    await expect(buildLaunchPlan({ appHomePath: appHome })).rejects.toMatchObject({
+      code: 'DEFAULT_PROFILE_NOT_SET',
+      guidance: 'Pass a profile name or set one with ccps default <profile>.',
+    });
+  });
+
+  it('rejects omitted launch profiles when the configured default profile is missing', async () => {
+    const { appHome } = await makeProfile('coding');
+    const config = await fs.readJson(join(appHome, 'config.json'));
+    await fs.writeJson(join(appHome, 'config.json'), {
+      ...config,
+      defaultProfile: 'missing',
+    });
+
+    await expect(buildLaunchPlan({ appHomePath: appHome })).rejects.toMatchObject({
+      code: 'PROFILE_NOT_FOUND',
+    });
+  });
+
   it('rejects an explicit cwd that does not exist', async () => {
     const { appHome } = await makeProfile();
 

@@ -520,6 +520,28 @@ describe('profile lifecycle commands', () => {
     expect(result.output).toContain('Dry run: Claude Code was not started.');
   });
 
+  it('launch dry-run uses the default profile when no profile argument is provided', async () => {
+    const userHome = await makeUserHome();
+    const appHome = join(userHome, '.cc-profile-switch');
+    const appPaths = getAppHomePaths(appHome);
+    const profilePaths = getProfileTemplatePaths(appHome, 'coding');
+    const projectCwd = await makeUserHome();
+
+    await runCli(userHome, ['init']);
+    const config = await fs.readJson(appPaths.configPath);
+    await fs.writeJson(appPaths.configPath, {
+      ...config,
+      defaultProfile: 'coding',
+    });
+
+    const result = await runCli(userHome, ['launch', '--dry-run', '--cwd', projectCwd]);
+
+    expect(result.output).toContain('Launch dry-run for profile "coding"');
+    expect(result.output).toContain(`Profile path: ${profilePaths.profileRootPath}`);
+    expect(result.output).toContain(`Cwd: ${projectCwd}`);
+    expect(result.output).toContain('Dry run: Claude Code was not started.');
+  });
+
   it('launch starts Claude Code when dry-run is not requested', async () => {
     const userHome = await makeUserHome();
     const projectCwd = await makeUserHome();
@@ -540,5 +562,45 @@ describe('profile lifecycle commands', () => {
     });
     expect(spawnCalls[0].args).toContain('--mcp-config');
     expect(result.output).toContain('Launching Claude Code with profile "coding"');
+  });
+
+  it('launch starts Claude Code with the default profile when no profile argument is provided', async () => {
+    const userHome = await makeUserHome();
+    const appHome = join(userHome, '.cc-profile-switch');
+    const appPaths = getAppHomePaths(appHome);
+    const projectCwd = await makeUserHome();
+    const spawnCalls: Array<{ command: string; args: string[]; cwd: string }> = [];
+
+    await runCli(userHome, ['init']);
+    const config = await fs.readJson(appPaths.configPath);
+    await fs.writeJson(appPaths.configPath, {
+      ...config,
+      defaultProfile: 'coding',
+    });
+
+    const result = await runCliWithOptions(userHome, ['launch', '--cwd', projectCwd], {
+      spawnCalls,
+      clock: () => new Date('2026-05-20T11:45:00Z'),
+    });
+
+    expect(spawnCalls).toHaveLength(1);
+    expect(spawnCalls[0]).toMatchObject({
+      command: 'claude',
+      cwd: projectCwd,
+    });
+    expect(result.output).toContain('Launching Claude Code with profile "coding"');
+    await expect(fs.readJson(appPaths.configPath)).resolves.toMatchObject({
+      lastUsedProfile: 'coding',
+    });
+  });
+
+  it('launch without a profile fails clearly when no default is configured', async () => {
+    const userHome = await makeUserHome();
+
+    await runCli(userHome, ['init']);
+
+    await expect(runCli(userHome, ['launch', '--dry-run'])).rejects.toMatchObject({
+      code: 'DEFAULT_PROFILE_NOT_SET',
+    });
   });
 });

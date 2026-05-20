@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import { loadAppConfig, saveAppConfig, type Clock } from './app-config';
 import { resolveApiSettings, type ApiSettingsSource } from './api-settings';
+import { resolveLaunchProfile } from './profile-management';
 import { spawnProcess as defaultSpawnProcess, type SpawnProcess } from '../platform/process';
 import { resolveInside } from '../platform/windows-path';
 import { type ProfileLaunchConfig } from '../schemas/profile';
@@ -16,7 +17,7 @@ import {
 
 export type LaunchPlanOptions = {
   appHomePath: string;
-  profileName: string;
+  profileName?: string;
   cwd?: string;
   command?: string;
 };
@@ -61,10 +62,14 @@ export type LaunchPlan = {
 
 export async function buildLaunchPlan(options: LaunchPlanOptions): Promise<LaunchPlan> {
   await loadAppConfig(options.appHomePath);
+  const profileName = await resolveLaunchProfile({
+    appHomePath: options.appHomePath,
+    requestedProfile: options.profileName,
+  });
 
   const validation = await validateProfile({
     appHomePath: options.appHomePath,
-    name: options.profileName,
+    name: profileName,
   });
 
   if (isLaunchBlocking(validation)) {

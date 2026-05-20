@@ -280,11 +280,11 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
     });
 
   program
-    .command('launch <profile>')
+    .command('launch [profile]')
     .description('Start Claude Code with the selected user-level profile.')
     .option('--dry-run', 'Print the launch plan without starting Claude Code.')
     .option('--cwd <path>', 'Project directory to launch Claude Code from.')
-    .action(async (profile: string, options: { dryRun?: boolean; cwd?: string }) => {
+    .action(async (profile: string | undefined, options: { dryRun?: boolean; cwd?: string }) => {
       const appPaths = getAppHomePaths();
       if (options.dryRun) {
         const plan = await buildLaunchPlan({

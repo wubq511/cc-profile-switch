@@ -254,7 +254,7 @@ export async function resolveLaunchProfile(options: ResolveLaunchProfileOptions)
   const defaultProfile = await getDefaultProfile({ appHomePath });
   if (defaultProfile === undefined) {
     throw new CcpsError('DEFAULT_PROFILE_NOT_SET', 'No profile was requested and no default profile is configured.', {
-      guidance: 'Pass a profile name or set one with ccps default set <profile>.',
+      guidance: 'Pass a profile name or set one with ccps default <profile>.',
     });
   }
 
