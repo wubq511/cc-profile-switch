@@ -1,10 +1,19 @@
 import { Command } from 'commander';
 import fs from 'fs-extra';
 import path from 'node:path';
+import { createInterface } from 'node:readline/promises';
 
 import { getAppHomePaths, loadAppConfig } from '../core/app-config';
 import { buildLaunchPlan, formatLaunchDryRun, launchProfile } from '../core/launcher';
 import { backupProfile, createProfile, initProfiles, type Clock } from '../core/profile';
+import {
+  clearDefaultProfile,
+  copyProfile,
+  getDefaultProfile,
+  removeProfile,
+  renameProfile,
+  setDefaultProfile,
+} from '../core/profile-management';
 import { getProfileTemplatePaths } from '../core/profile-template';
 import { validateProfile, type ValidationFinding } from '../core/validator';
 import { openWithDefaultEditor, type OpenTarget } from '../platform/editor';
@@ -19,6 +28,7 @@ import { CcpsError } from '../utils/errors';
 
 export type CommandRuntime = {
   writeOut: (value: string) => void;
+  readInput: (prompt: string) => Promise<string>;
   openTarget: OpenTarget;
   spawnProcess: SpawnProcess;
   clock: Clock;
@@ -161,6 +171,102 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
     });
 
   program
+    .command('copy <from> <to>')
+    .description('Copy a profile to a new profile name.')
+    .action(async (from: string, to: string) => {
+      const result = await copyProfile({ from, to, clock: runtime.clock });
+
+      runtime.writeOut(`Copied profile "${result.sourceName}" to "${result.targetName}".\n`);
+      runtime.writeOut(`Source: ${result.sourcePath}\n`);
+      runtime.writeOut(`Target: ${result.targetPath}\n`);
+      runtime.writeOut(`Next: ccps launch ${result.targetName} --dry-run\n`);
+    });
+
+  program
+    .command('rename <old> <new>')
+    .description('Rename a profile and update app config references.')
+    .action(async (oldName: string, newName: string) => {
+      const appPaths = getAppHomePaths();
+      const previousConfig = await loadAppConfig(appPaths.appHomePath);
+      const result = await renameProfile({
+        appHomePath: appPaths.appHomePath,
+        oldName,
+        newName,
+        clock: runtime.clock,
+      });
+
+      runtime.writeOut(`Renamed profile "${result.oldName}" to "${result.newName}".\n`);
+      runtime.writeOut(`Path: ${result.newPath}\n`);
+
+      if (previousConfig.defaultProfile === result.oldName) {
+        runtime.writeOut(`Updated default profile reference: ${result.newName}\n`);
+      }
+
+      if (previousConfig.lastUsedProfile === result.oldName) {
+        runtime.writeOut(`Updated last-used profile reference: ${result.newName}\n`);
+      }
+
+      runtime.writeOut(`Next: ccps launch ${result.newName} --dry-run\n`);
+    });
+
+  program
+    .command('remove <name>')
+    .description('Remove a profile after exact-name confirmation and backup.')
+    .action(async (name: string) => {
+      const confirmation = await runtime.readInput(
+        `Type the exact profile name to remove "${name}": `,
+      );
+      const result = await removeProfile({
+        name,
+        confirmation,
+        clock: runtime.clock,
+      });
+
+      runtime.writeOut(`Removed profile "${result.profileName}".\n`);
+      runtime.writeOut(`Backup: ${result.backupPath}\n`);
+      runtime.writeOut(`Removed path: ${result.removedPath}\n`);
+    });
+
+  program
+    .command('default [name]')
+    .description('Show, set, or clear the default launch profile.')
+    .option('--clear', 'Clear the default profile.')
+    .action(async (name: string | undefined, options: { clear?: boolean }) => {
+      const appPaths = getAppHomePaths();
+
+      if (options.clear) {
+        await clearDefaultProfile({
+          appHomePath: appPaths.appHomePath,
+          clock: runtime.clock,
+        });
+        runtime.writeOut('Default profile cleared.\n');
+        runtime.writeOut('Next: ccps default <profile>\n');
+        return;
+      }
+
+      if (name === undefined) {
+        const defaultProfile = await getDefaultProfile({ appHomePath: appPaths.appHomePath });
+        if (defaultProfile === undefined) {
+          runtime.writeOut('No default profile set.\n');
+          runtime.writeOut('Next: ccps default <profile>\n');
+          return;
+        }
+
+        runtime.writeOut(`Default profile: ${defaultProfile}\n`);
+        runtime.writeOut('Next: ccps launch\n');
+        return;
+      }
+
+      const defaultProfile = await setDefaultProfile({
+        appHomePath: appPaths.appHomePath,
+        name,
+        clock: runtime.clock,
+      });
+      runtime.writeOut(`Default profile set: ${defaultProfile}\n`);
+      runtime.writeOut('Next: ccps launch\n');
+    });
+
+  program
     .command('edit <name> [file]')
     .description('Open a profile file or directory in a new VS Code window.')
     .action(async (name: string, file?: string) => {
@@ -210,6 +316,18 @@ export const registerPlaceholderCommands = registerCommands;
 const defaultRuntime: CommandRuntime = {
   writeOut: (value) => {
     process.stdout.write(value);
+  },
+  readInput: async (prompt) => {
+    const readline = createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+
+    try {
+      return await readline.question(prompt);
+    } finally {
+      readline.close();
+    }
   },
   openTarget: openWithDefaultEditor,
   spawnProcess,

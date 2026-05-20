@@ -15,6 +15,10 @@ describe('ccps help', () => {
     expect(help).toContain('CC-Profile-Switch');
     expect(help).toContain('Usage: ccps');
     expect(help).toContain('init');
+    expect(help).toContain('copy');
+    expect(help).toContain('rename');
+    expect(help).toContain('remove');
+    expect(help).toContain('default');
     expect(help).toContain('launch');
     expect(help).toContain('<profile>');
   });
