@@ -906,10 +906,11 @@ claude-home/agents exists
 claude-home/plugins exists
 mcp.json is valid JSON object
 no path traversal
-no sensitive file names
 ```
 
 ### Sensitive files
+
+Sensitive file names are not part of `ccps validate` launch readiness. They remain relevant to commands that open, export, import, package, or migrate profile contents.
 
 高风险：
 
@@ -941,7 +942,6 @@ invalid profile.json
 invalid settings.json
 invalid mcp.json
 missing CLAUDE.md
-high-risk sensitive file exists
 path traversal
 ```
 
@@ -1873,10 +1873,13 @@ Always:
 validate before launch
 launch 支持 dry-run
 错误信息给出下一步
-敏感文件扫描
 ```
 
 ## 12.2 Sensitive Scan
+
+`ccps validate` does not run sensitive filename scanning. Validation is a launch-readiness check: required files, JSON/schema validity, profile memory path, plugin path traversal, and other conditions that directly affect whether Claude Code can start with the selected profile.
+
+Sensitive filename checks are reserved for file-opening and future packaging flows such as export/import, where the tool is about to expose, move, or bundle profile contents.
 
 High risk keywords:
 
@@ -1903,15 +1906,17 @@ transcript
 High risk:
 
 ```text
-validate = error
-launch = block
+validate = ignored
+launch = ignored
+edit/export/import = block or require explicit safety handling
 ```
 
 Medium risk:
 
 ```text
-validate = warning
-launch = warning
+validate = ignored
+launch = ignored
+edit/export/import = warn or require explicit safety handling
 ```
 
 ## 12.3 Auth/Session Policy

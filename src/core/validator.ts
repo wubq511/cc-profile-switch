@@ -55,9 +55,6 @@ const jsonFiles = [
   ['mcp.json', 'mcpConfigPath'],
 ] as const;
 
-const highRiskSensitiveNames = ['token', 'secret', 'credential', 'credentials', 'oauth'];
-const mediumRiskSensitiveNames = ['.claude.json', 'session', 'sessions', 'history', 'cache', 'log', 'transcript'];
-
 export async function validateProfile(options: ValidateProfileOptions): Promise<ProfileValidationResult> {
   const findings: ValidationFinding[] = [];
   let profileName = options.name;
@@ -118,8 +115,6 @@ export async function validateProfile(options: ValidateProfileOptions): Promise<
   if (settingsJson !== undefined) {
     validateProfileMemorySettings(paths, settingsJson, findings);
   }
-
-  await scanSensitiveNames(paths.profileRootPath, findings);
 
   return {
     profileName,
@@ -247,44 +242,6 @@ function validateLaunchPaths(claudeHomePath: string, config: ProfileConfig, find
       throw error;
     }
   }
-}
-
-async function scanSensitiveNames(rootPath: string, findings: ValidationFinding[]): Promise<void> {
-  if (!(await fs.pathExists(rootPath))) {
-    return;
-  }
-
-  const entries = await fs.readdir(rootPath, { withFileTypes: true });
-  for (const entry of entries) {
-    const entryPath = path.win32.join(rootPath, entry.name);
-    const lowerName = entry.name.toLowerCase();
-
-    if (matchesSensitiveName(lowerName, highRiskSensitiveNames)) {
-      findings.push({
-        severity: 'error',
-        code: 'SENSITIVE_FILENAME_HIGH',
-        message: 'High-risk sensitive filename found in the profile.',
-        path: entryPath,
-        suggestion: 'Remove credentials, tokens, OAuth data, sessions, and real Claude state from ccps profiles.',
-      });
-    } else if (matchesSensitiveName(lowerName, mediumRiskSensitiveNames)) {
-      findings.push({
-        severity: 'warning',
-        code: 'SENSITIVE_FILENAME_MEDIUM',
-        message: 'Medium-risk sensitive filename found in the profile.',
-        path: entryPath,
-        suggestion: 'Review whether history, cache, logs, or transcripts should be kept in this profile.',
-      });
-    }
-
-    if (entry.isDirectory()) {
-      await scanSensitiveNames(entryPath, findings);
-    }
-  }
-}
-
-function matchesSensitiveName(name: string, keywords: string[]): boolean {
-  return keywords.some((keyword) => name.includes(keyword));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

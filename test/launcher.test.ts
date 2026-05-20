@@ -383,10 +383,11 @@ describe('launcher', () => {
     });
   });
 
-  it('formats dry-run output with validation, env, args, warnings, and project config message', async () => {
+  it('formats dry-run output with launch readiness validation, env, args, and project config message', async () => {
     const { appHome, paths } = await makeProfile();
     const projectCwd = await makeTempRoot('ccps-project-');
     await fs.writeFile(join(paths.claudeHomePath, 'chat-history.log'), '', 'utf8');
+    await fs.writeFile(join(paths.claudeHomePath, 'oauth-token.json'), '{}', 'utf8');
 
     const plan = await buildLaunchPlan({
       appHomePath: appHome,
@@ -407,8 +408,10 @@ describe('launcher', () => {
     expect(output).toContain('Memory:');
     expect(output).toContain(`user: ${paths.claudeMdPath}`);
     expect(output).toContain(`auto: ${paths.autoMemoryPath}`);
-    expect(output).toContain('Validation: warning');
-    expect(output).toContain('SENSITIVE_FILENAME_MEDIUM');
+    expect(output).toContain('Validation: valid');
+    expect(output).toContain('Warnings:');
+    expect(output).toContain('(none)');
+    expect(output).not.toContain('SENSITIVE_FILENAME');
     expect(output).toContain('Project config: preserved because Claude starts in the launch cwd.');
     expect(output).toContain('Dry run: Claude Code was not started.');
   });

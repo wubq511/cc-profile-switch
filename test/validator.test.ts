@@ -115,41 +115,38 @@ describe('profile validator', () => {
     );
   });
 
-  it('reports high-risk sensitive filenames as errors and medium-risk names as warnings', async () => {
+  it('ignores sensitive-looking runtime filenames because validate only checks launch readiness', async () => {
     const { appHome, paths } = await makeProfile();
     await fs.writeFile(join(paths.claudeHomePath, 'oauth-token.json'), '{}', 'utf8');
-    await fs.writeFile(join(paths.claudeHomePath, 'chat-history.log'), '', 'utf8');
-
-    const result = await validateProfile({ appHomePath: appHome, name: 'coding' });
-
-    expect(result.status).toBe('error');
-    expect(result.findings).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ severity: 'error', code: 'SENSITIVE_FILENAME_HIGH' }),
-        expect.objectContaining({ severity: 'warning', code: 'SENSITIVE_FILENAME_MEDIUM' }),
-      ]),
-    );
-  });
-
-  it('warns but does not block Claude-created profile state names', async () => {
-    const { appHome, paths } = await makeProfile();
     await fs.writeFile(join(paths.claudeHomePath, '.claude.json'), '{}', 'utf8');
     await fs.ensureDir(join(paths.claudeHomePath, 'sessions'));
-    await fs.ensureDir(join(paths.pluginsPath, 'example-plugin'));
-    await fs.writeFile(join(paths.pluginsPath, 'example-plugin', 'session-start.sh'), '', 'utf8');
+    await fs.ensureDir(join(paths.claudeHomePath, 'cache'));
 
     const result = await validateProfile({ appHomePath: appHome, name: 'coding' });
 
-    expect(result.status).toBe('warning');
-    expect(result.findings).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ severity: 'warning', code: 'SENSITIVE_FILENAME_MEDIUM' }),
-      ]),
-    );
+    expect(result.status).toBe('valid');
+    expect(result.findings).toEqual([]);
+  });
+
+  it('does not report benign documentation names containing sensitive substrings as high-risk', async () => {
+    const { appHome, paths } = await makeProfile();
+    const designReferencesPath = join(paths.pluginsPath, 'marketplaces', 'waza', 'skills', 'design', 'references');
+    const designTokensPath = join(designReferencesPath, 'design-tokens.md');
+    await fs.ensureDir(designReferencesPath);
+    await fs.writeFile(designTokensPath, '# Design tokens\n', 'utf8');
+
+    const result = await validateProfile({ appHomePath: appHome, name: 'coding' });
+
+    expect(result.status).toBe('valid');
     expect(result.findings).not.toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ severity: 'error', code: 'SENSITIVE_FILENAME_HIGH' }),
+        expect.objectContaining({
+          severity: 'error',
+          code: 'SENSITIVE_FILENAME_HIGH',
+          path: designTokensPath,
+        }),
       ]),
     );
   });
+
 });
