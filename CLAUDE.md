@@ -34,6 +34,18 @@ npm run check        # lint + test + build
 
 Binary entry: `"bin": { "ccps": "dist/index.js" }`. Use `npm link` for local dev.
 
+## CodeGraph
+
+This repository commits a `.codegraph/` index and uses the project-local CodeGraph CLI through npm scripts. When you need to understand, locate, or explore code in this repository, prefer CodeGraph before broad `rg`/file reads:
+
+```bash
+npm run codegraph:status
+npm run codegraph:query -- <symbol>
+npm run codegraph:explore -- "<question or area>"
+```
+
+Use the project-local dependency only. Do not require or modify global Codex MCP configuration such as `~/.codex/config.toml`; Codex project-local MCP is not available here.
+
 ## Source Structure
 
 ```text
