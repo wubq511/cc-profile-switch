@@ -1,7 +1,6 @@
 import fs from 'fs-extra';
-import path from 'node:path';
 
-import { resolveInside, validateProfileName } from '../platform/windows-path';
+import { areSameFilesystemPath, resolveInside, validateProfileName } from '../platform/path';
 import { profileConfigSchema, type ProfileConfig } from '../schemas/profile';
 import { CcpsError } from '../utils/errors';
 import { getProfileTemplatePaths, type ProfileTemplatePaths } from './profile-template';
@@ -43,7 +42,7 @@ const requiredFiles = [
 const requiredDirectories = [
   ['claude-home', 'claudeHomePath'],
   ['memory', 'memoryPath'],
-  ['memory\\auto', 'autoMemoryPath'],
+  ['memory/auto', 'autoMemoryPath'],
   ['skills', 'skillsPath'],
   ['agents', 'agentsPath'],
   ['plugins', 'pluginsPath'],
@@ -139,10 +138,7 @@ function validateProfileMemorySettings(
   const configuredPath = settingsJson.autoMemoryDirectory;
   const expectedPath = paths.autoMemoryPath;
 
-  if (
-    typeof configuredPath !== 'string' ||
-    path.win32.resolve(configuredPath).toLowerCase() !== path.win32.resolve(expectedPath).toLowerCase()
-  ) {
+  if (typeof configuredPath !== 'string' || !areSameFilesystemPath(configuredPath, expectedPath)) {
     findings.push({
       severity: 'error',
       code: 'PROFILE_MEMORY_DIRECTORY_MISMATCH',

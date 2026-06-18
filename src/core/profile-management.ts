@@ -3,7 +3,7 @@ import fs from 'fs-extra';
 import { type AppConfig } from '../schemas/config';
 import { profileConfigSchema, type ProfileConfig } from '../schemas/profile';
 import { CcpsError } from '../utils/errors';
-import { validateProfileName } from '../platform/windows-path';
+import { validateProfileName } from '../platform/path';
 import {
   getAppHomePaths,
   loadAppConfig,

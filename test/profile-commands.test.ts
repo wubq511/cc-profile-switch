@@ -43,6 +43,7 @@ describe('profile lifecycle commands', () => {
       spawnCalls?: Array<{ command: string; args: string[]; cwd: string }>;
     } = {},
   ): Promise<CliRun> {
+    const originalHome = process.env.HOME;
     const originalUserProfile = process.env.USERPROFILE;
     const output: string[] = [];
     const program = createProgram({
@@ -68,13 +69,19 @@ describe('profile lifecycle commands', () => {
       writeErr: (value) => output.push(value),
     });
 
-    process.env.USERPROFILE = userHome;
+    process.env.HOME = userHome;
+    delete process.env.USERPROFILE;
     program.exitOverride();
 
     try {
       await program.parseAsync(['node', 'ccps', ...args], { from: 'node' });
       return { output: output.join('') };
     } finally {
+      if (originalHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = originalHome;
+      }
       if (originalUserProfile === undefined) {
         delete process.env.USERPROFILE;
       } else {
@@ -108,6 +115,50 @@ describe('profile lifecycle commands', () => {
 
     expect(result.output).toContain('Initialized ccps app home');
     expect(result.output).toContain('Next: ccps list');
+  });
+
+  it('init imports ANTHROPIC env from isolated Claude settings into common API settings', async () => {
+    const userHome = await makeUserHome();
+    const appHome = join(userHome, '.cc-profile-switch');
+    const claudeSettingsPath = join(userHome, '.claude', 'settings.json');
+    const appPaths = getAppHomePaths(appHome);
+
+    await fs.ensureDir(join(userHome, '.claude'));
+    await fs.writeJson(claudeSettingsPath, {
+      env: {
+        ANTHROPIC_AUTH_TOKEN: 'source-token',
+        ANTHROPIC_BASE_URL: 'https://source.example.test',
+        OPENAI_API_KEY: 'ignored',
+      },
+    });
+
+    const result = await runCli(userHome, ['init']);
+
+    await expect(fs.readJson(appPaths.apiSettingsPath)).resolves.toEqual({
+      env: {
+        ANTHROPIC_AUTH_TOKEN: 'source-token',
+        ANTHROPIC_BASE_URL: 'https://source.example.test',
+      },
+    });
+    expect(result.output).toContain('Imported API env keys: ANTHROPIC_AUTH_TOKEN, ANTHROPIC_BASE_URL');
+    expect(result.output).not.toContain('source-token');
+
+    const dryRun = await runCli(userHome, ['launch', 'coding', '--dry-run', '--cwd', userHome]);
+
+    expect(dryRun.output).toContain('common: present');
+    expect(dryRun.output).toContain('ANTHROPIC_AUTH_TOKEN');
+    expect(dryRun.output).toContain('ANTHROPIC_BASE_URL');
+    expect(dryRun.output).not.toContain('source-token');
+  });
+
+  it('uses HOME as the default app home on macOS', async () => {
+    const userHome = await makeUserHome();
+    const appHome = join(userHome, '.cc-profile-switch');
+
+    const result = await runCli(userHome, ['init']);
+
+    expect(result.output).toContain(`Initialized ccps app home: ${appHome}`);
+    expect(await fs.pathExists(join(appHome, 'config.json'))).toBe(true);
   });
 
   it('init can be run repeatedly without overwriting user-edited profile files', async () => {
@@ -275,6 +326,7 @@ describe('profile lifecycle commands', () => {
     expect(result.output).toContain(`Auto memory: ${profilePaths.autoMemoryPath}`);
     expect(result.output).toContain('profile.json: present');
     expect(result.output).toContain('settings.json: valid JSON');
+    expect(result.output).toContain('memory/auto: present');
     expect(result.output).toContain('Project config: preserved from the launch cwd');
   });
 

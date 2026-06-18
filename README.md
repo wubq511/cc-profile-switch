@@ -1,9 +1,18 @@
 # CC-Profile-Switch
 
-`ccps` 是一个仅限 Windows 的 Node.js CLI，用于在保留当前项目上下文的同时，切换 Claude Code 的用户级全局配置（Profile）。
+`ccps` 是一个支持 Windows 和 macOS 的 Node.js CLI，用于在保留当前项目上下文的同时，切换 Claude Code 的用户级全局配置（Profile）。
+
+Windows：
 
 ```powershell
 cd D:\Projects\my-app
+ccps launch coding
+```
+
+macOS：
+
+```sh
+cd ~/Projects/my-app
 ccps launch coding
 ```
 
@@ -11,7 +20,7 @@ ccps launch coding
 
 ## 安装
 
-```powershell
+```sh
 npm install
 npm run build
 npm link
@@ -19,17 +28,17 @@ npm link
 
 本地开发（不使用 link）：
 
-```powershell
+```sh
 npm run dev -- --help
 npm run dev -- init
 npm run dev -- launch coding --dry-run
 ```
 
-`ccps edit` 需要 VS Code 的 `code` 命令可用；VS Code 安装后可通过命令面板启用 Shell Command。
+`ccps edit` 会打开新的 VS Code 窗口：Windows 通过 VS Code 的 `code` 命令解析，macOS 会通过 Visual Studio Code app 打开。
 
 ## 命令
 
-```powershell
+```sh
 ccps init
 ccps list
 ccps create <name> --template <coding|study|work|research|general|blank>
@@ -65,7 +74,12 @@ ccps tui
 
 ## 配置布局
 
-配置文件（Profiles）存放路径：
+配置文件（Profiles）默认存放路径：
+
+- Windows：`%USERPROFILE%\.cc-profile-switch`
+- macOS：`~/.cc-profile-switch`
+
+Windows 结构：
 
 ```text
 %USERPROFILE%\.cc-profile-switch\
@@ -87,6 +101,28 @@ ccps tui
   backups\
 ```
 
+macOS 结构相同，只使用 POSIX 路径分隔符：
+
+```text
+~/.cc-profile-switch/
+  config.json
+  api-settings.json          # 可选：通用 API 环境变量
+  profiles/
+    <name>/
+      profile.json
+      claude-home/
+        CLAUDE.md
+        settings.json        # autoMemoryDirectory + 默认 env + 可选 API env 覆盖
+        memory/
+          auto/
+            MEMORY.md
+        skills/
+        agents/
+        plugins/
+      mcp.json
+  backups/
+```
+
 `claude-home` 将作为 `CLAUDE_CONFIG_DIR` 传递给 Claude Code。项目级的 `CLAUDE.md`、`.claude/settings.json`、`.claude/agents`、`.claude/skills` 以及 `.mcp.json` 仍由启动时的 cwd 控制。
 
 ## Memory 隔离
@@ -95,8 +131,9 @@ ccps tui
 
 - 用户级 memory / instructions：`profiles\<name>\claude-home\CLAUDE.md`
 - Claude Code auto memory：`profiles\<name>\claude-home\memory\auto`
+- macOS 对应路径：`profiles/<name>/claude-home/CLAUDE.md` 和 `profiles/<name>/claude-home/memory/auto`
 
-`profiles\<name>\claude-home\settings.json` 会显式包含：
+`profiles\<name>\claude-home\settings.json`（macOS：`profiles/<name>/claude-home/settings.json`）会显式包含：
 
 ```json
 {
@@ -107,6 +144,8 @@ ccps tui
 }
 ```
 
+macOS 下同一字段会写入 `"/Users/<you>/.cc-profile-switch/profiles/<name>/claude-home/memory/auto"`。
+
 因此使用 `ccps launch coding` 启动时，Claude Code 的用户配置目录是 coding 的 `claude-home`，auto memory 写入 coding 的 `claude-home\memory\auto`；切换到 `study` 时会写入 study 自己的 `claude-home\memory\auto`，互不混用。
 
 新建 profile 会默认写入 `CLAUDE_CODE_ATTRIBUTION_HEADER=0`。对已经存在的 profile，重新运行 `ccps init` 会在缺失时补齐这个 env 键，并保留已有 `settings.json` 字段。
@@ -115,7 +154,7 @@ Claude Code 自己安装和管理的 plugin 位于当前 profile 的 `claude-hom
 
 ## API 配置
 
-通用 API 认证信息放在 `%USERPROFILE%\.cc-profile-switch\api-settings.json`：
+通用 API 认证信息放在 Windows 的 `%USERPROFILE%\.cc-profile-switch\api-settings.json` 或 macOS 的 `~/.cc-profile-switch/api-settings.json`：
 
 ```json
 {
@@ -127,7 +166,9 @@ Claude Code 自己安装和管理的 plugin 位于当前 profile 的 `claude-hom
 }
 ```
 
-某个 profile 自己的 API 覆盖直接写在 `profiles\<name>\claude-home\settings.json` 的 `env` 中。优先级为：profile 优先，其次是通用 `api-settings.json`，最后是启动 `ccps` 时继承的进程环境变量。也就是说，`claude-home\settings.json` 中的同名 `env` 键会覆盖 `%USERPROFILE%\.cc-profile-switch\api-settings.json`，profile 没有配置的键会从通用配置继承。
+`ccps init` 会尝试从当前用户 Claude settings（Windows：`%USERPROFILE%\.claude\settings.json`；macOS：`~/.claude/settings.json`）读取 `env.ANTHROPIC_*` 字符串键，并把缺失的键写入 common `api-settings.json`。已有 `api-settings.json` 的同名键会保留，命令输出只显示导入的键名，不显示值。所有 profile 都会通过 common api-settings.json 复用这些模型/API 配置，所以不需要为每个 profile 单独配置模型和 API。
+
+某个 profile 自己的 API 覆盖直接写在 `profiles\<name>\claude-home\settings.json`（macOS：`profiles/<name>/claude-home/settings.json`）的 `env` 中。优先级为：profile 优先，其次是通用 `api-settings.json`，最后是启动 `ccps` 时继承的进程环境变量。也就是说，`claude-home\settings.json` 中的同名 `env` 键会覆盖 app home 下的 `api-settings.json`，profile 没有配置的键会从通用配置继承。
 
 `ccps launch <profile> --dry-run` 只显示 API 环境变量键名和配置来源状态，不显示 token 或其他值。
 
@@ -164,13 +205,13 @@ spawn('claude', args, {
 
 ## 安全边界
 
-`ccps` 不会自动从真实的 `C:\Users\<you>\.claude` 中复制、读取、迁移或管理 OAuth、会话（session）、令牌（token）、历史记录、缓存或凭据内容。
+`ccps` 不会自动从真实的 Windows `C:\Users\<you>\.claude` 或 macOS `~/.claude` 中复制或管理 OAuth、会话（session）、令牌（token）、历史记录、缓存或凭据内容。`ccps init` 只会为 API 复用读取 `settings.json` 的 `env.ANTHROPIC_*` 字符串键，并写入本机 app home 的 common `api-settings.json`。
 
 基于 API 的 Claude Code 用户可以把通用 `ANTHROPIC_*` 环境变量放进 `api-settings.json`，把 profile 专属覆盖放进对应的 `claude-home\settings.json`。这些文件包含真实密钥时应只留在本机用户目录，不要复制进项目仓库或提交到 Git。验证说明详见 `VERIFY-CLAUDE-CODE-BEHAVIOR.md`。
 
 ## 运行验证
 
-```powershell
+```sh
 npm run lint
 npm run test
 npm run build
@@ -185,14 +226,14 @@ npm run check
 
 拉取仓库后先安装依赖，再检查索引：
 
-```powershell
+```sh
 npm install
 npm run codegraph:status
 ```
 
 常用命令：
 
-```powershell
+```sh
 npm run codegraph:init      # 初始化并构建 .codegraph/
 npm run codegraph:index     # 强制完整重建索引
 npm run codegraph:sync      # 增量同步索引
@@ -202,6 +243,6 @@ npm run codegraph:explore -- "launch profile flow"
 
 如果你的 Claude Code / Codex / Cursor 还没有 CodeGraph MCP 工具，需要在本机单独执行一次：
 
-```powershell
+```sh
 npx @colbymchenry/codegraph install
 ```

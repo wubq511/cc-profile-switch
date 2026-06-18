@@ -1,6 +1,6 @@
 import fs from 'fs-extra';
 
-import { getAppHomePath, resolveInside } from '../platform/windows-path';
+import { getAppHomePath, resolveInside } from '../platform/path';
 import { appConfigSchema, type AppConfig } from '../schemas/config';
 import { CcpsError } from '../utils/errors';
 

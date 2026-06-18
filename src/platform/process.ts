@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import fs from 'fs-extra';
 import path from 'node:path';
 
-import { resolveFilesystemPath } from './windows-path';
+import { resolveFilesystemPath } from './path';
 
 export type ProcessSpawnOptions = {
   cwd: string;
@@ -30,8 +30,9 @@ export async function resolveSpawnCommand(
   command: string,
   args: string[],
   env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
 ): Promise<ResolvedSpawnCommand> {
-  const resolvedCommand = await resolveWindowsCommand(command, env);
+  const resolvedCommand = platform === 'win32' ? await resolveWindowsCommand(command, env) : undefined;
 
   return {
     command: resolvedCommand ?? command,

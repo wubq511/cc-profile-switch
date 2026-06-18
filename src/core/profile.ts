@@ -1,6 +1,6 @@
 import fs from 'fs-extra';
 
-import { resolveInside, validateProfileName } from '../platform/windows-path';
+import { resolveInside, validateProfileName } from '../platform/path';
 import {
   createAppConfig,
   ensureAppHomeStructure,
@@ -15,6 +15,7 @@ import {
   type ProfileTemplateName,
   type ProfileTemplatePaths,
 } from './profile-template';
+import { importClaudeApiSettings, type ImportClaudeApiSettingsResult } from './claude-settings';
 import { CcpsError } from '../utils/errors';
 
 export const defaultProfileNames: ProfileTemplateName[] = ['coding', 'study', 'work', 'research', 'general'];
@@ -29,6 +30,7 @@ export type InitProfilesResult = {
   configCreated: boolean;
   createdProfiles: ProfileTemplateName[];
   preservedProfiles: ProfileTemplateName[];
+  apiSettingsImport: ImportClaudeApiSettingsResult;
 };
 
 export type CreateProfileOptions = {
@@ -60,6 +62,7 @@ export async function initProfiles(options: InitProfilesOptions = {}): Promise<I
   const appHomePath = options.appHomePath;
   const paths = await ensureAppHomeStructure(appHomePath);
   const configCreated = await ensureConfig(paths.appHomePath, options.clock);
+  const apiSettingsImport = await importClaudeApiSettings({ appHomePath: paths.appHomePath });
   await ensureExistingProfileSettingsEnv(paths.appHomePath, paths.profilesPath);
 
   const createdProfiles: ProfileTemplateName[] = [];
@@ -87,6 +90,7 @@ export async function initProfiles(options: InitProfilesOptions = {}): Promise<I
     configCreated,
     createdProfiles,
     preservedProfiles,
+    apiSettingsImport,
   };
 }
 

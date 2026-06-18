@@ -4,6 +4,8 @@
 
 本文档是 `CC-Profile-Switch` 的后续迭代规划附录。
 
+当前实现状态（2026-06-18）：ccps 支持 Windows 和 macOS；Linux 仍不支持。
+
 主 PRD 文件：
 
 ```text
@@ -49,7 +51,7 @@ ccps backup <name>
 MVP 技术形态：
 
 ```text
-Windows only
+Windows and macOS
 Node.js CLI
 无 TUI
 无 GUI
@@ -410,7 +412,7 @@ P3 是更远期的增强，不建议早做。
 | 插件市场 | 分享 plugins/skills/agents | 安全风险高 |
 | 云同步 | 多设备使用 | 账号、隐私、安全复杂 |
 | 团队共享 | 团队统一配置 | 超出个人工具定位 |
-| macOS/Linux 支持 | 扩大用户范围 | 需要重做路径和 shell 适配 |
+| Linux 支持 | 扩大用户范围 | 需要新增 Linux 路径和 shell 适配 |
 
 ---
 
@@ -754,7 +756,7 @@ TUI 不应演变成 GUI 或独立产品模式
 结论：
 
 ```text
-TUI 可以保留和小步增强，但必须继续服从 CLI-first、Windows-only、本地 profile 管理边界。
+TUI 可以保留和小步增强，但必须继续服从 CLI-first、Windows/macOS、本地 profile 管理边界。
 ```
 
 ---

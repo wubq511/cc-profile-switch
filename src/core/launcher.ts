@@ -4,7 +4,7 @@ import { loadAppConfig, saveAppConfig, type Clock } from './app-config';
 import { resolveApiSettings, type ApiSettingsSource } from './api-settings';
 import { resolveLaunchProfile } from './profile-management';
 import { spawnProcess as defaultSpawnProcess, type SpawnProcess } from '../platform/process';
-import { resolveFilesystemPath, resolveInside } from '../platform/windows-path';
+import { resolveFilesystemPath, resolveInside } from '../platform/path';
 import { type ProfileLaunchConfig } from '../schemas/profile';
 import { CcpsError } from '../utils/errors';
 import {

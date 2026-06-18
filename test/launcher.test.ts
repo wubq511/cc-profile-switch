@@ -464,6 +464,56 @@ describe('launcher', () => {
     expect(spawnCalls[0].options.env.ANTHROPIC_MODEL).toBe('profile-model');
   });
 
+  it('uses the same launch plan values for dry-run output and real process execution', async () => {
+    const { appHome, paths } = await makeProfile();
+    const projectCwd = await makeTempRoot('ccps-project-');
+    await updateLaunchConfig(paths.profileConfigPath, {
+      claudeArgs: ['--print', 'hello from ccps'],
+      skipPermissions: false,
+    });
+    const plan = await buildLaunchPlan({
+      appHomePath: appHome,
+      profileName: 'coding',
+      cwd: projectCwd,
+    });
+    const dryRun = formatLaunchDryRun(plan);
+    const spawnCalls: Array<{
+      command: string;
+      args: string[];
+      cwd: string;
+      claudeConfigDir: string | undefined;
+    }> = [];
+
+    await launchProfile({
+      appHomePath: appHome,
+      profileName: 'coding',
+      cwd: projectCwd,
+      spawnProcess: async (command, args, options) => {
+        spawnCalls.push({
+          command,
+          args,
+          cwd: options.cwd,
+          claudeConfigDir: options.env.CLAUDE_CONFIG_DIR,
+        });
+        return { exitCode: 0 };
+      },
+    });
+
+    expect(dryRun).toContain(`Command: ${plan.command}`);
+    expect(dryRun).toContain('--print');
+    expect(dryRun).toContain('hello from ccps');
+    expect(dryRun).toContain(`Cwd: ${projectCwd}`);
+    expect(dryRun).toContain(`CLAUDE_CONFIG_DIR=${paths.claudeHomePath}`);
+    expect(spawnCalls).toEqual([
+      {
+        command: plan.command,
+        args: plan.args,
+        cwd: plan.cwd,
+        claudeConfigDir: plan.envChanges.CLAUDE_CONFIG_DIR,
+      },
+    ]);
+  });
+
   it('updates last-used metadata only after the launch reaches process execution', async () => {
     const { appHome } = await makeProfile();
     const projectCwd = await makeTempRoot('ccps-project-');

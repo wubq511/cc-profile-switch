@@ -14,6 +14,8 @@ describe('ccps help', () => {
 
     expect(help).toContain('CC-Profile-Switch');
     expect(help).toContain('Usage: ccps');
+    expect(help).toContain('Windows and macOS');
+    expect(help).not.toContain('Windows-only');
     expect(help).toContain('init');
     expect(help).toContain('copy');
     expect(help).toContain('rename');
@@ -27,11 +29,13 @@ describe('ccps help', () => {
   });
 
   it('does not create profile files when displaying help', () => {
-    const userProfile = mkdtempSync(join(tmpdir(), 'ccps-help-'));
+    const userHome = mkdtempSync(join(tmpdir(), 'ccps-help-'));
+    const originalHome = process.env.HOME;
     const originalUserProfile = process.env.USERPROFILE;
     const output: string[] = [];
 
-    process.env.USERPROFILE = userProfile;
+    process.env.HOME = userHome;
+    delete process.env.USERPROFILE;
 
     try {
       const program = createProgram();
@@ -46,14 +50,19 @@ describe('ccps help', () => {
       );
 
       expect(output.join('')).toContain('Usage: ccps');
-      expect(existsSync(join(userProfile, '.cc-profile-switch'))).toBe(false);
+      expect(existsSync(join(userHome, '.cc-profile-switch'))).toBe(false);
     } finally {
+      if (originalHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = originalHome;
+      }
       if (originalUserProfile === undefined) {
         delete process.env.USERPROFILE;
       } else {
         process.env.USERPROFILE = originalUserProfile;
       }
-      rmSync(userProfile, { recursive: true, force: true });
+      rmSync(userHome, { recursive: true, force: true });
     }
   });
 });

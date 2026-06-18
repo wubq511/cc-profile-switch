@@ -1,5 +1,10 @@
 # Technical Design Document: CC-Profile-Switch MVP
 
+> Current support note (2026-06-18): this technical design was originally
+> written around the Windows MVP. The current implementation supports Windows
+> and macOS with the same app-home/profile/launch semantics. Windows paths remain
+> valid examples; macOS uses `~/.cc-profile-switch`. Linux remains unsupported.
+
 ## 0. 文档信息
 
 | 项目 | 内容 |
@@ -8,7 +13,7 @@
 | CLI 命令 | `ccps` |
 | 文档类型 | MVP 技术设计文档 |
 | 目标用户 | Vibe-coder：AI 写全部代码，用户负责指导、测试、验收 |
-| 使用平台 | Windows 本地 CLI |
+| 使用平台 | Windows 和 macOS 本地 CLI |
 | 技术形态 | Node.js CLI |
 | 推荐语言 | TypeScript |
 | MVP 是否包含 TUI | 不包含 |
@@ -30,12 +35,12 @@
 CC-Profile-Switch
 ```
 
-一个 Windows 本地 Claude Code 场景配置切换工具，用于为 `coding / study / work / research / general` 等不同使用场景维护独立 profile，并通过 CLI 启动 Claude Code。
+一个 Windows 和 macOS 本地 Claude Code 场景配置切换工具，用于为 `coding / study / work / research / general` 等不同使用场景维护独立 profile，并通过 CLI 启动 Claude Code。
 
 ### 1.2 Platform
 
 ```text
-Windows 本地 CLI
+Windows 和 macOS 本地 CLI
 ```
 
 不是 Web，不是 Mobile，不是 GUI 桌面应用。
@@ -43,8 +48,8 @@ Windows 本地 CLI
 运行环境：
 
 ```text
-Windows
-PowerShell / Windows Terminal
+Windows 或 macOS
+PowerShell / Windows Terminal 或 macOS Terminal
 Node.js CLI
 ```
 
@@ -109,7 +114,7 @@ Making wrong tech choices
 
 ### Primary Recommendation
 
-使用 **Node.js + TypeScript + Commander** 构建一个 Windows-only CLI。
+使用 **Node.js + TypeScript + Commander** 构建一个 Windows and macOS CLI。
 
 核心启动方式：
 
@@ -567,6 +572,8 @@ MVP 只校验：
 重复执行 `ccps init` 时，已存在的默认 profile 如果缺少 `CLAUDE_CODE_ATTRIBUTION_HEADER`，会补齐该键，并保留原有 settings 字段和已有 env 键。
 
 不复制完整 Claude Code settings schema。
+
+`ccps init` 会读取当前用户 `%USERPROFILE%\.claude\settings.json` 的 `env.ANTHROPIC_*` 字符串键，并写入 common `%USERPROFILE%\.cc-profile-switch\api-settings.json` 中缺失的键。已有 common API 键优先；输出只记录键名，不记录值。所有 profile 启动时都会通过 common `api-settings.json` 复用这些模型/API 配置，单个 profile 只有需要覆盖时才在自己的 `claude-home\settings.json` 写 `env`。
 
 ## 5.8 `claude-home\skills\`
 
@@ -1433,7 +1440,7 @@ ccps launch coding
 ```text
 User settings 来源应指向 profile claude-home
 Project settings 来源应指向当前项目
-不应使用真实 C:\Users\h\.claude\settings.json
+launch 不应直接使用真实 C:\Users\h\.claude\settings.json；init 只能从该文件导入 env.ANTHROPIC_* 到 common api-settings.json
 ```
 
 ### Verification 3: Project config preserved
@@ -1498,6 +1505,7 @@ ccps launch coding
 ```text
 无显式 API env 时，隔离 profile 会提示 Not logged in
 显式 API env 可通过 common api-settings.json 或 profile settings.json env 提供
+ccps init 可从当前用户 Claude settings.json 导入 env.ANTHROPIC_* 到 common api-settings.json
 session-env/sessions 等 Claude Code 状态出现在 profile 的 claude-home 内
 未检视或迁移任何敏感内容
 ```
@@ -1654,7 +1662,7 @@ report a clear error when the code/code.cmd command is unavailable
 ### Must not
 
 ```text
-不能读取 C:\Users\h\.claude
+不能读取 C:\Users\h\.claude 中除 settings.json env.ANTHROPIC_* 以外的内容
 不能复制 C:\Users\h\.claude
 不能覆盖已有 profile
 ```
@@ -1816,7 +1824,7 @@ Claude Code 本身也基于文件配置
 本地文件更透明
 适合开源 CLI
 不需要服务器
-不需要迁移
+只做 API env 导入，不迁移 OAuth/session/token/history/cache
 ```
 
 ## 11.2 What to store
@@ -2247,7 +2255,7 @@ MVP 技术成功标准：
 
 ## Project
 
-CC-Profile-Switch is a Windows-only Node.js CLI tool for switching Claude Code user-level global configuration profiles.
+CC-Profile-Switch is a Windows and macOS Node.js CLI tool for switching Claude Code user-level global configuration profiles.
 
 The CLI command is:
 
@@ -2296,13 +2304,13 @@ Do not implement:
 - multi-account switching
 - OAuth/session migration
 - plugin marketplace
-- macOS/Linux support
+- Linux support
 - settings.local.json management
 - output-styles management
 
 ## Platform
 
-Windows only.
+Windows and macOS only.
 
 Use:
 - Node.js
@@ -2339,6 +2347,7 @@ Never:
 - Overwrite `C:\Users\h\.claude`.
 - Modify project `.claude`.
 - Read or migrate OAuth/session/token/history/cache.
+- Read real Claude settings beyond `env.ANTHROPIC_*` API reuse.
 - Modify `~/.claude.json`.
 - Silently delete user files.
 - Silently overwrite profile files.
@@ -2430,7 +2439,7 @@ It must verify:
 7. 创建模板目录，但只放占位文件
 8. 不实现真实业务逻辑
 9. 不实现 launch
-10. 不读取、不复制、不修改任何真实 Claude Code 配置
+10. 不读取、不复制、不修改任何真实 Claude Code 配置；API 复用只能读取 settings.json 的 env.ANTHROPIC_* 并写入 common api-settings.json
 
 注意：
 默认 launch 策略是 Global User Config Switch Mode，不是 Runtime Project Isolation。
@@ -2444,7 +2453,7 @@ profile 结构必须使用 `claude-home`。
 MVP 最佳技术路线：
 
 ```text
-Windows only
+Windows and macOS only
 Node.js CLI
 TypeScript
 Commander

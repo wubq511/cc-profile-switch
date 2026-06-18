@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { validateProfileName } from '../platform/windows-path';
+import { validateProfileName } from '../platform/path';
 
 export const profileNameSchema = z.string().refine(
   (value) => {

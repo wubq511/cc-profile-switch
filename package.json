@@ -1,7 +1,7 @@
 {
   "name": "cc-profile-switch",
   "version": "0.1.0",
-  "description": "Windows-only CLI for switching Claude Code user-level configuration profiles.",
+  "description": "Windows and macOS CLI for switching Claude Code user-level configuration profiles.",
   "type": "commonjs",
   "bin": {
     "ccps": "dist/index.js"
@@ -26,7 +26,8 @@
     "claude-code",
     "cli",
     "profiles",
-    "windows"
+    "windows",
+    "macos"
   ],
   "author": "",
   "license": "MIT",

@@ -2,7 +2,7 @@ This file provides guidance to Coding Agents (Claude Code, Codex, and other codi
 
 ## Project
 
-CC-Profile-Switch (`ccps`) is a Windows-only Node.js CLI that switches Claude Code user-level global configuration by profile while preserving project-level config.
+CC-Profile-Switch (`ccps`) is a Windows and macOS Node.js CLI that switches Claude Code user-level global configuration by profile while preserving project-level config.
 
 ## Core Concept
 
@@ -17,7 +17,7 @@ Default launch mode: **Global User Config Switch Mode**. Switch user scope only,
 
 ## Tech Stack
 
-TypeScript, Node.js LTS, Commander, Zod, Vitest, tsup, fs-extra, picocolors. Windows-only; PowerShell / Windows Terminal.
+TypeScript, Node.js LTS, Commander, Zod, Vitest, tsup, fs-extra, picocolors. Supported platforms: Windows and macOS. Linux is intentionally unsupported.
 
 ## Commands
 
@@ -53,7 +53,7 @@ src/
   index.ts          # CLI entry, commander setup
   commands/         # CLI command handlers (parse args -> call core -> output)
   core/             # app-config, profile, profile-management, validator, launcher
-  platform/         # Windows-specific paths, process spawn, editor
+  platform/         # Platform-neutral path helpers plus Windows/macOS spawn/editor adapters
   schemas/          # Zod schemas for config.json, profile.json
   templates/        # Profile template files
   tui/              # Lightweight terminal UI controller and readline adapter
@@ -84,9 +84,13 @@ test/
   backups\
 ```
 
+macOS uses the same structure under `~/.cc-profile-switch` with POSIX path separators.
+
 `claude-home` maps to `CLAUDE_CONFIG_DIR` at launch. Project `CLAUDE.md`, `.claude/settings.json`, `.claude/agents`, `.claude/skills`, and `.mcp.json` still come from the launch cwd.
 
 New profiles include `CLAUDE_CODE_ATTRIBUTION_HEADER=0` in `claude-home\settings.json` `env`. Re-running `ccps init` backfills this key for preserved default profiles when missing, without overwriting existing settings fields or env keys.
+
+`ccps init` also imports string `env.ANTHROPIC_*` keys from the current user Claude settings into common `api-settings.json` when missing: Windows reads `%USERPROFILE%\.claude\settings.json`, macOS reads `~/.claude/settings.json`. Existing common keys are preserved and command output must show key names only, never values.
 
 ## Current CLI Surface
 
@@ -127,16 +131,16 @@ Launch defaults:
 
 - Add `--dangerously-skip-permissions` unless `profile.json` sets `launch.skipPermissions` to `false`.
 - Use `ccps default <profile>` when `ccps launch` omits `[profile]`.
-- Common `%USERPROFILE%\.cc-profile-switch\api-settings.json` env merges with profile `claude-home\settings.json` env; profile wins.
+- Common app-home `api-settings.json` env merges with profile `claude-home\settings.json` env; profile wins.
 - `autoMemoryDirectory` must point to `<profile>\claude-home\memory\auto`.
 
 ## Safety Rules
 
 Never:
 
-- Copy or overwrite `C:\Users\h\.claude`.
+- Copy or overwrite the real Windows `%USERPROFILE%\.claude` or macOS `~/.claude`.
 - Modify project `.claude` or project config files.
-- Read/migrate OAuth, session, token, history, cache, or credential contents.
+- Read/migrate OAuth, session, token, history, cache, or credential contents. The only allowed real Claude settings read is string `env.ANTHROPIC_*` import from `settings.json` during `ccps init`.
 - Use `--strict-mcp-config` as default.
 - Change cwd to the tool runtime directory.
 - Use `--add-dir` for current-project access.
@@ -166,4 +170,4 @@ V0.2 profile-management-tui is complete:
 
 ## Still Excluded
 
-No GUI, cloud sync, multi-account switching, OAuth/session migration, plugin marketplace, macOS/Linux support, or runtime project isolation mode. TUI exists only as a lightweight terminal helper over CLI/core behavior.
+No GUI, cloud sync, multi-account switching, OAuth/session migration, plugin marketplace, Linux support, or runtime project isolation mode. TUI exists only as a lightweight terminal helper over CLI/core behavior.

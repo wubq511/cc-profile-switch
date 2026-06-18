@@ -4,16 +4,21 @@ import { CcpsError } from '../utils/errors';
 
 export type OpenTarget = (targetPath: string) => Promise<void>;
 
+export type EditorSpawnCommand = {
+  command: string;
+  args: string[];
+  options: {
+    stdio: 'ignore';
+    windowsHide?: true;
+  };
+  failureGuidance: string;
+};
+
 export const openWithDefaultEditor: OpenTarget = async (targetPath) => {
+  const editorCommand = buildEditorSpawnCommand(targetPath);
+
   await new Promise<void>((resolve, reject) => {
-    const child = spawn(
-      'powershell.exe',
-      ['-NoProfile', '-NonInteractive', '-Command', buildVsCodeOpenCommand(targetPath)],
-      {
-        stdio: 'ignore',
-        windowsHide: true,
-      },
-    );
+    const child = spawn(editorCommand.command, editorCommand.args, editorCommand.options);
 
     child.once('error', (error) => {
       reject(
@@ -32,12 +37,44 @@ export const openWithDefaultEditor: OpenTarget = async (targetPath) => {
 
       reject(
         new CcpsError('EDITOR_OPEN_FAILED', 'Failed to open the profile target in VS Code.', {
-          guidance: `Install the VS Code "code" command or open the path manually: ${targetPath}`,
+          guidance: editorCommand.failureGuidance,
         }),
       );
     });
   });
 };
+
+export function buildEditorSpawnCommand(
+  targetPath: string,
+  platform: NodeJS.Platform = process.platform,
+): EditorSpawnCommand {
+  if (platform === 'win32') {
+    return {
+      command: 'powershell.exe',
+      args: ['-NoProfile', '-NonInteractive', '-Command', buildVsCodeOpenCommand(targetPath)],
+      options: {
+        stdio: 'ignore',
+        windowsHide: true,
+      },
+      failureGuidance: `Install the VS Code "code" command or open the path manually: ${targetPath}`,
+    };
+  }
+
+  if (platform === 'darwin') {
+    return {
+      command: 'open',
+      args: ['-n', '-a', 'Visual Studio Code', targetPath],
+      options: {
+        stdio: 'ignore',
+      },
+      failureGuidance: `Install Visual Studio Code.app or open the path manually: ${targetPath}`,
+    };
+  }
+
+  throw new CcpsError('PLATFORM_NOT_SUPPORTED', 'ccps supports Windows and macOS only.', {
+    guidance: 'Run ccps edit on Windows or macOS.',
+  });
+}
 
 function buildVsCodeOpenCommand(targetPath: string): string {
   const target = quotePowerShellString(targetPath);

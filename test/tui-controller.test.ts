@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { runTuiController, type TuiControllerServices, type TuiPorts } from '../src/tui/controller';
 
@@ -163,6 +166,39 @@ describe('tui controller', () => {
     expect(ports.output.join('')).toContain('No profiles found.');
     expect(ports.output.join('')).toContain('Next: ccps init or ccps create <name> --template blank');
     expect(ports.selectCalls).toEqual([]);
+  });
+
+  it('uses HOME-derived macOS app home when the caller does not pass one', async () => {
+    const userHome = await mkdtemp(join(tmpdir(), 'ccps-tui-home-'));
+    const originalHome = process.env.HOME;
+    const originalUserProfile = process.env.USERPROFILE;
+    const ports = makePorts();
+    const services = makeServices({
+      listProfilesForDisplay: vi.fn(async () => []),
+    });
+
+    process.env.HOME = userHome;
+    delete process.env.USERPROFILE;
+
+    try {
+      await runTuiController({ ports, services });
+    } finally {
+      if (originalHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = originalHome;
+      }
+      if (originalUserProfile === undefined) {
+        delete process.env.USERPROFILE;
+      } else {
+        process.env.USERPROFILE = originalUserProfile;
+      }
+      await rm(userHome, { recursive: true, force: true });
+    }
+
+    expect(services.listProfilesForDisplay).toHaveBeenCalledWith({
+      appHomePath: join(userHome, '.cc-profile-switch'),
+    });
   });
 
   it('supports copy, rename, set default, and clear default through shared services', async () => {

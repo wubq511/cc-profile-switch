@@ -1,5 +1,11 @@
 # PRD: CC-Profile-Switch MVP
 
+> Current support note (2026-06-18): this MVP PRD was originally written around
+> the Windows implementation. The current product supports Windows and macOS
+> with the same profile, validation, launch, API reuse, and project-cwd
+> semantics. Windows paths in this document remain historical examples; macOS
+> uses `~/.cc-profile-switch`. Linux is still unsupported.
+
 ## Product Overview
 
 ### Product Name
@@ -14,11 +20,11 @@ ccps
 
 ### One-Sentence Description
 
-CC-Profile-Switch 是一个 Windows 本地 Claude Code 用户级全局配置切换工具，帮助用户在 `coding`、`study`、`work`、`research`、`general` 等不同使用场景之间切换 Claude Code 的用户级配置目录，同时保留当前项目目录中的项目级配置继续按 Claude Code 原生规则生效。
+CC-Profile-Switch 是一个 Windows 和 macOS 本地 Claude Code 用户级全局配置切换工具，帮助用户在 `coding`、`study`、`work`、`research`、`general` 等不同使用场景之间切换 Claude Code 的用户级配置目录，同时保留当前项目目录中的项目级配置继续按 Claude Code 原生规则生效。
 
 ### What It Builds
 
-MVP 是一个 **Windows-only Node.js CLI**。
+MVP 当前实现是一个 **Windows and macOS Node.js CLI**。
 
 用户可以在任意项目目录中执行：
 
@@ -74,7 +80,7 @@ CC-Profile-Switch 不是“纯隔离运行环境”，也不是“项目配置�
 
 他们通常：
 
-- 能使用 Windows Terminal / PowerShell
+- 能使用 Windows Terminal / PowerShell 或 macOS Terminal
 - 理解 `CLAUDE.md`、settings、MCP、plugins、skills、agents 的基本概念
 - 希望用 AI 写代码，但自己负责指导、测试、验收
 - 不想每次使用不同场景都手动修改 `C:\Users\h\.claude`
@@ -363,7 +369,7 @@ ccps init
 [ ] settings.json 的 autoMemoryDirectory 指向本 profile 的 claude-home\memory\auto
 [ ] settings.json 默认包含 env.CLAUDE_CODE_ATTRIBUTION_HEADER=0
 [ ] 重复执行 init 会给已存在的默认 profile 补齐缺失的 CLAUDE_CODE_ATTRIBUTION_HEADER，且不覆盖已有 settings 字段
-[ ] 不读取或复制 C:\Users\h\.claude
+[ ] 除读取 C:\Users\h\.claude\settings.json 的 env.ANTHROPIC_* 以便写入 common api-settings.json 外，不读取或复制 C:\Users\h\.claude
 ```
 
 ---
@@ -727,7 +733,7 @@ OAuth/session 迁移
 Claude Code 历史会话管理
 插件市场
 自动下载插件
-macOS/Linux 支持
+Linux 支持
 项目配置切换
 项目配置覆盖
 纯隔离 runtime 模式
@@ -848,8 +854,8 @@ No command executed.
 ### Platform
 
 ```text
-Windows only
-PowerShell / Windows Terminal first
+Windows and macOS
+PowerShell / Windows Terminal and macOS Terminal first
 Node.js CLI
 ```
 
@@ -1018,9 +1024,9 @@ launch 必须支持 --dry-run
 ### Platform Constraints
 
 ```text
-只做 Windows
-PowerShell / Windows Terminal 优先
-不考虑 macOS / Linux
+只做 Windows 和 macOS
+PowerShell / Windows Terminal 与 macOS Terminal 优先
+不考虑 Linux
 ```
 
 ### Security Constraints
@@ -1046,6 +1052,7 @@ Claude Code 支持 CLAUDE_CONFIG_DIR 切换用户级配置目录
 设置 CLAUDE_CONFIG_DIR 后，用户级 CLAUDE.md/settings/skills/agents/plugins/memory 从该目录读取
 项目级配置仍按当前 cwd 原生加载
 基于 API 的用户可以通过 common api-settings.json 与 profile settings.json env 提供 API 配置
+ccps init 会把 C:\Users\h\.claude\settings.json 中字符串类型的 env.ANTHROPIC_* 导入 common api-settings.json，已有 common 键优先
 新建 profile settings.json 默认包含 CLAUDE_CODE_ATTRIBUTION_HEADER=0，重复 init 会为保留的默认 profile 补齐缺失键
 用户接受 OAuth/keychain 风格认证在不同 profile 下可能呈现为独立状态
 ```

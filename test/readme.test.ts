@@ -7,6 +7,9 @@ describe('README', () => {
   it('documents the V0.2 workflow, launch behavior, and safety boundaries', async () => {
     const readme = await readFile(join(process.cwd(), 'README.md'), 'utf8');
 
+    expect(readme).toContain('Windows 和 macOS');
+    expect(readme).toContain('~/.cc-profile-switch');
+    expect(readme).toContain('macOS 会通过 Visual Studio Code app 打开');
     expect(readme).toContain('ccps launch <profile> --dry-run');
     expect(readme).toContain('ccps copy <from> <to>');
     expect(readme).toContain('ccps rename <old> <new>');
@@ -28,9 +31,14 @@ describe('README', () => {
     expect(readme).toContain('CLAUDE_CONFIG_DIR');
     expect(readme).toContain('当前工作目录');
     expect(readme).toContain('api-settings.json');
+    expect(readme).toContain('`ccps init` 会尝试从当前用户 Claude settings');
+    expect(readme).toContain('env.ANTHROPIC_*');
+    expect(readme).toContain('所有 profile 都会通过 common api-settings.json 复用这些模型/API 配置');
     expect(readme).toContain('claude-home\\settings.json');
+    expect(readme).toContain('claude-home/settings.json');
     expect(readme).toContain('autoMemoryDirectory');
     expect(readme).toContain('claude-home\\memory\\auto');
+    expect(readme).toContain('claude-home/memory/auto');
     expect(readme).toContain('claude-home\\plugins');
     expect(readme).toContain('profile 优先');
     expect(readme).toContain('OAuth');

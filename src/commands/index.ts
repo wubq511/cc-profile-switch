@@ -17,7 +17,7 @@ import { getProfileTemplatePaths } from '../core/profile-template';
 import { validateProfile, type ValidationFinding } from '../core/validator';
 import { openWithDefaultEditor, type OpenTarget } from '../platform/editor';
 import { spawnProcess, type SpawnProcess } from '../platform/process';
-import { isPathInside, relativeFilesystemPath, resolveFilesystemPath } from '../platform/windows-path';
+import { isPathInside, relativeFilesystemPath, resolveFilesystemPath } from '../platform/path';
 import {
   profileConfigSchema,
   profileTemplateSchema,
@@ -54,6 +54,9 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
       runtime.writeOut(`Initialized ccps app home: ${result.appHomePath}\n`);
       runtime.writeOut(`Created default profiles: ${created}\n`);
       runtime.writeOut(`Preserved existing profiles: ${preserved}\n`);
+      if (result.apiSettingsImport.importedKeys.length > 0) {
+        runtime.writeOut(`Imported API env keys: ${result.apiSettingsImport.importedKeys.join(', ')}\n`);
+      }
       runtime.writeOut('Next: ccps list\n');
     });
 
@@ -131,7 +134,7 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
       runtime.writeOut('Required directories:\n');
       runtime.writeOut(`  claude-home: ${await pathStatus(paths.claudeHomePath, 'directory')}\n`);
       runtime.writeOut(`  memory: ${await pathStatus(paths.memoryPath, 'directory')}\n`);
-      runtime.writeOut(`  memory\\auto: ${await pathStatus(paths.autoMemoryPath, 'directory')}\n`);
+      runtime.writeOut(`  memory/auto: ${await pathStatus(paths.autoMemoryPath, 'directory')}\n`);
       runtime.writeOut(`  skills: ${await pathStatus(paths.skillsPath, 'directory')}\n`);
       runtime.writeOut(`  agents: ${await pathStatus(paths.agentsPath, 'directory')}\n`);
       runtime.writeOut(`  plugins: ${await pathStatus(paths.pluginsPath, 'directory')}\n`);

@@ -65,6 +65,33 @@ describe('profile validator', () => {
     );
   });
 
+  it('compares POSIX auto memory settings with case-sensitive path semantics', async () => {
+    const { appHome, paths } = await makeProfile();
+    await fs.writeJson(paths.settingsPath, {
+      autoMemoryDirectory: paths.autoMemoryPath.replace('/ccps-validator-', '/CCPS-validator-'),
+    });
+
+    const result = await validateProfile({ appHomePath: appHome, name: 'coding' });
+
+    expect(result.status).toBe('error');
+    expect(result.findings).toContainEqual(
+      expect.objectContaining({
+        severity: 'error',
+        code: 'PROFILE_MEMORY_DIRECTORY_MISMATCH',
+        path: paths.settingsPath,
+      }),
+    );
+  });
+
+  it('accepts exact POSIX auto memory settings on macOS-style app homes', async () => {
+    const { appHome, paths } = await makeProfile();
+
+    await expect(validateProfile({ appHomePath: appHome, name: 'coding' })).resolves.toMatchObject({
+      status: 'valid',
+      claudeHomePath: paths.claudeHomePath,
+    });
+  });
+
   it('reports errors for missing required files and directories', async () => {
     const { appHome, paths } = await makeProfile();
     await rm(paths.settingsPath);

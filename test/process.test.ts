@@ -32,14 +32,38 @@ describe('process spawning', () => {
       'utf8',
     );
 
-    const resolved = await resolveSpawnCommand('claude', ['--version'], {
-      PATH: binDir,
-      PATHEXT: '.COM;.EXE;.BAT;.CMD',
-    });
+    const resolved = await resolveSpawnCommand(
+      'claude',
+      ['--version'],
+      {
+        PATH: binDir,
+        PATHEXT: '.COM;.EXE;.BAT;.CMD',
+      },
+      'win32',
+    );
 
     expect(resolved).toEqual({
       command: exePath,
       args: ['--version'],
+    });
+  });
+
+  it('does not rewrite commands through Windows shim parsing on macOS', async () => {
+    const binDir = join(await makeTempRoot('ccps-process-'), 'npm bin');
+    const exePath = join(binDir, 'node_modules', '@anthropic-ai', 'claude-code', 'bin', 'claude.exe');
+    const shimPath = join(binDir, 'claude.cmd');
+    await fs.ensureFile(exePath);
+    await fs.writeFile(
+      shimPath,
+      '@ECHO off\r\nSETLOCAL\r\n"%dp0%\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe"   %*\r\n',
+      'utf8',
+    );
+
+    const resolved = await resolveSpawnCommand('claude', ['--print', 'hello'], { PATH: binDir }, 'darwin');
+
+    expect(resolved).toEqual({
+      command: 'claude',
+      args: ['--print', 'hello'],
     });
   });
 });

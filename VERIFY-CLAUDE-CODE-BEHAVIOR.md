@@ -1,7 +1,7 @@
 # Claude Code 行为验证
 
-状态：已完成真实验证（显式提供 API 设置；已验证 ccps 通用 API 配置 dry-run）。
-日期：2026-05-16
+状态：已完成 Windows 真实验证（显式提供 API 设置；已验证 ccps 通用 API 配置 dry-run）；已完成 macOS 隔离 HOME smoke、真实 ccps-launched Claude Code auth-required smoke，以及 common API settings 导入/复用验证。
+日期：2026-05-16；macOS 支持补充：2026-06-18
 观测到的 Claude Code CLI 版本：`2.1.143 (Claude Code)`
 
 ## 范围
@@ -10,7 +10,7 @@
 
 - `CLAUDE_CONFIG_DIR` 应将用户级 Claude Code 配置源替换为所选 profile 的 `claude-home`。
 - 项目级配置仍应从启动时的当前工作目录（cwd）加载。
-- 用户级 memory 应来自所选 profile 的 `claude-home\CLAUDE.md`，auto memory 应写入所选 profile 的 `claude-home\memory\auto`。
+- 用户级 memory 应来自所选 profile 的 `claude-home\CLAUDE.md`（macOS：`claude-home/CLAUDE.md`），auto memory 应写入所选 profile 的 `claude-home\memory\auto`（macOS：`claude-home/memory/auto`）。
 - Profile 的 MCP 配置默认应是增加式的，仅在显式要求时才启用严格模式（strict）。
 - 默认启动应传递 `--dangerously-skip-permissions`；单个 profile 可用 `launch.skipPermissions=false` 关闭。
 - 通用 `api-settings.json` 与 profile `claude-home\settings.json` 的 `env` 应合并为启动环境变量，且 profile 优先、dry-run 只显示键名。
@@ -20,10 +20,10 @@
 
 ## 安全规则
 
-- 不要复制、迁移或打开 OAuth、会话、令牌、凭据、缓存、转录或历史记录内容，除非用户明确要求迁移 API 环境变量。
-- 允许的 API 迁移范围仅限 `settings.json` 的 `env.ANTHROPIC_*`，目标为 `%USERPROFILE%\.cc-profile-switch\api-settings.json`，且不得打印值。
-- 建议使用隔离的临时 `USERPROFILE` 进行验证。
-- 如果必须编辑真实的 `%USERPROFILE%\.claude\CLAUDE.md`，请先备份并在检查后恢复。
+- 不要复制、迁移或打开 OAuth、会话、令牌、凭据、缓存、转录或历史记录内容。
+- `ccps init` 允许读取当前用户 Claude `settings.json` 的 `env.ANTHROPIC_*` 字符串键，目标为 app home 下的 common `api-settings.json`，且不得打印值。
+- 建议使用隔离的临时 Windows `USERPROFILE` 或 macOS `HOME` 进行验证。
+- 不要编辑真实的 `%USERPROFILE%\.claude\CLAUDE.md` 或 `~/.claude/CLAUDE.md`；如果必须编辑，先备份并在检查后恢复。
 - 不要使用真实密钥作为标记文本。
 - 仅记录文件路径和高层级行为，不记录敏感文件内容。
 
@@ -42,7 +42,7 @@ Profile 启动期间预期的标记可见性：
 | 标记 | 预期结果 |
 |---|---|
 | `GLOBAL_ORIGINAL_MARKER` | 当 `CLAUDE_CONFIG_DIR` 指向 profile 的 `claude-home` 时不可见 |
-| `PROFILE_CODING_MARKER` | 从所选 profile 的 `claude-home\CLAUDE.md` 中可见 |
+| `PROFILE_CODING_MARKER` | 从所选 profile 的 `claude-home\CLAUDE.md` / `claude-home/CLAUDE.md` 中可见 |
 | `PROJECT_MARKER` | 从启动 cwd 项目的 `CLAUDE.md` 中可见 |
 
 ## 已收集的自动化证据
@@ -77,7 +77,7 @@ npm run dev -- launch coding --dry-run --cwd <temp-project>
 
 ## 隔离手动设置
 
-使用此设置可避免在验证期间触及真实的 `C:\Users\h\.claude`：
+使用此设置可避免在 Windows 验证期间触及真实的 `C:\Users\h\.claude`：
 
 ```powershell
 $VerifyRoot = Join-Path $env:TEMP "ccps-claude-verify"
@@ -116,6 +116,42 @@ PROJECT_MARKER=CCPS_VERIFY_PROJECT_MARKER
 $env:USERPROFILE = $OldUserProfile
 ```
 
+macOS 等价隔离设置，避免触及真实的 `~/.claude`：
+
+```sh
+VerifyRoot="$(mktemp -d "${TMPDIR:-/tmp}/ccps-claude-verify.XXXXXX")"
+TempUser="$VerifyRoot/user"
+Project="$VerifyRoot/project"
+
+mkdir -p "$TempUser/.claude" "$Project"
+OldHome="$HOME"
+export HOME="$TempUser"
+
+npm run dev -- init
+
+cat > "$TempUser/.claude/CLAUDE.md" <<'EOF'
+# Original Global Claude Config
+GLOBAL_ORIGINAL_MARKER=CCPS_VERIFY_GLOBAL_ORIGINAL_MARKER
+EOF
+
+ProfileClaudeHome="$TempUser/.cc-profile-switch/profiles/coding/claude-home"
+cat >> "$ProfileClaudeHome/CLAUDE.md" <<'EOF'
+
+PROFILE_CODING_MARKER=CCPS_VERIFY_PROFILE_CODING_MARKER
+EOF
+
+cat > "$Project/CLAUDE.md" <<'EOF'
+# Project Claude Config
+PROJECT_MARKER=CCPS_VERIFY_PROJECT_MARKER
+EOF
+```
+
+验证完成后恢复 `HOME`：
+
+```sh
+export HOME="$OldHome"
+```
+
 ## Dry-Run 验证
 
 命令：
@@ -125,16 +161,22 @@ $env:USERPROFILE = $TempUser
 npm run dev -- launch coding --dry-run --cwd $Project
 ```
 
+macOS：
+
+```sh
+HOME="$TempUser" npm run dev -- launch coding --dry-run --cwd "$Project"
+```
+
 预期结果：
 
-- `Profile path` 指向 `$TempUser\.cc-profile-switch\profiles\coding` 内部。
-- `Claude home` 指向 `$TempUser\.cc-profile-switch\profiles\coding\claude-home`。
+- `Profile path` 指向 `$TempUser\.cc-profile-switch\profiles\coding` 或 `$TempUser/.cc-profile-switch/profiles/coding` 内部。
+- `Claude home` 指向 `$TempUser\.cc-profile-switch\profiles\coding\claude-home` 或 `$TempUser/.cc-profile-switch/profiles/coding/claude-home`。
 - `Cwd` 等于 `$Project`。
 - `Args` 包含 `--dangerously-skip-permissions`，除非 profile 显式关闭 `launch.skipPermissions`。
 - `Args` 包含 `--mcp-config` 和 profile 的 `mcp.json`。
 - 对于默认的合并模式，`Args` 不包含 `--strict-mcp-config`。
 - `CLAUDE_CONFIG_DIR` 等于 profile 的 `claude-home`。
-- Memory 区域显示用户 memory 为 profile 的 `claude-home\CLAUDE.md`，auto memory 为 profile 的 `claude-home\memory\auto`。
+- Memory 区域显示用户 memory 为 profile 的 `claude-home\CLAUDE.md` / `claude-home/CLAUDE.md`，auto memory 为 profile 的 `claude-home\memory\auto` / `claude-home/memory/auto`。
 - API 配置区域只显示 common/profile 是否存在和环境变量键名，不显示 token 或其他值。
 - 输出显示 Claude Code 未被启动。
 
@@ -144,7 +186,9 @@ npm run dev -- launch coding --dry-run --cwd $Project
 
 仅在可以接受手动执行 Claude Code 时运行此项。它可能会使用现有的 Claude Code 认证并可能调用模型。
 
-在真实的 `ccps launch` 存在之前，请使用等效环境：
+通过 `ccps launch` 运行真实验证时，使用隔离 profile，并在 `profile.json` 中配置非交互 print 参数，例如 `launch.claudeArgs` 包含 `-p`、`--no-session-persistence`、`--max-budget-usd` 和一段只输出标记可见性的提示。不要通过复制真实 session 或 credential 让隔离 profile 登录。
+
+历史等效环境命令（Windows）：
 
 ```powershell
 $env:USERPROFILE = $TempUser
@@ -190,6 +234,20 @@ Not logged in · Please run /login
 
 当 `USERPROFILE` 恢复为真实用户但 `CLAUDE_CONFIG_DIR` 仍指向隔离的 profile `claude-home` 时也会发生。这证明 Claude Code 的 OAuth/keychain 风格认证在 `CLAUDE_CONFIG_DIR` 下是 profile 特有的。
 
+2026-06-18 在 macOS 隔离 `HOME` 下，通过 `ccps launch real_launch --cwd <temp-project>` 真实启动 Claude Code。`profile.json` 中的 `launch.claudeArgs` 使用 `-p`、`--no-session-persistence`、`--max-budget-usd 0.05` 和一个要求检查 `process.cwd()` / `process.env.CLAUDE_CONFIG_DIR` / 项目 `CLAUDE.md` 标记的 prompt。Dry-run 证明真实 launch 将使用：
+
+- `CLAUDE_CONFIG_DIR=<temp-home>/.cc-profile-switch/profiles/real_launch/claude-home`
+- `Cwd: <temp-project>`
+- 同一组 `claudeArgs`
+
+真实 Claude Code 进程返回：
+
+```text
+Not logged in · Please run /login
+```
+
+`ccps` 随后报告 `CLAUDE_EXITED_WITH_ERROR`，未复制、读取或迁移真实 `~/.claude`、session、token、history、cache 或 credential 内容。
+
 2026-05-16 通过 `--settings C:\Users\h\.claude\settings.json` 显式传递现有 API 设置时观测到的结果：
 
 ```json
@@ -211,6 +269,8 @@ Not logged in · Please run /login
   - `profile: missing (no env keys)`
   - 6 个 `ANTHROPIC_*` 键名
 - Dry-run 未显示 token、base URL 或模型值。
+
+2026-06-18 已将上述 API 复用规则固化为 `ccps init` 行为：Windows 从 `%USERPROFILE%\.claude\settings.json`、macOS 从 `~/.claude/settings.json` 抽取字符串类型的 `env.ANTHROPIC_*`，只补齐 common `api-settings.json` 缺失的键，保留已有 common 配置。所有 profile 的 launch plan 通过 common `api-settings.json` 复用这些模型/API 配置；profile `claude-home\settings.json` / `claude-home/settings.json` 只在需要 profile 专属覆盖时才配置。
 
 ## 设置、Agents、Skills、Plugins 和 MCP
 
@@ -265,6 +325,9 @@ Get-ChildItem -Force -Recurse (Join-Path $TempUser ".claude") |
 | `ccps launch --dry-run` 在计划前验证 profile | 通过 | 隔离 dry-run 打印了 `Validation: valid` |
 | Dry-run 将 `CLAUDE_CONFIG_DIR` 设置为 profile 的 `claude-home` | 通过 | 隔离 dry-run 打印了预期的环境变量更改 |
 | Dry-run 显示 profile memory 路径 | 通过 | dry-run 打印了 `claude-home\CLAUDE.md` 和 `claude-home\memory\auto` |
+| macOS app home 默认路径 | 通过 | 2026-06-18 隔离 `HOME` smoke 创建了 `<temp-home>/.cc-profile-switch` |
+| macOS dry-run 保持 profile `CLAUDE_CONFIG_DIR` 和项目 cwd | 通过 | 2026-06-18 dry-run 打印了 `<temp-home>/.cc-profile-switch/profiles/real_launch/claude-home` 和 `<temp-project>` |
+| macOS 真实 ccps launch | auth required | 2026-06-18 隔离 profile 返回 `Not logged in · Please run /login`，未触碰真实凭据 |
 | Dry-run 保持项目 cwd 为启动 cwd | 通过 | 隔离 dry-run 打印了显式的临时项目路径 |
 | 默认 MCP 模式避免使用 `--strict-mcp-config` | 通过 | 隔离 dry-run 参数中仅包含 `--mcp-config` |
 | 默认跳过权限确认 | 通过 | dry-run 参数包含 `--dangerously-skip-permissions` |
@@ -280,18 +343,18 @@ Get-ChildItem -Force -Recurse (Join-Path $TempUser ".claude") |
 | MCP 合并/严格行为 | 通过 | 合并模式下暴露了 profile 和项目 MCP 标记；严格模式下仅暴露 profile 标记 |
 | 每个 profile 独立的认证 | 通过 | 隔离的 `CLAUDE_CONFIG_DIR` 返回了 `Not logged in`（在没有显式 API 设置的情况下），即使使用了真实的 `USERPROFILE` |
 | API 设置可以显式提供 | 通过 | `--settings C:\Users\h\.claude\settings.json` 使模型能够执行，而无需复制凭据 |
-| ccps 通用 API 设置 | 通过 | `C:\Users\h\.cc-profile-switch\api-settings.json` 被 dry-run 识别为 common API config，输出只显示 `ANTHROPIC_*` 键名 |
+| ccps 通用 API 设置 | 通过 | `ccps init` 可从 Windows `%USERPROFILE%\.claude\settings.json` 或 macOS `~/.claude/settings.json` 导入 `env.ANTHROPIC_*` 到 common `api-settings.json`；dry-run 识别 common API config，输出只显示键名 |
 | 会话/历史/缓存位置 | 部分 | 运行创建了 profile 的 `session-env` 和 `sessions` 目录；未检视敏感内容 |
 
 ## 真实 launch 保持条件
 
 后续修改真实启动逻辑时必须保持以下约束：
 
-1. 保持 `CLAUDE_CONFIG_DIR=<profile>\claude-home`。
+1. 保持 `CLAUDE_CONFIG_DIR=<profile>\claude-home`（macOS：`<profile>/claude-home`）。
 2. 保持 cwd 为项目目录。
 3. 默认使用合并（merge）MCP，仅在明确配置时使用严格（strict）MCP。
-4. 不要将凭据复制或迁移到 profile 中；用户明确要求时，只能把 `ANTHROPIC_*` 迁移到本机通用 `api-settings.json`。
+4. 不要将凭据复制或迁移到 profile 中；`ccps init` 只能把当前用户 Claude `settings.json` 中的 `env.ANTHROPIC_*` 字符串键导入本机通用 `api-settings.json`。
 5. 文档说明 OAuth/keychain 风格的认证在 `CLAUDE_CONFIG_DIR` 下呈现为 profile 特有。
-6. 文档说明基于 API 的用户可以通过通用 `api-settings.json` 或 profile `claude-home\settings.json` 的 `env` 传递 API 环境变量，且 profile 优先。
+6. 文档说明基于 API 的用户可以通过通用 `api-settings.json` 或 profile `claude-home\settings.json` / `claude-home/settings.json` 的 `env` 传递 API 环境变量，且 profile 优先。
 7. 将 `session-env` 和 `sessions` 视为 Claude Code 创建的 profile 状态，不要检视或迁移其内容。
-8. 将 `autoMemoryDirectory` 固定为当前 profile 的 `claude-home\memory\auto`，防止 auto memory 串到其他 profile。
+8. 将 `autoMemoryDirectory` 固定为当前 profile 的 `claude-home\memory\auto` / `claude-home/memory/auto`，防止 auto memory 串到其他 profile。

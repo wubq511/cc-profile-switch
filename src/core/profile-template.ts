@@ -1,6 +1,6 @@
 import fs from 'fs-extra';
 
-import { getAppHomePath, resolveInside, validateProfileName } from '../platform/windows-path';
+import { getAppHomePath, resolveInside, validateProfileName } from '../platform/path';
 import { profileConfigSchema, profileTemplateSchema, type ProfileConfig } from '../schemas/profile';
 import { CcpsError } from '../utils/errors';
 import { type Clock, writeJsonFile } from './app-config';
