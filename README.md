@@ -178,3 +178,30 @@ npm run check
 ```
 
 `npm run check` 会运行 lint、测试和构建。
+
+## CodeGraph
+
+本仓库配置了 [CodeGraph](https://github.com/colbymchenry/codegraph) 作为本地代码知识图谱工具。`.codegraph/` 是有意提交的项目索引目录，不要加入 `.gitignore`。
+
+拉取仓库后先安装依赖，再检查索引：
+
+```powershell
+npm install
+npm run codegraph:status
+```
+
+常用命令：
+
+```powershell
+npm run codegraph:init      # 初始化并构建 .codegraph/
+npm run codegraph:index     # 强制完整重建索引
+npm run codegraph:sync      # 增量同步索引
+npm run codegraph:query -- launcher
+npm run codegraph:explore -- "launch profile flow"
+```
+
+如果你的 Claude Code / Codex / Cursor 还没有 CodeGraph MCP 工具，需要在本机单独执行一次：
+
+```powershell
+npx @colbymchenry/codegraph install
+```

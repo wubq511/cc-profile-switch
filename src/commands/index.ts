@@ -1,6 +1,5 @@
 import { Command } from 'commander';
 import fs from 'fs-extra';
-import path from 'node:path';
 import { createInterface } from 'node:readline/promises';
 
 import { getAppHomePaths, loadAppConfig } from '../core/app-config';
@@ -18,7 +17,7 @@ import { getProfileTemplatePaths } from '../core/profile-template';
 import { validateProfile, type ValidationFinding } from '../core/validator';
 import { openWithDefaultEditor, type OpenTarget } from '../platform/editor';
 import { spawnProcess, type SpawnProcess } from '../platform/process';
-import { isPathInside } from '../platform/windows-path';
+import { isPathInside, relativeFilesystemPath, resolveFilesystemPath } from '../platform/windows-path';
 import {
   profileConfigSchema,
   profileTemplateSchema,
@@ -374,11 +373,7 @@ function resolveEditTarget(appHomePath: string, name: string, file?: string): st
   }
 
   const aliasTarget = editTargetAliases(paths)[normalizeEditTargetKey(file)];
-  const targetPath =
-    aliasTarget ??
-    (path.win32.isAbsolute(file)
-      ? path.win32.resolve(file)
-      : path.win32.resolve(paths.profileRootPath, file));
+  const targetPath = aliasTarget ?? resolveFilesystemPath(paths.profileRootPath, file);
 
   if (
     !isPathInside(paths.profileRootPath, targetPath) ||
@@ -393,10 +388,11 @@ function resolveEditTarget(appHomePath: string, name: string, file?: string): st
     });
   }
 
+  const realProfileRootPath = fs.realpathSync(paths.profileRootPath);
   const realTargetPath = fs.realpathSync(targetPath);
   const targetStats = fs.statSync(realTargetPath);
   if (
-    !isPathInside(paths.profileRootPath, realTargetPath) ||
+    !isPathInside(realProfileRootPath, realTargetPath) ||
     (!targetStats.isFile() && !targetStats.isDirectory())
   ) {
     throw invalidEditTarget();
@@ -427,9 +423,8 @@ function normalizeEditTargetKey(value: string): string {
 }
 
 function hasSensitivePathSegment(profileRootPath: string, targetPath: string): boolean {
-  return path.win32
-    .relative(profileRootPath, targetPath)
-    .split(path.win32.sep)
+  return relativeFilesystemPath(profileRootPath, targetPath)
+    .split(/[\\/]+/)
     .some((segment) => /(oauth|tokens?|secrets?|credentials?)/i.test(segment));
 }
 

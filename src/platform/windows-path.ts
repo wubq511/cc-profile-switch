@@ -39,7 +39,7 @@ const reservedProfileNames = new Set([
 export function resolveUserHome(env: NodeJS.ProcessEnv = process.env): string {
   const userProfile = env.USERPROFILE;
   if (userProfile) {
-    return path.win32.resolve(userProfile);
+    return resolveFilesystemPath(userProfile);
   }
 
   if (env.HOMEDRIVE && env.HOMEPATH) {
@@ -52,19 +52,21 @@ export function resolveUserHome(env: NodeJS.ProcessEnv = process.env): string {
 }
 
 export function getAppHomePath(userHome = resolveUserHome()): string {
-  return path.win32.resolve(userHome, appHomeName);
+  return resolveFilesystemPath(userHome, appHomeName);
 }
 
 export function isPathInside(basePath: string, candidatePath: string): boolean {
-  const base = path.win32.resolve(basePath).toLowerCase();
-  const candidate = path.win32.resolve(candidatePath).toLowerCase();
-  const relative = path.win32.relative(base, candidate);
+  const pathApi = pathApiFor(basePath, candidatePath);
+  const [normalizedBasePath, normalizedCandidatePath] = normalizeSegments(pathApi, basePath, candidatePath);
+  const base = pathApi.resolve(normalizedBasePath).toLowerCase();
+  const candidate = pathApi.resolve(normalizedCandidatePath).toLowerCase();
+  const relative = pathApi.relative(base, candidate);
 
-  return relative === '' || (!relative.startsWith('..') && !path.win32.isAbsolute(relative));
+  return relative === '' || (!relative.startsWith('..') && !pathApi.isAbsolute(relative));
 }
 
 export function resolveInside(basePath: string, ...segments: string[]): string {
-  const candidate = path.win32.resolve(basePath, ...segments);
+  const candidate = resolveFilesystemPath(basePath, ...segments);
 
   if (!isPathInside(basePath, candidate)) {
     throw new CcpsError('PATH_OUTSIDE_BASE', 'Resolved path escapes the expected base directory.', {
@@ -73,6 +75,18 @@ export function resolveInside(basePath: string, ...segments: string[]): string {
   }
 
   return candidate;
+}
+
+export function resolveFilesystemPath(...segments: string[]): string {
+  const pathApi = pathApiFor(...segments);
+  return pathApi.resolve(...normalizeSegments(pathApi, ...segments));
+}
+
+export function relativeFilesystemPath(basePath: string, candidatePath: string): string {
+  const pathApi = pathApiFor(basePath, candidatePath);
+  const [normalizedBasePath, normalizedCandidatePath] = normalizeSegments(pathApi, basePath, candidatePath);
+
+  return pathApi.relative(pathApi.resolve(normalizedBasePath), pathApi.resolve(normalizedCandidatePath));
 }
 
 export function validateProfileName(name: string): string {
@@ -95,4 +109,20 @@ function invalidProfileName(): CcpsError {
   return new CcpsError('INVALID_PROFILE_NAME', 'Profile name is not safe.', {
     guidance: 'Use letters, numbers, hyphen, or underscore. Do not use path separators or reserved names.',
   });
+}
+
+function pathApiFor(...segments: string[]): typeof path.win32 {
+  if (process.platform !== 'win32' && segments.some((segment) => path.posix.isAbsolute(segment))) {
+    return path;
+  }
+
+  return path.win32;
+}
+
+function normalizeSegments(pathApi: typeof path.win32, ...segments: string[]): string[] {
+  if (pathApi === path) {
+    return segments.map((segment) => segment.replace(/\\/g, path.sep));
+  }
+
+  return segments;
 }

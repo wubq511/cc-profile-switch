@@ -14,7 +14,13 @@
     "test:watch": "vitest",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "check": "npm run lint && npm run test && npm run build"
+    "check": "npm run lint && npm run test && npm run build",
+    "codegraph:init": "codegraph init .",
+    "codegraph:index": "codegraph index . --force",
+    "codegraph:sync": "codegraph sync .",
+    "codegraph:status": "codegraph status .",
+    "codegraph:query": "codegraph query",
+    "codegraph:explore": "codegraph explore"
   },
   "keywords": [
     "claude-code",
@@ -31,6 +37,7 @@
     "zod": "^4.1.12"
   },
   "devDependencies": {
+    "@colbymchenry/codegraph": "^1.0.1",
     "@eslint/js": "^9.39.1",
     "@types/fs-extra": "^11.0.4",
     "@types/node": "^24.10.1",

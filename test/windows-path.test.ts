@@ -18,6 +18,17 @@ describe('windows path helpers', () => {
     expect(getAppHomePath('C:\\Users\\Robert')).toBe('C:\\Users\\Robert\\.cc-profile-switch');
   });
 
+  it('keeps POSIX absolute test paths usable on non-Windows hosts', () => {
+    if (process.platform === 'win32') {
+      return;
+    }
+
+    expect(getAppHomePath('/var/folders/example/user')).toBe('/var/folders/example/user/.cc-profile-switch');
+    expect(resolveInside('/var/folders/example/user/.cc-profile-switch', 'profiles', 'coding')).toBe(
+      '/var/folders/example/user/.cc-profile-switch/profiles/coding',
+    );
+  });
+
   it('detects contained paths case-insensitively', () => {
     expect(isPathInside('C:\\Users\\Robert\\.cc-profile-switch', 'c:\\users\\robert\\.cc-profile-switch\\profiles')).toBe(
       true,

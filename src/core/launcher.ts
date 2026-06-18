@@ -1,11 +1,10 @@
 import fs from 'fs-extra';
-import path from 'node:path';
 
 import { loadAppConfig, saveAppConfig, type Clock } from './app-config';
 import { resolveApiSettings, type ApiSettingsSource } from './api-settings';
 import { resolveLaunchProfile } from './profile-management';
 import { spawnProcess as defaultSpawnProcess, type SpawnProcess } from '../platform/process';
-import { resolveInside } from '../platform/windows-path';
+import { resolveFilesystemPath, resolveInside } from '../platform/windows-path';
 import { type ProfileLaunchConfig } from '../schemas/profile';
 import { CcpsError } from '../utils/errors';
 import {
@@ -240,7 +239,7 @@ function buildClaudeArgs(
 }
 
 async function resolveLaunchCwd(cwd?: string): Promise<string> {
-  const resolvedCwd = path.win32.resolve(cwd ?? process.cwd());
+  const resolvedCwd = resolveFilesystemPath(cwd ?? process.cwd());
 
   try {
     const stats = await fs.stat(resolvedCwd);

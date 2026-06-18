@@ -2,6 +2,8 @@ import { spawn } from 'node:child_process';
 import fs from 'fs-extra';
 import path from 'node:path';
 
+import { resolveFilesystemPath } from './windows-path';
+
 export type ProcessSpawnOptions = {
   cwd: string;
   stdio: 'inherit';
@@ -29,10 +31,6 @@ export async function resolveSpawnCommand(
   args: string[],
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<ResolvedSpawnCommand> {
-  if (process.platform !== 'win32') {
-    return { command, args };
-  }
-
   const resolvedCommand = await resolveWindowsCommand(command, env);
 
   return {
@@ -90,7 +88,7 @@ function windowsPathCandidates(command: string, env: NodeJS.ProcessEnv): string[
 
   for (const searchDir of pathValue.split(path.win32.delimiter).filter(Boolean)) {
     for (const extension of extensions) {
-      candidates.push(path.win32.join(searchDir, `${command}${extension}`));
+      candidates.push(resolveFilesystemPath(searchDir, `${command}${extension}`));
     }
   }
 
@@ -113,7 +111,7 @@ async function resolveWindowsCandidate(candidate: string): Promise<string | unde
     return undefined;
   }
 
-  const extension = path.win32.extname(candidate).toLowerCase();
+  const extension = fileExtension(candidate);
   if (extension === '.exe' || extension === '.com') {
     return candidate;
   }
@@ -131,12 +129,12 @@ async function resolveWindowsCandidate(candidate: string): Promise<string | unde
 
 async function parseCmdShimExecutable(shimPath: string): Promise<string | undefined> {
   const raw = await fs.readFile(shimPath, 'utf8');
-  const shimDir = path.win32.dirname(shimPath);
+  const shimDir = resolveFilesystemPath(shimPath, '..');
   const pattern = /"(%dp0%|%~dp0)[\\/]?([^"]+?\.exe)"/gi;
   let match: RegExpExecArray | null;
 
   while ((match = pattern.exec(raw)) !== null) {
-    const resolved = path.win32.resolve(shimDir, match[2].replace(/^[\\/]+/, ''));
+    const resolved = resolveFilesystemPath(shimDir, match[2].replace(/^[\\/]+/, ''));
     if (await isFile(resolved)) {
       return resolved;
     }
@@ -147,12 +145,12 @@ async function parseCmdShimExecutable(shimPath: string): Promise<string | undefi
 
 async function parseShellShimExecutable(shimPath: string): Promise<string | undefined> {
   const raw = await fs.readFile(shimPath, 'utf8');
-  const shimDir = path.win32.dirname(shimPath);
+  const shimDir = resolveFilesystemPath(shimPath, '..');
   const pattern = /"\$basedir\/([^"]+?\.exe)"/gi;
   let match: RegExpExecArray | null;
 
   while ((match = pattern.exec(raw)) !== null) {
-    const resolved = path.win32.resolve(shimDir, match[1].replace(/\//g, '\\'));
+    const resolved = resolveFilesystemPath(shimDir, match[1]);
     if (await isFile(resolved)) {
       return resolved;
     }
@@ -182,6 +180,14 @@ function getEnvValue(env: NodeJS.ProcessEnv, name: string): string | undefined {
 
 function hasPathSeparator(value: string): boolean {
   return value.includes('\\') || value.includes('/');
+}
+
+function fileExtension(value: string): string {
+  const normalized = value.replace(/\\/g, '/');
+  const basename = normalized.slice(normalized.lastIndexOf('/') + 1);
+  const dotIndex = basename.lastIndexOf('.');
+
+  return dotIndex === -1 ? '' : basename.slice(dotIndex).toLowerCase();
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {

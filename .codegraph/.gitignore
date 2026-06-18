@@ -1,0 +1,7 @@
+# Keep codegraph.db tracked for this repository so a fresh clone already has
+# a project graph. Runtime sidecar files are local-only.
+*.db-shm
+*.db-wal
+*.pid
+*.sock
+*.log
