@@ -2,6 +2,7 @@ import fs from 'fs-extra';
 
 import { loadAppConfig, saveAppConfig, type Clock } from './app-config';
 import { resolveApiSettings, type ApiSettingsSource } from './api-settings';
+import { extractAnthropicApiEnv, getClaudeSettingsPath } from './claude-settings';
 import { resolveLaunchProfile } from './profile-management';
 import { spawnProcess as defaultSpawnProcess, type SpawnProcess } from '../platform/process';
 import { resolveFilesystemPath, resolveInside } from '../platform/path';
@@ -52,6 +53,7 @@ export type LaunchPlan = {
     keys: string[];
   };
   apiEnv: Record<string, string>;
+  realClaudeEnv: Record<string, string>;
   mcpMode: ProfileLaunchConfig['mcpMode'];
   pluginDirs: string[];
   validationStatus: ValidationStatus;
@@ -100,6 +102,7 @@ export async function buildLaunchPlan(options: LaunchPlanOptions): Promise<Launc
     appHomePath: options.appHomePath,
     profileName: validation.profileName,
   });
+  const realClaudeEnv = await loadRealClaudeSettingsEnv();
   const warnings = validation.findings.filter((finding) => finding.severity === 'warning');
 
   return {
@@ -123,6 +126,7 @@ export async function buildLaunchPlan(options: LaunchPlanOptions): Promise<Launc
       keys: apiSettings.keys,
     },
     apiEnv: apiSettings.env,
+    realClaudeEnv,
     mcpMode: validation.config.launch.mcpMode,
     pluginDirs,
     validationStatus: validation.status,
@@ -154,6 +158,8 @@ export function formatLaunchDryRun(plan: LaunchPlan): string {
     `  profile: ${formatApiSource(plan.apiConfig.profile)}`,
     '  env keys:',
     ...formatList(plan.apiConfig.keys),
+    'Real Claude settings env:',
+    ...formatList(sortedKeys(plan.realClaudeEnv)),
     `Validation: ${plan.validationStatus}`,
     'Warnings:',
     ...formatWarnings(plan.warnings),
@@ -177,6 +183,7 @@ export async function launchProfile(options: LaunchProfileOptions): Promise<Laun
       shell: false,
       env: {
         ...process.env,
+        ...plan.realClaudeEnv,
         ...plan.apiEnv,
         ...plan.envChanges,
       },
@@ -291,4 +298,19 @@ function invalidLaunchCwd(cwd: string, message: string): CcpsError {
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && 'code' in error;
+}
+
+function sortedKeys(value: Record<string, string>): string[] {
+  return Object.keys(value).sort((a, b) => a.localeCompare(b));
+}
+
+async function loadRealClaudeSettingsEnv(): Promise<Record<string, string>> {
+  const settingsPath = getClaudeSettingsPath();
+
+  try {
+    const settings = await fs.readJson(settingsPath);
+    return extractAnthropicApiEnv(settings);
+  } catch {
+    return {};
+  }
 }
