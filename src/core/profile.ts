@@ -36,13 +36,13 @@ export type InitProfilesResult = {
 export type CreateProfileOptions = {
   appHomePath?: string;
   name: string;
-  template: ProfileTemplateName;
+  template?: ProfileTemplateName;
   clock?: Clock;
 };
 
 export type CreateProfileResult = {
   name: string;
-  template: ProfileTemplateName;
+  template: ProfileTemplateName | undefined;
   paths: ProfileTemplatePaths;
 };
 
@@ -142,7 +142,7 @@ export async function backupProfile(options: BackupProfileOptions): Promise<Back
   const paths = getProfileTemplatePaths(appPaths.appHomePath, options.name);
   if (!(await fs.pathExists(paths.profileRootPath))) {
     throw new CcpsError('PROFILE_NOT_FOUND', 'Profile does not exist.', {
-      guidance: `Create the profile first: ccps create ${options.name} --template blank`,
+      guidance: `Create the profile first: ccps create ${options.name}`,
     });
   }
 

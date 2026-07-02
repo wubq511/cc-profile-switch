@@ -209,7 +209,7 @@ describe('profile lifecycle commands', () => {
     const focusPaths = getProfileTemplatePaths(appHome, 'focus');
 
     await runCli(userHome, ['init']);
-    await runCli(userHome, ['create', 'focus', '--template', 'blank']);
+    await runCli(userHome, ['create', 'focus']);
     await fs.writeJson(focusPaths.settingsPath, {
       autoMemoryDirectory: focusPaths.autoMemoryPath,
       env: {
@@ -266,10 +266,10 @@ describe('profile lifecycle commands', () => {
     const userHome = await makeUserHome();
 
     await runCli(userHome, ['init']);
-    await runCli(userHome, ['create', 'focus', '--template', 'blank']);
+    await runCli(userHome, ['create', 'focus']);
 
     await expect(
-      runCli(userHome, ['create', 'focus', '--template', 'blank']),
+      runCli(userHome, ['create', 'focus']),
     ).rejects.toMatchObject({
       code: 'PROFILE_ALREADY_EXISTS',
     });
@@ -280,7 +280,7 @@ describe('profile lifecycle commands', () => {
 
     await runCli(userHome, ['init']);
 
-    await expect(runCli(userHome, ['create', '..', '--template', 'blank'])).rejects.toMatchObject({
+    await expect(runCli(userHome, ['create', '..'])).rejects.toMatchObject({
       code: 'INVALID_PROFILE_NAME',
     });
   });

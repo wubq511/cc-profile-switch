@@ -6,6 +6,7 @@ import { CcpsError } from '../utils/errors';
 import { type Clock, writeJsonFile } from './app-config';
 
 export type ProfileTemplateName = 'coding' | 'study' | 'work' | 'research' | 'general' | 'blank';
+type TemplateEnum = ProfileTemplateName | 'none';
 
 type TemplateDefinition = {
   description: string;
@@ -36,12 +37,12 @@ export type ProfileTemplatePaths = {
 export type CreateProfileFromTemplateOptions = {
   appHomePath?: string;
   name: string;
-  template: ProfileTemplateName;
+  template?: ProfileTemplateName;
   description?: string;
   clock?: Clock;
 };
 
-export const profileTemplates: Record<ProfileTemplateName, TemplateDefinition> = {
+export const profileTemplates: Record<TemplateEnum, TemplateDefinition> = {
   coding: {
     description: 'Focused software development profile.',
     claudeMd: profileClaudeMd('Coding', 'Use this profile for implementation, refactoring, and code review work.'),
@@ -66,15 +67,32 @@ export const profileTemplates: Record<ProfileTemplateName, TemplateDefinition> =
     description: 'Minimal empty profile.',
     claudeMd: profileClaudeMd('Blank', 'This profile is intentionally minimal.'),
   },
+  none: {
+    description: 'Minimal empty profile.',
+    claudeMd: profileClaudeMd('Blank', 'This profile is intentionally minimal.'),
+  },
 };
 
+const namedTemplates: ProfileTemplateName[] = ['coding', 'study', 'work', 'research', 'general'];
+
 export function listProfileTemplates(): ProfileTemplateName[] {
-  return Object.keys(profileTemplates) as ProfileTemplateName[];
+  return [...namedTemplates];
+}
+
+function resolveTemplateName(template?: ProfileTemplateName): TemplateEnum {
+  if (template === undefined || template === 'blank') {
+    return 'none';
+  }
+  return template;
 }
 
 export function getProfileTemplate(name: string): TemplateDefinition {
   const templateName = profileTemplateSchema.parse(name);
-  return profileTemplates[templateName];
+  return profileTemplates[resolveTemplateName(templateName)];
+}
+
+export function getProfileTemplateForCreate(template?: ProfileTemplateName): TemplateDefinition {
+  return profileTemplates[resolveTemplateName(template)];
 }
 
 export function getProfileTemplatePaths(appHomePath: string, profileName: string): ProfileTemplatePaths {
@@ -105,8 +123,8 @@ export async function createProfileFromTemplate(
 ): Promise<{ config: ProfileConfig; paths: ProfileTemplatePaths }> {
   const appHomePath = options.appHomePath ?? getAppHomePath();
   const profileName = validateProfileName(options.name);
-  const templateName = profileTemplateSchema.parse(options.template);
-  const template = profileTemplates[templateName];
+  const templateName = resolveTemplateName(options.template);
+  const template = getProfileTemplateForCreate(options.template);
   const paths = getProfileTemplatePaths(appHomePath, profileName);
 
   if (await fs.pathExists(paths.profileRootPath)) {
@@ -119,7 +137,7 @@ export async function createProfileFromTemplate(
   const config = profileConfigSchema.parse({
     name: profileName,
     description: options.description ?? template.description,
-    template: templateName,
+    template: templateName === 'none' ? undefined : templateName,
     createdAt: timestamp,
     updatedAt: timestamp,
   });

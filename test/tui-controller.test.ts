@@ -164,7 +164,7 @@ describe('tui controller', () => {
     await runTuiController({ appHomePath: 'C:\\app', ports, services });
 
     expect(ports.output.join('')).toContain('No profiles found.');
-    expect(ports.output.join('')).toContain('Next: ccps init or ccps create <name> --template blank');
+    expect(ports.output.join('')).toContain('Next: ccps init or ccps create <name>');
     expect(ports.selectCalls).toEqual([]);
   });
 

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { createProfileFromTemplate, getProfileTemplate, listProfileTemplates } from '../src/core/profile-template';
+import { createProfileFromTemplate, getProfileTemplate, getProfileTemplateForCreate, listProfileTemplates } from '../src/core/profile-template';
 
 const fixedClock = () => new Date('2026-01-02T03:04:05.000Z');
 
@@ -23,9 +23,20 @@ describe('profile templates', () => {
     return join(root, '.cc-profile-switch');
   }
 
-  it('defines all MVP templates', () => {
-    expect(listProfileTemplates()).toEqual(['coding', 'study', 'work', 'research', 'general', 'blank']);
+  it('defines all named templates', () => {
+    expect(listProfileTemplates()).toEqual(['coding', 'study', 'work', 'research', 'general']);
     expect(getProfileTemplate('coding').description).toContain('software development');
+  });
+
+  it('resolves omitted template to blank via getProfileTemplateForCreate', () => {
+    const template = getProfileTemplateForCreate(undefined);
+    expect(template.description).toBe('Minimal empty profile.');
+    expect(template.claudeMd).toContain('Blank');
+  });
+
+  it('resolves blank template name to blank via getProfileTemplateForCreate', () => {
+    const template = getProfileTemplateForCreate('blank');
+    expect(template.description).toBe('Minimal empty profile.');
   });
 
   it('materializes the final profile directory structure', async () => {

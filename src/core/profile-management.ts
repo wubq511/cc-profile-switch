@@ -285,7 +285,7 @@ async function ensureProfileExists(appHomePath: string, profileName: string): Pr
   const paths = getProfileTemplatePaths(appHomePath, profileName);
   if (!(await fs.pathExists(paths.profileRootPath))) {
     throw new CcpsError('PROFILE_NOT_FOUND', 'Profile does not exist.', {
-      guidance: `Create the profile first: ccps create ${profileName} --template blank`,
+      guidance: `Create the profile first: ccps create ${profileName}`,
     });
   }
 }

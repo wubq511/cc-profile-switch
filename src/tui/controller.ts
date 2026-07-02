@@ -96,7 +96,7 @@ export async function runTuiController(options: RunTuiControllerOptions): Promis
   const profiles = await services.listProfilesForDisplay({ appHomePath });
   if (profiles.length === 0) {
     ports.writeOut('No profiles found.\n');
-    ports.writeOut('Next: ccps init or ccps create <name> --template blank\n');
+    ports.writeOut('Next: ccps init or ccps create <name>\n');
     return;
   }
 

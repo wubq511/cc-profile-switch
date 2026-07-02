@@ -59,6 +59,15 @@ describe('config schemas', () => {
     });
   });
 
+  it('allows omitting template for blank profiles', () => {
+    const profile = profileConfigSchema.parse({
+      name: 'no_template',
+    });
+
+    expect(profile.template).toBeUndefined();
+    expect(profile.description).toBe('');
+  });
+
   it('rejects invalid launch config values', () => {
     expect(() =>
       profileConfigSchema.parse({

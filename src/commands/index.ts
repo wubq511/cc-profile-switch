@@ -62,13 +62,14 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
 
   program
     .command('create <name>')
-    .description('Create a profile from a template.')
-    .requiredOption('--template <template>', 'Profile template to use.')
-    .action(async (name: string, options: { template: string }) => {
+    .description('Create a profile. Optionally specify a template; defaults to a blank profile.')
+    .option('--template <template>', 'Profile template to use (coding, study, work, research, general).')
+    .action(async (name: string, options: { template?: string }) => {
       const template = parseTemplateName(options.template);
       const result = await createProfile({ name, template, clock: runtime.clock });
 
-      runtime.writeOut(`Created profile "${result.name}" from template "${result.template}".\n`);
+      const label = result.template ?? 'blank';
+      runtime.writeOut(`Created profile "${result.name}" (template: ${label}).\n`);
       runtime.writeOut(`Path: ${result.paths.profileRootPath}\n`);
       runtime.writeOut(`Next: ccps launch ${result.name} --dry-run\n`);
     });
@@ -349,12 +350,16 @@ const defaultRuntime: CommandRuntime = {
   clock: () => new Date(),
 };
 
-function parseTemplateName(value: string): ProfileTemplateName {
+function parseTemplateName(value: string | undefined): ProfileTemplateName | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
   const parsed = profileTemplateSchema.safeParse(value);
 
   if (!parsed.success) {
     throw new CcpsError('INVALID_PROFILE_TEMPLATE', 'Profile template is not supported.', {
-      guidance: 'Use one of: coding, study, work, research, general, blank.',
+      guidance: 'Use one of: coding, study, work, research, general.',
       cause: parsed.error,
     });
   }
@@ -367,7 +372,7 @@ function resolveEditTarget(appHomePath: string, name: string, file?: string): st
 
   if (!fs.pathExistsSync(paths.profileRootPath)) {
     throw new CcpsError('PROFILE_NOT_FOUND', 'Profile does not exist.', {
-      guidance: `Create the profile first: ccps create ${name} --template blank`,
+      guidance: `Create the profile first: ccps create ${name}`,
     });
   }
 
