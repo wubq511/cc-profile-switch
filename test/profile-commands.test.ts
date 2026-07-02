@@ -625,8 +625,9 @@ describe('profile lifecycle commands', () => {
     );
 
     expect(spawnCalls).toHaveLength(1);
+    const expectedCommand = process.platform === 'darwin' ? 'script' : 'claude';
     expect(spawnCalls[0]).toMatchObject({
-      command: 'claude',
+      command: expectedCommand,
       cwd: projectCwd,
     });
     expect(spawnCalls[0].args).toContain('--mcp-config');
@@ -653,8 +654,9 @@ describe('profile lifecycle commands', () => {
     });
 
     expect(spawnCalls).toHaveLength(1);
+    const expectedCommand2 = process.platform === 'darwin' ? 'script' : 'claude';
     expect(spawnCalls[0]).toMatchObject({
-      command: 'claude',
+      command: expectedCommand2,
       cwd: projectCwd,
     });
     expect(result.output).toContain('Launching Claude Code with profile "coding"');

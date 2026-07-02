@@ -5,6 +5,7 @@ import { createInterface } from 'node:readline/promises';
 import { getAppHomePaths, loadAppConfig } from '../core/app-config';
 import { buildLaunchPlan, formatLaunchDryRun, launchProfile } from '../core/launcher';
 import { backupProfile, createProfile, initProfiles, type Clock } from '../core/profile';
+import { ensureProfileCreator } from '../core/profile-creator';
 import {
   clearDefaultProfile,
   copyProfile,
@@ -323,6 +324,31 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
       runtime.writeOut(`Launching Claude Code with profile "${result.plan.profileName}".\n`);
       runtime.writeOut(`Cwd: ${result.plan.cwd}\n`);
       runtime.writeOut(`CLAUDE_CONFIG_DIR=${result.plan.envChanges.CLAUDE_CONFIG_DIR}\n`);
+    });
+
+  program
+    .command('create-profile')
+    .description('Launch Claude Code with the profile creator wizard.')
+    .option('--cwd <path>', 'Project directory to launch Claude Code from.')
+    .action(async (options: { cwd?: string }) => {
+      const appPaths = getAppHomePaths();
+
+      runtime.writeOut('Setting up profile creator...\n');
+      const profileName = await ensureProfileCreator({
+        appHomePath: appPaths.appHomePath,
+        clock: runtime.clock,
+      });
+      runtime.writeOut(`Profile creator ready. Launching Claude Code...\n`);
+
+      const result = await launchProfile({
+        appHomePath: appPaths.appHomePath,
+        profileName,
+        cwd: options.cwd,
+        spawnProcess: runtime.spawnProcess,
+        clock: runtime.clock,
+      });
+
+      runtime.writeOut(`Claude Code exited. Profile creator session complete.\n`);
     });
 }
 

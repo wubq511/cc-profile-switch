@@ -108,6 +108,7 @@ New profiles include `CLAUDE_CODE_ATTRIBUTION_HEADER=0` in `claude-home\settings
 | `ccps remove <name>` | Back up, exact-name confirm, then remove a profile; default/last-used references are cleared. |
 | `ccps default [name]` | Show or set the default profile; `--clear` clears it. |
 | `ccps launch [profile]` | Start Claude Code from cwd with the selected/default profile. |
+| `ccps create-profile` | Launch Claude Code with the profile creator wizard (uses ccps-create-profile skill). |
 | `ccps tui` | Lightweight terminal helper over the same core services; not a GUI or separate product mode. |
 
 ## Launch Behavior

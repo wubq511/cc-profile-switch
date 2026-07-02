@@ -177,7 +177,15 @@ export async function launchProfile(options: LaunchProfileOptions): Promise<Laun
 
   let result: { exitCode: number | null };
   try {
-    result = await runProcess(plan.command, plan.args, {
+    // On macOS, wrap with `script` to allocate a PTY so Claude Code stays in interactive mode.
+    // Without this, Claude Code detects non-TTY stdout and auto-enters --print mode.
+    const isMac = process.platform === 'darwin';
+    const spawnCommand = isMac ? 'script' : plan.command;
+    const spawnArgs = isMac
+      ? ['-q', '/dev/null', plan.command, ...plan.args]
+      : plan.args;
+
+    result = await runProcess(spawnCommand, spawnArgs, {
       cwd: plan.cwd,
       stdio: 'inherit',
       shell: false,

@@ -246,13 +246,23 @@ describe('launcher', () => {
     });
 
     expect(result.plan.profileName).toBe('coding');
-    expect(spawnCalls).toEqual([
-      {
-        command: 'claude',
-        args: ['--dangerously-skip-permissions', '--mcp-config', paths.mcpConfigPath],
-        cwd: projectCwd,
-      },
-    ]);
+    if (process.platform === 'darwin') {
+      expect(spawnCalls).toEqual([
+        {
+          command: 'script',
+          args: ['-q', '/dev/null', 'claude', '--dangerously-skip-permissions', '--mcp-config', paths.mcpConfigPath],
+          cwd: projectCwd,
+        },
+      ]);
+    } else {
+      expect(spawnCalls).toEqual([
+        {
+          command: 'claude',
+          args: ['--dangerously-skip-permissions', '--mcp-config', paths.mcpConfigPath],
+          cwd: projectCwd,
+        },
+      ]);
+    }
     await expect(fs.readJson(join(appHome, 'config.json'))).resolves.toMatchObject({
       lastUsedProfile: 'coding',
       updatedAt: '2026-05-20T11:30:00.000Z',
@@ -450,9 +460,13 @@ describe('launcher', () => {
 
     expect(result.plan.cwd).toBe(projectCwd);
     expect(spawnCalls).toHaveLength(1);
+    const expectedCommand = process.platform === 'darwin' ? 'script' : 'claude';
+    const expectedArgs = process.platform === 'darwin'
+      ? ['-q', '/dev/null', 'claude', '--dangerously-skip-permissions', '--mcp-config', paths.mcpConfigPath]
+      : ['--dangerously-skip-permissions', '--mcp-config', paths.mcpConfigPath];
     expect(spawnCalls[0]).toMatchObject({
-      command: 'claude',
-      args: ['--dangerously-skip-permissions', '--mcp-config', paths.mcpConfigPath],
+      command: expectedCommand,
+      args: expectedArgs,
       options: {
         cwd: projectCwd,
         stdio: 'inherit',
@@ -504,10 +518,14 @@ describe('launcher', () => {
     expect(dryRun).toContain('hello from ccps');
     expect(dryRun).toContain(`Cwd: ${projectCwd}`);
     expect(dryRun).toContain(`CLAUDE_CONFIG_DIR=${paths.claudeHomePath}`);
+    const expectedCommand = process.platform === 'darwin' ? 'script' : plan.command;
+    const expectedArgs = process.platform === 'darwin'
+      ? ['-q', '/dev/null', plan.command, ...plan.args]
+      : plan.args;
     expect(spawnCalls).toEqual([
       {
-        command: plan.command,
-        args: plan.args,
+        command: expectedCommand,
+        args: expectedArgs,
         cwd: plan.cwd,
         claudeConfigDir: plan.envChanges.CLAUDE_CONFIG_DIR,
       },
