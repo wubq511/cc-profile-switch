@@ -26,6 +26,15 @@ npm run build
 npm link
 ```
 
+更新到最新版本：
+
+```sh
+git pull
+npm install
+npm run build
+npm link
+```
+
 本地开发（不使用 link）：
 
 ```sh
