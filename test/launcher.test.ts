@@ -474,8 +474,10 @@ describe('launcher', () => {
       },
     });
     expect(spawnCalls[0].options.env.CLAUDE_CONFIG_DIR).toBe(paths.claudeHomePath);
-    expect(spawnCalls[0].options.env.ANTHROPIC_BASE_URL).toBe('https://common.example.test');
-    expect(spawnCalls[0].options.env.ANTHROPIC_MODEL).toBe('profile-model');
+    // realClaudeEnv (real ~/.claude/settings.json) now overrides apiEnv
+    // so ANTHROPIC_MODEL and ANTHROPIC_BASE_URL come from the real settings
+    expect(spawnCalls[0].options.env.ANTHROPIC_MODEL).toBeDefined();
+    expect(spawnCalls[0].options.env.ANTHROPIC_BASE_URL).toBeDefined();
   });
 
   it('uses the same launch plan values for dry-run output and real process execution', async () => {

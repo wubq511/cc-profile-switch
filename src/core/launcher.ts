@@ -191,8 +191,8 @@ export async function launchProfile(options: LaunchProfileOptions): Promise<Laun
       shell: false,
       env: {
         ...process.env,
-        ...plan.realClaudeEnv,
         ...plan.apiEnv,
+        ...plan.realClaudeEnv,
         ...plan.envChanges,
       },
     });

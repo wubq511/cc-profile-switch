@@ -59,11 +59,14 @@ export async function importClaudeApiSettings(
 
   const nextEnv = { ...existing.env };
   const importedKeys: string[] = [];
-  const preservedKeys: string[] = [];
+  const updatedKeys: string[] = [];
 
   for (const key of sourceKeys) {
     if (Object.hasOwn(nextEnv, key)) {
-      preservedKeys.push(key);
+      if (nextEnv[key] !== sourceEnv[key]) {
+        nextEnv[key] = sourceEnv[key];
+        updatedKeys.push(key);
+      }
       continue;
     }
 
@@ -71,12 +74,12 @@ export async function importClaudeApiSettings(
     importedKeys.push(key);
   }
 
-  if (importedKeys.length === 0) {
+  if (importedKeys.length === 0 && updatedKeys.length === 0) {
     return {
       sourcePath,
       targetPath,
       importedKeys,
-      preservedKeys,
+      preservedKeys: [],
       skipped: true,
     };
   }
@@ -86,8 +89,8 @@ export async function importClaudeApiSettings(
   return {
     sourcePath,
     targetPath,
-    importedKeys,
-    preservedKeys,
+    importedKeys: [...importedKeys, ...updatedKeys],
+    preservedKeys: [],
     skipped: false,
   };
 }

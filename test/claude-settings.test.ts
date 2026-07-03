@@ -74,13 +74,13 @@ describe('Claude settings import', () => {
     expect(result).toEqual({
       sourcePath: sourceSettingsPath,
       targetPath: appPaths.apiSettingsPath,
-      importedKeys: ['ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL'],
-      preservedKeys: ['ANTHROPIC_MODEL'],
+      importedKeys: ['ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_MODEL'],
+      preservedKeys: [],
       skipped: false,
     });
     await expect(fs.readJson(appPaths.apiSettingsPath)).resolves.toEqual({
       env: {
-        ANTHROPIC_MODEL: 'existing-model',
+        ANTHROPIC_MODEL: 'source-model',
         ANTHROPIC_AUTH_TOKEN: 'source-token',
         ANTHROPIC_BASE_URL: 'https://source.example.test',
       },
