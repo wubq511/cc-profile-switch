@@ -55,6 +55,7 @@ ccps launch <profile> --dry-run
 ccps launch <profile>
 ccps launch --dry-run
 ccps launch
+ccps create-profile
 ccps tui
 ```
 
@@ -69,6 +70,8 @@ ccps tui
 `ccps remove <name>` 删除前会先创建备份，并要求精确输入 profile 名称确认。它允许删除当前 default profile，也允许删除最后一个 profile；删除后会清理 default / last-used 中指向该 profile 的引用。没有任何 profile 时，`ccps list` 和 `ccps tui` 会提示先运行 `ccps init` 或 `ccps create <name> --template blank`。
 
 `ccps edit <name>` 会用新的 VS Code 窗口打开整个 profile 文件夹。带上文件或文件夹参数时，会打开该 profile 内的已有目标；常用别名包括 `CLAUDE.md`、`settings.json`、`mcp.json`、`profile.json`、`claude-home`、`memory`、`skills`、`agents`、`plugins`。
+
+`ccps create-profile` 会启动一个内置的 profile-creator profile，其中预装了 ccps-create-profile skill。进入 Claude Code 后，直接描述你要创建什么样的 profile，skill 会引导你完成完整的 8 阶段配置流程（CLAUDE.md 生成、Skills 安装、Agents 创建、MCP 配置、Settings 设置等）。首次运行会自动创建 profile-creator profile，后续运行会更新 skill 文件到最新版本。
 
 `ccps tui` 是覆盖同一套核心行为的轻量交互入口，适合在终端里选择 profile、执行 copy / rename / remove / default / validate / launch dry-run。它不是 GUI，也不是单独的产品模式；真正的启动、校验、删除备份和配置安全边界仍由相同的 core service 执行。
 
