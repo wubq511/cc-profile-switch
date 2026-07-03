@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "tsx src/index.ts",
-    "build": "tsup src/index.ts --format cjs --clean && mkdir -p dist/templates && cp -r src/templates/profile-creator dist/templates/profile-creator",
+    "build": "tsup src/index.ts --format cjs --clean && node scripts/copy-templates.js",
     "start": "node dist/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
