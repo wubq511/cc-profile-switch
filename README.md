@@ -26,9 +26,20 @@ npm run build
 npm link
 ```
 
-更新到最新版本：
+在另一台电脑首次安装：
 
 ```sh
+git clone https://github.com/wubq511/cc-profile-switch.git
+cd cc-profile-switch
+npm install
+npm run build
+npm link
+```
+
+更新到最新版本（在项目目录下执行）：
+
+```sh
+cd cc-profile-switch
 git pull
 npm install
 npm run build
