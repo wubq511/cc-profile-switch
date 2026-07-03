@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import { getAppHomePath, resolveInside, validateProfileName } from '../platform/path';
 import { type Clock, writeJsonFile } from './app-config';
+import { importClaudeApiSettings } from './claude-settings';
 import { getProfileTemplatePaths } from './profile-template';
 
 const PROFILE_CREATOR_NAME = 'profile-creator';
@@ -32,6 +33,9 @@ export async function ensureProfileCreator(
   if (!(await fs.pathExists(paths.profileRootPath))) {
     await createProfileCreatorProfile(appHomePath, paths, clock);
   }
+
+  // Sync latest ANTHROPIC_* env vars from real ~/.claude/settings.json
+  await importClaudeApiSettings({ appHomePath });
 
   // Always update skill files to latest version
   await copySkillFiles(paths.skillsPath);
