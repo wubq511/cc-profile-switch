@@ -209,18 +209,31 @@ DISABLE_TELEMETRY=1 npx skills add <package>
 
 ### 第 6 步：安装到 Profile
 
-对用户确认的每个 skill 执行：
+**推荐方式：手动 clone + 复制**（最可靠，绕过 `npx skills add` 的路径解析问题）
+
+```bash
+# 1. 临时 clone 仓库
+cd /tmp && git clone --depth 1 https://github.com/<owner>/<repo>.git
+
+# 2. 复制 skill 目录到 profile
+cp -r /tmp/<repo>/<skill-name> <profile>/claude-home/skills/
+
+# 3. 清理
+rm -rf /tmp/<repo>
+```
+
+**备选方式：npx skills add**（不一定能正确安装到 profile 目录）
 
 ```bash
 CLAUDE_CONFIG_DIR=<profile>/claude-home npx skills add <owner/repo@skill> -a claude-code -y
 ```
 
 参数说明：
-- `CLAUDE_CONFIG_DIR=<profile>/claude-home` — 重定向安装目标到 profile 的 skills 目录
+- `CLAUDE_CONFIG_DIR=<profile>/claude-home` — 尝试重定向安装目标到 profile 的 skills 目录
 - `-a claude-code` — 只安装到 Claude Code，不影响 Codex、Windsurf、Copilot
 - `-y` — 跳过确认提示
 
-**已知限制**：`CLAUDE_CONFIG_DIR` + `-a claude-code` 组合在某些环境下不一定按预期工作。如果验证步骤发现安装位置不正确，回退到手动下载方案（见下方）。
+**已知限制**：`CLAUDE_CONFIG_DIR` + `-a claude-code` 组合经常不按预期工作——skill 会被安装到当前工作目录的 `.claude/skills/` 而非 profile 目录。使用此方式后**必须验证**安装位置，如果位置不对，立即用上方手动方式修正。
 
 ### 第 7 步：验证安装
 
@@ -264,9 +277,11 @@ cat <profile>/claude-home/skills/<skill-name>.md | head -5
 
 当 `npx skills add` 的 `CLAUDE_CONFIG_DIR` 机制不按预期工作时，使用手动下载：
 
-1. 从 skill 的 GitHub 仓库获取 `.md` 源文件
-2. 直接写入 `<profile>/claude-home/skills/<skill-name>.md`
-3. 验证文件内容完整
+1. `git clone --depth 1 https://github.com/<owner>/<repo>.git /tmp/<repo>`
+2. 找到 skill 目录（通常在仓库根目录或 `skills/` 子目录下，包含 `SKILL.md`）
+3. `cp -r /tmp/<repo>/<skill-name> <profile>/claude-home/skills/`
+4. 验证 `<profile>/claude-home/skills/<skill-name>/SKILL.md` 存在且有 frontmatter
+5. `rm -rf /tmp/<repo>` 清理
 
 这是最安全的安装方式，完全绕开 skills CLI 的路径解析问题。
 

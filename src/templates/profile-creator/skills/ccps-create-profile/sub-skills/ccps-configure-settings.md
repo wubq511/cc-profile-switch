@@ -270,13 +270,13 @@ profile.json 的 `launch` 字段是 **ccps 自有抽象**，不是 Claude Code �
     "mcpMode": "merge",
     "pluginDirs": [],
     "disableAutoMemory": false,
-    "skipPermissions": false,
+    "skipPermissions": true,
     "claudeArgs": []
   }
 }
 ```
 
-**设计理由**：写作场景不需要 git 上下文注入，关闭 `includeGitInstructions` 和 `respectGitignore` 减少噪音；`skipPermissions: false` 保持文件操作确认，防止误写项目代码；`outputStyle` 控制回复风格。
+**设计理由**：写作场景不需要 git 上下文注入，关闭 `includeGitInstructions` 和 `respectGitignore` 减少噪音；`outputStyle` 控制回复风格。
 
 ### 3. Research（研究 / 信息检索）
 
@@ -301,8 +301,8 @@ profile.json 的 `launch` 字段是 **ccps 自有抽象**，不是 Claude Code �
       "Bash(curl *)"
     ],
     "deny": [
-      "Write",
-      "Bash(rm *)"
+      "Bash(rm -rf /)",
+      "Bash(git push --force *)"
     ]
   }
 }
@@ -315,13 +315,13 @@ profile.json 的 `launch` 字段是 **ccps 自有抽象**，不是 Claude Code �
     "mcpMode": "merge",
     "pluginDirs": [],
     "disableAutoMemory": false,
-    "skipPermissions": false,
+    "skipPermissions": true,
     "claudeArgs": ["--model", "claude-opus-4-20250514"]
   }
 }
 ```
 
-**设计理由**：研究场景需要大量 web fetch 和搜索，明确允许 `WebFetch` / `WebSearch`；限制写入型工具避免意外修改文件；可用 opus 做复杂检索汇总（通过 `claudeArgs` 覆盖模型）；提高 `MAX_TURNS` 应对长链检索任务。
+**设计理由**：研究场景需要大量 web fetch 和搜索，明确允许 `WebFetch` / `WebSearch`；可用 opus 做复杂检索汇总（通过 `claudeArgs` 覆盖模型）；提高 `MAX_TURNS` 应对长链检索任务。注意：研究 profile 如果涉及知识库维护（如写入 wiki 页面），需要在 `permissions.allow` 中加入 `Write` 和 `Edit`。
 
 ### 4. Study（学习 / 教学）
 
@@ -361,13 +361,13 @@ profile.json 的 `launch` 字段是 **ccps 自有抽象**，不是 Claude Code �
     "mcpMode": "merge",
     "pluginDirs": [],
     "disableAutoMemory": false,
-    "skipPermissions": false,
+    "skipPermissions": true,
     "claudeArgs": []
   }
 }
 ```
 
-**设计理由**：学习场景需要详细解释，`verbose: true` 输出更多调试信息帮助理解过程；`outputStyle: "explanatory"` 引导 Claude 给出解释型回答；`skipPermissions: false` 让每次操作有确认反馈，培养安全习惯；只允许跑 test 和 build，不允许写文件。
+**设计理由**：学习场景需要详细解释，`verbose: true` 输出更多调试信息帮助理解过程；`outputStyle: "explanatory"` 引导 Claude 给出解释型回答；只允许跑 test 和 build，不允许写文件。
 
 ---
 

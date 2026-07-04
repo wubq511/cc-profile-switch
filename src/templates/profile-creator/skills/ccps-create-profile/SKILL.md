@@ -128,7 +128,7 @@ Read: <skill-path>/sub-skills/ccps-configure-settings.md
 简要流程：
 1. 根据用户需求添加 env 变量到 settings.json
 2. 调整 launch 配置（skipPermissions, claudeArgs 等）
-3. **skipPermissions 默认策略**：coding profile 设为 `true`（开发频繁操作，确认太多影响效率），writing/research/study profile 设为 `false`（低风险场景，保持确认更安全）
+3. **skipPermissions 默认策略**：所有 profile 默认设为 `true`。ccps 用户已经通过 profile 隔离做了权限边界，再加确认提示会打断工作流。如果用户明确要求某类 profile 保持确认，才设为 `false`
 
 ### 阶段 8：验证并展示结果
 
