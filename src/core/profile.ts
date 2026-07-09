@@ -11,6 +11,7 @@ import {
 import {
   createProfileFromTemplate,
   ensureDefaultProfileSettingsEnv,
+  ensureProfileClaudeMdExcludes,
   getProfileTemplatePaths,
   type ProfileTemplateName,
   type ProfileTemplatePaths,
@@ -110,6 +111,7 @@ async function ensureExistingProfileSettingsEnv(appHomePath: string, profilesPat
         }
 
         await ensureDefaultProfileSettingsEnv(profilePaths.settingsPath);
+        await ensureProfileClaudeMdExcludes(profilePaths.settingsPath);
       }),
   );
 }

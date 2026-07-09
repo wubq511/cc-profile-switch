@@ -4,6 +4,7 @@ import { loadAppConfig, saveAppConfig, type Clock } from './app-config';
 import { resolveApiSettings, type ApiSettingsSource } from './api-settings';
 import { extractAnthropicApiEnv, getClaudeSettingsPath } from './claude-settings';
 import { resolveLaunchProfile } from './profile-management';
+import { ensureProfileClaudeMdExcludes, getRealClaudeMdExcludePaths } from './profile-template';
 import { spawnProcess as defaultSpawnProcess, type SpawnProcess } from '../platform/process';
 import { resolveFilesystemPath, resolveInside } from '../platform/path';
 import { type ProfileLaunchConfig } from '../schemas/profile';
@@ -56,6 +57,7 @@ export type LaunchPlan = {
   realClaudeEnv: Record<string, string>;
   mcpMode: ProfileLaunchConfig['mcpMode'];
   pluginDirs: string[];
+  claudeMdExcludes: string[];
   validationStatus: ValidationStatus;
   warnings: ValidationFinding[];
   validationFindings: ValidationFinding[];
@@ -129,6 +131,7 @@ export async function buildLaunchPlan(options: LaunchPlanOptions): Promise<Launc
     realClaudeEnv,
     mcpMode: validation.config.launch.mcpMode,
     pluginDirs,
+    claudeMdExcludes: getRealClaudeMdExcludePaths(),
     validationStatus: validation.status,
     warnings,
     validationFindings: validation.findings,
@@ -144,6 +147,8 @@ export function formatLaunchDryRun(plan: LaunchPlan): string {
     `MCP mode: ${plan.mcpMode}`,
     'Plugin dirs:',
     ...formatList(plan.pluginDirs),
+    'CLAUDE.md excludes:',
+    ...formatList(plan.claudeMdExcludes),
     `Command: ${plan.command}`,
     'Args:',
     ...formatList(plan.args),
@@ -174,6 +179,10 @@ export function formatLaunchDryRun(plan: LaunchPlan): string {
 export async function launchProfile(options: LaunchProfileOptions): Promise<LaunchProfileResult> {
   const plan = await buildLaunchPlan(options);
   const runProcess = options.spawnProcess ?? defaultSpawnProcess;
+
+  // Ensure claudeMdExcludes is present before spawning Claude Code.
+  // This is done here (not in buildLaunchPlan) so dry-run remains side-effect-free.
+  await ensureProfileClaudeMdExcludes(resolveInside(plan.claudeHomePath, 'settings.json'));
 
   let result: { exitCode: number | null };
   try {

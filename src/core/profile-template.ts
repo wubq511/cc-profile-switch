@@ -1,6 +1,6 @@
 import fs from 'fs-extra';
 
-import { getAppHomePath, resolveInside, validateProfileName } from '../platform/path';
+import { getAppHomePath, resolveFilesystemPath, resolveInside, resolveUserHome, validateProfileName } from '../platform/path';
 import { profileConfigSchema, profileTemplateSchema, type ProfileConfig } from '../schemas/profile';
 import { CcpsError } from '../utils/errors';
 import { type Clock, writeJsonFile } from './app-config';
@@ -208,9 +208,61 @@ export async function ensureDefaultProfileSettingsEnv(settingsPath: string): Pro
   return true;
 }
 
+export function getRealClaudeMdExcludePaths(userHomePath?: string): string[] {
+  const home = userHomePath ?? resolveUserHome();
+  return [resolveFilesystemPath(home, '.claude', 'CLAUDE.md')];
+}
+
+export async function ensureProfileClaudeMdExcludes(settingsPath: string): Promise<boolean> {
+  let settingsJson: unknown;
+
+  try {
+    settingsJson = await fs.readJson(settingsPath);
+  } catch (error) {
+    if (isNodeError(error) && error.code === 'ENOENT') {
+      return false;
+    }
+
+    if (error instanceof SyntaxError) {
+      return false;
+    }
+
+    throw error;
+  }
+
+  if (!isRecord(settingsJson)) {
+    return false;
+  }
+
+  const currentExcludes = settingsJson.claudeMdExcludes;
+  if (currentExcludes !== undefined && !Array.isArray(currentExcludes)) {
+    return false;
+  }
+
+  const excludePaths = getRealClaudeMdExcludePaths();
+  const existing = (currentExcludes ?? []) as string[];
+
+  const missing = excludePaths.filter((p) => !existing.includes(p));
+  if (missing.length === 0) {
+    return false;
+  }
+
+  await writeJsonFile(
+    settingsPath,
+    {
+      ...settingsJson,
+      claudeMdExcludes: [...existing, ...missing],
+    },
+    { overwrite: true },
+  );
+
+  return true;
+}
+
 function createInitialProfileSettings(paths: ProfileTemplatePaths): Record<string, unknown> {
   return {
     autoMemoryDirectory: paths.autoMemoryPath,
+    claudeMdExcludes: getRealClaudeMdExcludePaths(),
     env: {
       ...defaultProfileSettingsEnv,
     },

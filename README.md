@@ -161,17 +161,20 @@ macOS 结构相同，只使用 POSIX 路径分隔符：
 ```json
 {
   "autoMemoryDirectory": "C:\\Users\\<you>\\.cc-profile-switch\\profiles\\<name>\\claude-home\\memory\\auto",
+  "claudeMdExcludes": ["C:\\Users\\<you>\\.claude\\CLAUDE.md"],
   "env": {
     "CLAUDE_CODE_ATTRIBUTION_HEADER": "0"
   }
 }
 ```
 
-macOS 下同一字段会写入 `"/Users/<you>/.cc-profile-switch/profiles/<name>/claude-home/memory/auto"`。
+macOS 下同一字段会写入 `"/Users/<you>/.cc-profile-switch/profiles/<name>/claude-home/memory/auto"` 和 `"/Users/<you>/.claude/CLAUDE.md"`。
+
+`claudeMdExcludes` 用于排除真实 `~/.claude/CLAUDE.md`。这是 ccps 对 Claude Code 行为的 workaround：即使设置了 `CLAUDE_CONFIG_DIR`，Claude Code 仍会读取真实用户目录的 `CLAUDE.md`，导致 profile 上下文与真实用户指令混用。`claudeMdExcludes` 确保每个 profile 只看到自己 profile 下的 `CLAUDE.md`。
 
 因此使用 `ccps launch coding` 启动时，Claude Code 的用户配置目录是 coding 的 `claude-home`，auto memory 写入 coding 的 `claude-home\memory\auto`；切换到 `study` 时会写入 study 自己的 `claude-home\memory\auto`，互不混用。
 
-新建 profile 会默认写入 `CLAUDE_CODE_ATTRIBUTION_HEADER=0`。对已经存在的 profile，重新运行 `ccps init` 会在缺失时补齐这个 env 键，并保留已有 `settings.json` 字段。
+新建 profile 会默认写入 `CLAUDE_CODE_ATTRIBUTION_HEADER=0` 和 `claudeMdExcludes`。对已经存在的 profile，重新运行 `ccps init` 会在缺失时补齐这两个字段，并保留已有 `settings.json` 字段。`ccps launch` 在启动前也会自动确保当前 profile 的 `claudeMdExcludes` 存在。
 
 Claude Code 自己安装和管理的 plugin 位于当前 profile 的 `claude-home\plugins`。`profiles\<name>\mcp.json` 是 ccps 传给 Claude Code 的 profile MCP 配置文件；项目级 `.mcp.json` 仍由启动 cwd 控制。
 

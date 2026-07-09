@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { createProgram } from '../src/cli';
 import { getAppHomePaths } from '../src/core/app-config';
-import { getProfileTemplatePaths } from '../src/core/profile-template';
+import { getProfileTemplatePaths, getRealClaudeMdExcludePaths } from '../src/core/profile-template';
 
 type CliRun = {
   output: string;
@@ -195,6 +195,7 @@ describe('profile lifecycle commands', () => {
 
     await expect(fs.readJson(codingPaths.settingsPath)).resolves.toEqual({
       autoMemoryDirectory: codingPaths.autoMemoryPath,
+      claudeMdExcludes: getRealClaudeMdExcludePaths(userHome),
       theme: 'dark',
       env: {
         ANTHROPIC_MODEL: 'profile-model',

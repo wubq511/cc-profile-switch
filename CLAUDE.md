@@ -88,7 +88,7 @@ macOS uses the same structure under `~/.cc-profile-switch` with POSIX path separ
 
 `claude-home` maps to `CLAUDE_CONFIG_DIR` at launch. Project `CLAUDE.md`, `.claude/settings.json`, `.claude/agents`, `.claude/skills`, and `.mcp.json` still come from the launch cwd.
 
-New profiles include `CLAUDE_CODE_ATTRIBUTION_HEADER=0` in `claude-home\settings.json` `env`. Re-running `ccps init` backfills this key for preserved default profiles when missing, without overwriting existing settings fields or env keys.
+New profiles include `CLAUDE_CODE_ATTRIBUTION_HEADER=0` in `claude-home\settings.json` `env` and `claudeMdExcludes` pointing to the real `~/.claude/CLAUDE.md`. `claudeMdExcludes` is a workaround for a Claude Code behavior: even with `CLAUDE_CONFIG_DIR` set, Claude Code still reads the real user-level `CLAUDE.md`. By excluding it, each profile only sees its own CLAUDE.md. Re-running `ccps init` backfills both keys for preserved default profiles when missing, without overwriting existing settings fields or env keys. `ccps launch` also ensures `claudeMdExcludes` before spawning Claude Code.
 
 `ccps init` also imports string `env.ANTHROPIC_*` keys from the current user Claude settings into common `api-settings.json` when missing: Windows reads `%USERPROFILE%\.claude\settings.json`, macOS reads `~/.claude/settings.json`. Existing common keys are preserved and command output must show key names only, never values.
 

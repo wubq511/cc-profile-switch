@@ -12,7 +12,7 @@ import {
   writeJsonFile,
 } from './app-config';
 import { backupProfile } from './profile';
-import { getProfileTemplatePaths, type ProfileTemplatePaths } from './profile-template';
+import { ensureProfileClaudeMdExcludes, getProfileTemplatePaths, type ProfileTemplatePaths } from './profile-template';
 import {
   isLaunchBlocking,
   validateProfile,
@@ -324,6 +324,8 @@ async function repairProfileSettings(paths: ProfileTemplatePaths): Promise<void>
     },
     { overwrite: true },
   );
+
+  await ensureProfileClaudeMdExcludes(paths.settingsPath);
 }
 
 async function updateConfig(appHomePath: string, updater: ConfigUpdater, clock?: Clock): Promise<AppConfig> {

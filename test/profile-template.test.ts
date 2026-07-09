@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { createProfileFromTemplate, getProfileTemplate, getProfileTemplateForCreate, listProfileTemplates } from '../src/core/profile-template';
+import { createProfileFromTemplate, ensureProfileClaudeMdExcludes, getProfileTemplate, getProfileTemplateForCreate, getRealClaudeMdExcludePaths, listProfileTemplates } from '../src/core/profile-template';
 
 const fixedClock = () => new Date('2026-01-02T03:04:05.000Z');
 
@@ -91,6 +91,7 @@ describe('profile templates', () => {
     });
     await expect(fs.readJson(paths.settingsPath)).resolves.toEqual({
       autoMemoryDirectory: paths.autoMemoryPath,
+      claudeMdExcludes: getRealClaudeMdExcludePaths(),
       env: {
         CLAUDE_CODE_ATTRIBUTION_HEADER: '0',
       },
@@ -154,5 +155,98 @@ describe('profile templates', () => {
     ).rejects.toMatchObject({
       code: 'PROFILE_ALREADY_EXISTS',
     });
+  });
+
+  it('computes real ~/.claude/CLAUDE.md exclude path', () => {
+    const paths = getRealClaudeMdExcludePaths();
+    expect(paths).toHaveLength(1);
+    expect(paths[0]).toContain('.claude');
+    expect(paths[0]).toContain('CLAUDE.md');
+  });
+
+  it('computes exclude path from explicit userHome', () => {
+    const paths = getRealClaudeMdExcludePaths('/tmp/test-home');
+    expect(paths).toEqual(['/tmp/test-home/.claude/CLAUDE.md']);
+  });
+
+  it('includes claudeMdExcludes in every profile settings', async () => {
+    const appHome = await makeAppHome();
+
+    for (const template of listProfileTemplates()) {
+      const { paths } = await createProfileFromTemplate({
+        appHomePath: appHome,
+        name: `${template}_excl`,
+        template,
+        clock: fixedClock,
+      });
+
+      const settings = await fs.readJson(paths.settingsPath);
+      expect(settings).toHaveProperty('claudeMdExcludes');
+      expect(Array.isArray(settings.claudeMdExcludes)).toBe(true);
+      expect(settings.claudeMdExcludes.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('ensureProfileClaudeMdExcludes backfills missing exclude path', async () => {
+    const appHome = await makeAppHome();
+    const { paths } = await createProfileFromTemplate({
+      appHomePath: appHome,
+      name: 'backfill_test',
+      template: 'coding',
+      clock: fixedClock,
+    });
+
+    // Remove claudeMdExcludes to simulate an old profile
+    const settings = await fs.readJson(paths.settingsPath);
+    const { claudeMdExcludes: _, ...withoutExcludes } = settings as Record<string, unknown> & { claudeMdExcludes: unknown };
+    await fs.writeJson(paths.settingsPath, withoutExcludes);
+
+    const updated = await ensureProfileClaudeMdExcludes(paths.settingsPath);
+    expect(updated).toBe(true);
+
+    const after = await fs.readJson(paths.settingsPath);
+    expect(after.claudeMdExcludes).toEqual(getRealClaudeMdExcludePaths());
+  });
+
+  it('ensureProfileClaudeMdExcludes is no-op when exclude already present', async () => {
+    const appHome = await makeAppHome();
+    const { paths } = await createProfileFromTemplate({
+      appHomePath: appHome,
+      name: 'noop_test',
+      template: 'coding',
+      clock: fixedClock,
+    });
+
+    const updated = await ensureProfileClaudeMdExcludes(paths.settingsPath);
+    expect(updated).toBe(false);
+
+    const after = await fs.readJson(paths.settingsPath);
+    expect(after.claudeMdExcludes).toEqual(getRealClaudeMdExcludePaths());
+  });
+
+  it('ensureProfileClaudeMdExcludes appends to existing excludes without removing user entries', async () => {
+    const appHome = await makeAppHome();
+    const { paths } = await createProfileFromTemplate({
+      appHomePath: appHome,
+      name: 'append_test',
+      template: 'coding',
+      clock: fixedClock,
+    });
+
+    // Add a user-defined exclude and remove the auto one
+    const settings = await fs.readJson(paths.settingsPath);
+    await fs.writeJson(paths.settingsPath, {
+      ...settings,
+      claudeMdExcludes: ['/some/other/CLAUDE.md'],
+    });
+
+    const updated = await ensureProfileClaudeMdExcludes(paths.settingsPath);
+    expect(updated).toBe(true);
+
+    const after = await fs.readJson(paths.settingsPath);
+    expect(after.claudeMdExcludes).toContain('/some/other/CLAUDE.md');
+    expect(after.claudeMdExcludes).toEqual(
+      expect.arrayContaining(getRealClaudeMdExcludePaths()),
+    );
   });
 });

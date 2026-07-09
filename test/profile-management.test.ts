@@ -16,7 +16,7 @@ import {
   resolveLaunchProfile,
   setDefaultProfile,
 } from '../src/core/profile-management';
-import { createProfileFromTemplate, getProfileTemplatePaths } from '../src/core/profile-template';
+import { createProfileFromTemplate, getProfileTemplatePaths, getRealClaudeMdExcludePaths } from '../src/core/profile-template';
 
 describe('profile management services', () => {
   const tempRoots: string[] = [];
@@ -112,6 +112,7 @@ describe('profile management services', () => {
     });
     await expect(fs.readJson(targetPaths.settingsPath)).resolves.toEqual({
       autoMemoryDirectory: targetPaths.autoMemoryPath,
+      claudeMdExcludes: getRealClaudeMdExcludePaths(),
       theme: 'dark',
       env: {
         ANTHROPIC_MODEL: 'profile-model',

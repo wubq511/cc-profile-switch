@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { createAppConfig, getAppHomePaths } from '../src/core/app-config';
-import { createProfileFromTemplate, getProfileTemplatePaths } from '../src/core/profile-template';
+import { createProfileFromTemplate, getProfileTemplatePaths, getRealClaudeMdExcludePaths } from '../src/core/profile-template';
 import { buildLaunchPlan, formatLaunchDryRun, launchProfile } from '../src/core/launcher';
 
 describe('launcher', () => {
@@ -586,5 +586,65 @@ describe('launcher', () => {
     ).rejects.toMatchObject({
       code: 'CLAUDE_LAUNCH_FAILED',
     });
+  });
+
+  it('includes claudeMdExcludes in launch plan to exclude real ~/.claude/CLAUDE.md', async () => {
+    const { appHome } = await makeProfile();
+    const projectCwd = await makeTempRoot('ccps-project-');
+
+    const plan = await buildLaunchPlan({
+      appHomePath: appHome,
+      profileName: 'coding',
+      cwd: projectCwd,
+    });
+
+    expect(plan.claudeMdExcludes).toEqual(getRealClaudeMdExcludePaths());
+    expect(plan.claudeMdExcludes[0]).toContain('.claude');
+    expect(plan.claudeMdExcludes[0]).toContain('CLAUDE.md');
+  });
+
+  it('shows CLAUDE.md excludes in dry-run output', async () => {
+    const { appHome } = await makeProfile();
+    const projectCwd = await makeTempRoot('ccps-project-');
+
+    const plan = await buildLaunchPlan({
+      appHomePath: appHome,
+      profileName: 'coding',
+      cwd: projectCwd,
+    });
+    const output = formatLaunchDryRun(plan);
+
+    expect(output).toContain('CLAUDE.md excludes:');
+    expect(output).toContain('.claude');
+  });
+
+  it('ensures claudeMdExcludes in profile settings during real launch but not dry-run', async () => {
+    const { appHome, paths } = await makeProfile();
+    const projectCwd = await makeTempRoot('ccps-project-');
+
+    // Remove claudeMdExcludes to simulate an old profile
+    const settings = await fs.readJson(paths.settingsPath);
+    const { claudeMdExcludes: _, ...withoutExcludes } = settings as Record<string, unknown> & { claudeMdExcludes: unknown };
+    await fs.writeJson(paths.settingsPath, withoutExcludes);
+
+    // Dry-run (buildLaunchPlan only) should NOT modify the file
+    await buildLaunchPlan({
+      appHomePath: appHome,
+      profileName: 'coding',
+      cwd: projectCwd,
+    });
+    const afterDryRun = await fs.readJson(paths.settingsPath);
+    expect(afterDryRun).not.toHaveProperty('claudeMdExcludes');
+
+    // Real launch should ensure claudeMdExcludes
+    await launchProfile({
+      appHomePath: appHome,
+      profileName: 'coding',
+      cwd: projectCwd,
+      spawnProcess: async () => ({ exitCode: 0 }),
+    });
+    const afterLaunch = await fs.readJson(paths.settingsPath);
+    expect(afterLaunch).toHaveProperty('claudeMdExcludes');
+    expect(Array.isArray(afterLaunch.claudeMdExcludes)).toBe(true);
   });
 });
