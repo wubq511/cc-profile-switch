@@ -6,7 +6,11 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { createAppConfig, getAppHomePaths } from '../src/core/app-config';
-import { createProfileFromTemplate, getProfileTemplatePaths, getRealClaudeMdExcludePaths } from '../src/core/profile-template';
+import {
+  createProfileFromTemplate,
+  getProfileTemplatePaths,
+  getRealClaudeMdExcludePaths,
+} from '../src/core/profile-template';
 import { buildLaunchPlan, formatLaunchDryRun, launchProfile } from '../src/core/launcher';
 
 describe('launcher', () => {
@@ -47,7 +51,7 @@ describe('launcher', () => {
     });
   }
 
-  it('builds a default merge-mode launch plan without changing cwd', async () => {
+  it('builds a native-MCP launch plan without changing cwd', async () => {
     const { appHome, paths } = await makeProfile();
     const projectCwd = await makeTempRoot('ccps-project-');
 
@@ -63,16 +67,12 @@ describe('launcher', () => {
       claudeHomePath: paths.claudeHomePath,
       cwd: projectCwd,
       command: 'claude',
-      mcpMode: 'merge',
+      mcpMode: 'none',
       pluginDirs: [],
       validationStatus: 'valid',
       warnings: [],
     });
-    expect(plan.args).toEqual([
-      '--dangerously-skip-permissions',
-      '--mcp-config',
-      paths.mcpConfigPath,
-    ]);
+    expect(plan.args).toEqual(['--dangerously-skip-permissions']);
     expect(plan.envChanges).toEqual({ CLAUDE_CONFIG_DIR: paths.claudeHomePath });
     expect(plan.memoryConfig).toEqual({
       userMemoryPath: paths.claudeMdPath,
@@ -113,11 +113,11 @@ describe('launcher', () => {
       ANTHROPIC_MODEL: 'common-model',
     });
     expect(plan.apiConfig).toEqual({
-      common: { path: appPaths.apiSettingsPath, present: true, keys: [
-        'ANTHROPIC_AUTH_TOKEN',
-        'ANTHROPIC_BASE_URL',
-        'ANTHROPIC_MODEL',
-      ] },
+      common: {
+        path: appPaths.apiSettingsPath,
+        present: true,
+        keys: ['ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_MODEL'],
+      },
       profile: { path: paths.settingsPath, present: true, keys: ['ANTHROPIC_AUTH_TOKEN'] },
       keys: ['ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_MODEL'],
     });
@@ -226,7 +226,7 @@ describe('launcher', () => {
   });
 
   it('launches with the configured default profile when no profile is requested', async () => {
-    const { appHome, paths } = await makeProfile('coding');
+    const { appHome } = await makeProfile('coding');
     const projectCwd = await makeTempRoot('ccps-project-');
     const config = await fs.readJson(join(appHome, 'config.json'));
     await fs.writeJson(join(appHome, 'config.json'), {
@@ -250,7 +250,7 @@ describe('launcher', () => {
       expect(spawnCalls).toEqual([
         {
           command: 'script',
-          args: ['-q', '/dev/null', 'claude', '--dangerously-skip-permissions', '--mcp-config', paths.mcpConfigPath],
+          args: ['-q', '/dev/null', 'claude', '--dangerously-skip-permissions'],
           cwd: projectCwd,
         },
       ]);
@@ -258,7 +258,7 @@ describe('launcher', () => {
       expect(spawnCalls).toEqual([
         {
           command: 'claude',
-          args: ['--dangerously-skip-permissions', '--mcp-config', paths.mcpConfigPath],
+          args: ['--dangerously-skip-permissions'],
           cwd: projectCwd,
         },
       ]);
@@ -305,9 +305,16 @@ describe('launcher', () => {
     });
   });
 
-  it('adds strict MCP only when the profile explicitly selects strict mode', async () => {
+  it('keeps strict mode for a configured legacy profile MCP file', async () => {
     const { appHome, paths } = await makeProfile();
     const projectCwd = await makeTempRoot('ccps-project-');
+    await fs.writeJson(paths.mcpConfigPath, {
+      mcpServers: {
+        legacy: {
+          command: '/usr/bin/true',
+        },
+      },
+    });
     await updateLaunchConfig(paths.profileConfigPath, { mcpMode: 'strict' });
 
     const plan = await buildLaunchPlan({
@@ -317,11 +324,38 @@ describe('launcher', () => {
     });
 
     expect(plan.mcpMode).toBe('strict');
+    expect(plan.legacyMcpConfigActive).toBe(true);
     expect(plan.args).toEqual([
       '--dangerously-skip-permissions',
       '--mcp-config',
       paths.mcpConfigPath,
       '--strict-mcp-config',
+    ]);
+  });
+
+  it('loads a non-empty legacy profile MCP file in merge mode', async () => {
+    const { appHome, paths } = await makeProfile();
+    const projectCwd = await makeTempRoot('ccps-project-');
+    await fs.writeJson(paths.mcpConfigPath, {
+      mcpServers: {
+        legacy: {
+          command: '/usr/bin/true',
+        },
+      },
+    });
+    await updateLaunchConfig(paths.profileConfigPath, { mcpMode: 'merge' });
+
+    const plan = await buildLaunchPlan({
+      appHomePath: appHome,
+      profileName: 'coding',
+      cwd: projectCwd,
+    });
+
+    expect(plan.legacyMcpConfigActive).toBe(true);
+    expect(plan.args).toEqual([
+      '--dangerously-skip-permissions',
+      '--mcp-config',
+      paths.mcpConfigPath,
     ]);
   });
 
@@ -351,7 +385,7 @@ describe('launcher', () => {
       cwd: projectCwd,
     });
 
-    expect(plan.args).toEqual(['--mcp-config', paths.mcpConfigPath]);
+    expect(plan.args).toEqual([]);
   });
 
   it('resolves configured plugin dirs inside the selected Claude home', async () => {
@@ -372,8 +406,6 @@ describe('launcher', () => {
     expect(plan.pluginDirs).toEqual([paths.pluginsPath, customPluginDir]);
     expect(plan.args).toEqual([
       '--dangerously-skip-permissions',
-      '--mcp-config',
-      paths.mcpConfigPath,
       '--plugin-dir',
       paths.pluginsPath,
       '--plugin-dir',
@@ -410,10 +442,11 @@ describe('launcher', () => {
     expect(output).toContain(`Profile path: ${paths.profileRootPath}`);
     expect(output).toContain(`Claude home: ${paths.claudeHomePath}`);
     expect(output).toContain(`Cwd: ${projectCwd}`);
-    expect(output).toContain('MCP mode: merge');
+    expect(output).toContain(`MCP mode: native user scope (${paths.claudeUserConfigPath})`);
+    expect(output).toContain('Legacy MCP config: inactive');
     expect(output).toContain('Command: claude');
     expect(output).toContain('--dangerously-skip-permissions');
-    expect(output).toContain('--mcp-config');
+    expect(output).not.toContain('--mcp-config');
     expect(output).toContain(`CLAUDE_CONFIG_DIR=${paths.claudeHomePath}`);
     expect(output).toContain('Memory:');
     expect(output).toContain(`user: ${paths.claudeMdPath}`);
@@ -461,9 +494,10 @@ describe('launcher', () => {
     expect(result.plan.cwd).toBe(projectCwd);
     expect(spawnCalls).toHaveLength(1);
     const expectedCommand = process.platform === 'darwin' ? 'script' : 'claude';
-    const expectedArgs = process.platform === 'darwin'
-      ? ['-q', '/dev/null', 'claude', '--dangerously-skip-permissions', '--mcp-config', paths.mcpConfigPath]
-      : ['--dangerously-skip-permissions', '--mcp-config', paths.mcpConfigPath];
+    const expectedArgs =
+      process.platform === 'darwin'
+        ? ['-q', '/dev/null', 'claude', '--dangerously-skip-permissions']
+        : ['--dangerously-skip-permissions'];
     expect(spawnCalls[0]).toMatchObject({
       command: expectedCommand,
       args: expectedArgs,
@@ -478,6 +512,22 @@ describe('launcher', () => {
     // so ANTHROPIC_MODEL and ANTHROPIC_BASE_URL come from the real settings
     expect(spawnCalls[0].options.env.ANTHROPIC_MODEL).toBeDefined();
     expect(spawnCalls[0].options.env.ANTHROPIC_BASE_URL).toBeDefined();
+  });
+
+  it('backfills the ccps profile boundary rule before a real launch', async () => {
+    const { appHome, paths } = await makeProfile();
+    const projectCwd = await makeTempRoot('ccps-project-');
+    await rm(paths.rulesPath, { recursive: true, force: true });
+
+    await launchProfile({
+      appHomePath: appHome,
+      profileName: 'coding',
+      cwd: projectCwd,
+      spawnProcess: async () => ({ exitCode: 0 }),
+    });
+
+    const rule = await fs.readFile(paths.ccpsProfileRulePath, 'utf8');
+    expect(rule).toContain('claude mcp add --scope user');
   });
 
   it('uses the same launch plan values for dry-run output and real process execution', async () => {
@@ -521,9 +571,8 @@ describe('launcher', () => {
     expect(dryRun).toContain(`Cwd: ${projectCwd}`);
     expect(dryRun).toContain(`CLAUDE_CONFIG_DIR=${paths.claudeHomePath}`);
     const expectedCommand = process.platform === 'darwin' ? 'script' : plan.command;
-    const expectedArgs = process.platform === 'darwin'
-      ? ['-q', '/dev/null', plan.command, ...plan.args]
-      : plan.args;
+    const expectedArgs =
+      process.platform === 'darwin' ? ['-q', '/dev/null', plan.command, ...plan.args] : plan.args;
     expect(spawnCalls).toEqual([
       {
         command: expectedCommand,
@@ -624,7 +673,8 @@ describe('launcher', () => {
 
     // Remove claudeMdExcludes to simulate an old profile
     const settings = await fs.readJson(paths.settingsPath);
-    const { claudeMdExcludes: _, ...withoutExcludes } = settings as Record<string, unknown> & { claudeMdExcludes: unknown };
+    const withoutExcludes = { ...settings };
+    Reflect.deleteProperty(withoutExcludes, 'claudeMdExcludes');
     await fs.writeJson(paths.settingsPath, withoutExcludes);
 
     // Dry-run (buildLaunchPlan only) should NOT modify the file

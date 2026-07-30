@@ -6,11 +6,13 @@ import { join } from 'node:path';
 import { runTuiController, type TuiControllerServices, type TuiPorts } from '../src/tui/controller';
 
 describe('tui controller', () => {
-  function makePorts(options: {
-    actions?: string[];
-    inputs?: string[];
-    confirmations?: string[];
-  } = {}): TuiPorts & { output: string[]; selectCalls: Array<{ prompt: string; choices: string[] }> } {
+  function makePorts(
+    options: {
+      actions?: string[];
+      inputs?: string[];
+      confirmations?: string[];
+    } = {},
+  ): TuiPorts & { output: string[]; selectCalls: Array<{ prompt: string; choices: string[] }> } {
     const output: string[] = [];
     const actions = [...(options.actions ?? ['exit'])];
     const inputs = [...(options.inputs ?? [])];
@@ -87,6 +89,9 @@ describe('tui controller', () => {
           autoMemoryEntrypointPath: 'C:\\profiles\\coding\\claude-home\\memory\\auto\\MEMORY.md',
           skillsPath: 'C:\\profiles\\coding\\claude-home\\skills',
           agentsPath: 'C:\\profiles\\coding\\claude-home\\agents',
+          rulesPath: 'C:\\profiles\\coding\\claude-home\\rules',
+          ccpsProfileRulePath: 'C:\\profiles\\coding\\claude-home\\rules\\ccps-profile.md',
+          claudeUserConfigPath: 'C:\\profiles\\coding\\claude-home\\.claude.json',
           mcpConfigPath: 'C:\\profiles\\coding\\mcp.json',
           pluginsPath: 'C:\\profiles\\coding\\claude-home\\plugins',
         },
@@ -121,12 +126,17 @@ describe('tui controller', () => {
         },
         apiEnv: {},
         mcpMode: 'merge',
+        userMcpConfigPath: 'C:\\profiles\\coding\\claude-home\\.claude.json',
+        legacyMcpConfigPath: 'C:\\profiles\\coding\\mcp.json',
+        legacyMcpConfigActive: false,
         pluginDirs: [],
         validationStatus: 'valid',
         warnings: [],
         validationFindings: [],
       })),
-      formatLaunchDryRun: vi.fn(() => 'Launch dry-run for profile "coding"\nDry run: Claude Code was not started.\n'),
+      formatLaunchDryRun: vi.fn(
+        () => 'Launch dry-run for profile "coding"\nDry run: Claude Code was not started.\n',
+      ),
       ...overrides,
     };
   }
@@ -178,7 +188,7 @@ describe('tui controller', () => {
     });
 
     process.env.HOME = userHome;
-    delete process.env.USERPROFILE;
+    process.env.USERPROFILE = userHome;
 
     try {
       await runTuiController({ ports, services });
@@ -208,7 +218,12 @@ describe('tui controller', () => {
     });
     const services = makeServices();
 
-    await runTuiController({ appHomePath: 'C:\\app', ports, services, clock: () => new Date('2026-05-20T12:00:00Z') });
+    await runTuiController({
+      appHomePath: 'C:\\app',
+      ports,
+      services,
+      clock: () => new Date('2026-05-20T12:00:00Z'),
+    });
 
     expect(services.copyProfile).toHaveBeenCalledWith({
       appHomePath: 'C:\\app',
@@ -266,7 +281,10 @@ describe('tui controller', () => {
 
     await runTuiController({ appHomePath: 'C:\\app', ports, services });
 
-    expect(services.validateProfile).toHaveBeenCalledWith({ appHomePath: 'C:\\app', name: 'coding' });
+    expect(services.validateProfile).toHaveBeenCalledWith({
+      appHomePath: 'C:\\app',
+      name: 'coding',
+    });
     expect(services.validateProfile).toHaveBeenCalledTimes(2);
     expect(services.buildLaunchPlan).toHaveBeenCalledWith({
       appHomePath: 'C:\\app',

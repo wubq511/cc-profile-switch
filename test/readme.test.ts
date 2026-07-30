@@ -7,9 +7,10 @@ describe('README', () => {
   it('documents the V0.2 workflow, launch behavior, and safety boundaries', async () => {
     const readme = await readFile(join(process.cwd(), 'README.md'), 'utf8');
 
-    expect(readme).toContain('Windows 和 macOS');
+    expect(readme).toContain('Windows、macOS 和 Linux');
     expect(readme).toContain('~/.cc-profile-switch');
-    expect(readme).toContain('macOS 会通过 Visual Studio Code app 打开');
+    expect(readme).toContain('macOS 通过 Visual Studio Code app 打开');
+    expect(readme).toContain('Linux 使用 `code` CLI');
     expect(readme).toContain('ccps launch <profile> --dry-run');
     expect(readme).toContain('ccps copy <from> <to>');
     expect(readme).toContain('ccps rename <old> <new>');
@@ -33,17 +34,31 @@ describe('README', () => {
     expect(readme).toContain('api-settings.json');
     expect(readme).toContain('`ccps init` 会尝试从当前用户 Claude settings');
     expect(readme).toContain('env.ANTHROPIC_*');
-    expect(readme).toContain('所有 profile 都会通过 common api-settings.json 复用这些模型/API 配置');
+    expect(readme).toContain(
+      '所有 profile 都会通过 common api-settings.json 复用这些模型/API 配置',
+    );
     expect(readme).toContain('claude-home\\settings.json');
     expect(readme).toContain('claude-home/settings.json');
     expect(readme).toContain('autoMemoryDirectory');
     expect(readme).toContain('claude-home\\memory\\auto');
     expect(readme).toContain('claude-home/memory/auto');
     expect(readme).toContain('claude-home\\plugins');
+    expect(readme).toContain('claude mcp add --scope user');
+    expect(readme).toContain('claude-home/.claude.json');
+    expect(readme).toContain('rules/ccps-profile.md');
+    expect(readme).toContain(
+      '新 profile 将 legacy `mcpMode` 设为 `none`，不再创建或传递 `<profile>/mcp.json`',
+    );
+    expect(readme).not.toContain(
+      '`profiles\\<name>\\mcp.json` 是 ccps 传给 Claude Code 的 profile MCP 配置文件',
+    );
     expect(readme).toContain('profile 优先');
     expect(readme).toContain('OAuth');
     expect(readme).toContain('session');
     expect(readme).toContain('token');
     expect(readme).toContain('npm run check');
+    expect(readme).toContain('.github/workflows/ci.yml');
+    expect(readme).toContain('Ubuntu、macOS、Windows');
+    expect(readme).toContain('所有相关 matrix job 通过后');
   });
 });

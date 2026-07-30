@@ -12,7 +12,7 @@ github: https://github.com/wubq511/cc-profile-switch/issues/1
 
 ## Overview
 
-Build the CC-Profile-Switch MVP as a Windows-only TypeScript CLI named `ccps`. The CLI manages local Claude Code user-level configuration profiles and launches Claude Code from the user's current project directory with `CLAUDE_CONFIG_DIR` pointing at the selected profile's `claude-home`.
+This completed epic records the original 2026-05 Windows MVP for the TypeScript CLI named `ccps`. The current product has since expanded to Windows, macOS, and Linux; `CLAUDE.md`, `README.md`, and the current PRD amendment are authoritative for present behavior.
 
 The core product behavior is Global User Config Switch Mode:
 
@@ -31,7 +31,7 @@ Use Node.js LTS with TypeScript. Commander owns CLI parsing. Command handlers st
 
 ### Platform boundary
 
-The MVP is Windows-only. Windows path resolution, process spawning, command lookup, and editor opening live under `src/platform/`.
+The original MVP implemented the Windows boundary first. Current Windows, macOS, and Linux path resolution, process spawning, command lookup, and editor opening live under `src/platform/`.
 
 ### Data root
 

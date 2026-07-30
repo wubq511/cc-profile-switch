@@ -70,7 +70,7 @@ describe('profile lifecycle commands', () => {
     });
 
     process.env.HOME = userHome;
-    delete process.env.USERPROFILE;
+    process.env.USERPROFILE = userHome;
     program.exitOverride();
 
     try {
@@ -140,7 +140,9 @@ describe('profile lifecycle commands', () => {
         ANTHROPIC_BASE_URL: 'https://source.example.test',
       },
     });
-    expect(result.output).toContain('Imported API env keys: ANTHROPIC_AUTH_TOKEN, ANTHROPIC_BASE_URL');
+    expect(result.output).toContain(
+      'Imported API env keys: ANTHROPIC_AUTH_TOKEN, ANTHROPIC_BASE_URL',
+    );
     expect(result.output).not.toContain('source-token');
 
     const dryRun = await runCli(userHome, ['launch', 'coding', '--dry-run', '--cwd', userHome]);
@@ -151,7 +153,7 @@ describe('profile lifecycle commands', () => {
     expect(dryRun.output).not.toContain('source-token');
   });
 
-  it('uses HOME as the default app home on macOS', async () => {
+  it('uses the platform user home as the default app home', async () => {
     const userHome = await makeUserHome();
     const appHome = join(userHome, '.cc-profile-switch');
 
@@ -175,6 +177,21 @@ describe('profile lifecycle commands', () => {
       '# user edited profile\n',
     );
     expect(result.output).toContain('Preserved existing profiles');
+  });
+
+  it('init backfills the ccps profile boundary rule for existing profiles', async () => {
+    const userHome = await makeUserHome();
+    const appHome = join(userHome, '.cc-profile-switch');
+    const codingPaths = getProfileTemplatePaths(appHome, 'coding');
+
+    await runCli(userHome, ['init']);
+    await rm(codingPaths.rulesPath, { recursive: true, force: true });
+
+    await runCli(userHome, ['init']);
+
+    const rule = await fs.readFile(codingPaths.ccpsProfileRulePath, 'utf8');
+    expect(rule).toContain('claude mcp add --scope user');
+    expect(rule).toContain('$CLAUDE_CONFIG_DIR/.claude.json');
   });
 
   it('init adds default attribution env to preserved default profile settings', async () => {
@@ -269,9 +286,7 @@ describe('profile lifecycle commands', () => {
     await runCli(userHome, ['init']);
     await runCli(userHome, ['create', 'focus']);
 
-    await expect(
-      runCli(userHome, ['create', 'focus']),
-    ).rejects.toMatchObject({
+    await expect(runCli(userHome, ['create', 'focus'])).rejects.toMatchObject({
       code: 'PROFILE_ALREADY_EXISTS',
     });
   });
@@ -328,6 +343,9 @@ describe('profile lifecycle commands', () => {
     expect(result.output).toContain('profile.json: present');
     expect(result.output).toContain('settings.json: valid JSON');
     expect(result.output).toContain('memory/auto: present');
+    expect(result.output).toContain(`native user scope: ${profilePaths.claudeUserConfigPath}`);
+    expect(result.output).toContain('manage with: claude mcp add --scope user');
+    expect(result.output).toContain('legacy mcp.json: missing');
     expect(result.output).toContain('Project config: preserved from the launch cwd');
   });
 
@@ -364,7 +382,10 @@ describe('profile lifecycle commands', () => {
     );
     await expect(fs.pathExists(join(backupRoot, 'profile.json'))).resolves.toBe(true);
     await expect(fs.pathExists(join(backupRoot, 'claude-home', 'CLAUDE.md'))).resolves.toBe(true);
-    await expect(fs.pathExists(join(backupRoot, 'mcp.json'))).resolves.toBe(true);
+    await expect(fs.pathExists(join(backupRoot, 'mcp.json'))).resolves.toBe(false);
+    await expect(
+      fs.pathExists(join(backupRoot, 'claude-home', 'rules', 'ccps-profile.md')),
+    ).resolves.toBe(true);
     await expect(fs.pathExists(join(backupRoot, 'claude-home', 'plugins'))).resolves.toBe(true);
     await expect(fs.readFile(join(backupRoot, 'claude-home', 'CLAUDE.md'), 'utf8')).resolves.toBe(
       '# user edited profile\n',
@@ -528,19 +549,19 @@ describe('profile lifecycle commands', () => {
     await runCliWithOptions(userHome, ['edit', 'coding'], { openedTargets });
     await runCliWithOptions(userHome, ['edit', 'coding', 'CLAUDE.md'], { openedTargets });
     await runCliWithOptions(userHome, ['edit', 'coding', 'settings.json'], { openedTargets });
-    await runCliWithOptions(userHome, ['edit', 'coding', 'mcp.json'], { openedTargets });
     await runCliWithOptions(userHome, ['edit', 'coding', 'profile.json'], { openedTargets });
     await runCliWithOptions(userHome, ['edit', 'coding', 'claude-home'], { openedTargets });
     await runCliWithOptions(userHome, ['edit', 'coding', 'claude-home\\skills'], { openedTargets });
+    await runCliWithOptions(userHome, ['edit', 'coding', 'rules'], { openedTargets });
 
     expect(openedTargets).toEqual([
       profilePaths.profileRootPath,
       profilePaths.claudeMdPath,
       profilePaths.settingsPath,
-      profilePaths.mcpConfigPath,
       profilePaths.profileConfigPath,
       profilePaths.claudeHomePath,
       profilePaths.skillsPath,
+      profilePaths.rulesPath,
     ]);
   });
 
@@ -583,7 +604,10 @@ describe('profile lifecycle commands', () => {
     expect(result.output).toContain(`Claude home: ${profilePaths.claudeHomePath}`);
     expect(result.output).toContain(`Cwd: ${projectCwd}`);
     expect(result.output).toContain('Command: claude');
-    expect(result.output).toContain('--mcp-config');
+    expect(result.output).toContain(
+      `MCP mode: native user scope (${profilePaths.claudeUserConfigPath})`,
+    );
+    expect(result.output).not.toContain('--mcp-config');
     expect(result.output).toContain(`CLAUDE_CONFIG_DIR=${profilePaths.claudeHomePath}`);
     expect(result.output).toContain(`auto: ${profilePaths.autoMemoryPath}`);
     expect(result.output).toContain('Validation: valid');
@@ -619,11 +643,10 @@ describe('profile lifecycle commands', () => {
 
     await runCli(userHome, ['init']);
 
-    const result = await runCliWithOptions(
-      userHome,
-      ['launch', 'coding', '--cwd', projectCwd],
-      { spawnCalls, clock: () => new Date('2026-05-16T15:45:00Z') },
-    );
+    const result = await runCliWithOptions(userHome, ['launch', 'coding', '--cwd', projectCwd], {
+      spawnCalls,
+      clock: () => new Date('2026-05-16T15:45:00Z'),
+    });
 
     expect(spawnCalls).toHaveLength(1);
     const expectedCommand = process.platform === 'darwin' ? 'script' : 'claude';
@@ -631,7 +654,7 @@ describe('profile lifecycle commands', () => {
       command: expectedCommand,
       cwd: projectCwd,
     });
-    expect(spawnCalls[0].args).toContain('--mcp-config');
+    expect(spawnCalls[0].args).not.toContain('--mcp-config');
     expect(result.output).toContain('Launching Claude Code with profile "coding"');
   });
 

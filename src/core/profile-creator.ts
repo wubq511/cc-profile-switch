@@ -4,7 +4,7 @@ import path from 'node:path';
 import { getAppHomePath, resolveInside, validateProfileName } from '../platform/path';
 import { type Clock, writeJsonFile } from './app-config';
 import { importClaudeApiSettings } from './claude-settings';
-import { getProfileTemplatePaths } from './profile-template';
+import { ensureCcpsProfileRule, getProfileTemplatePaths } from './profile-template';
 
 const PROFILE_CREATOR_NAME = 'profile-creator';
 // Dev mode: __dirname = src/core/ -> ../templates/ = src/templates/
@@ -39,6 +39,7 @@ export async function ensureProfileCreator(
 
   // Always update skill files to latest version
   await copySkillFiles(paths.skillsPath);
+  await ensureCcpsProfileRule(paths.ccpsProfileRulePath);
 
   return profileName;
 }
@@ -57,7 +58,7 @@ async function createProfileCreatorProfile(
     description: 'Built-in profile creator wizard. Use `ccps create-profile` to launch.',
     template: 'general' as const,
     launch: {
-      mcpMode: 'merge' as const,
+      mcpMode: 'none' as const,
       pluginDirs: [] as string[],
       disableAutoMemory: false,
       skipPermissions: true,
@@ -74,6 +75,7 @@ async function createProfileCreatorProfile(
   await fs.ensureDir(paths.autoMemoryPath);
   await fs.ensureDir(paths.skillsPath);
   await fs.ensureDir(paths.agentsPath);
+  await fs.ensureDir(paths.rulesPath);
   await fs.ensureDir(paths.pluginsPath);
 
   // Write config files
@@ -81,7 +83,7 @@ async function createProfileCreatorProfile(
   await writeJsonFile(paths.settingsPath, createProfileCreatorSettings(paths), {
     overwrite: false,
   });
-  await writeJsonFile(paths.mcpConfigPath, { mcpServers: {} }, { overwrite: false });
+  await ensureCcpsProfileRule(paths.ccpsProfileRulePath);
 
   // Write CLAUDE.md
   if (await fs.pathExists(templateClaudeMd)) {
@@ -140,7 +142,7 @@ function defaultCreatorClaudeMd(): string {
 
 You are a ccps profile creation wizard. Guide the user through creating a complete, high-quality Claude Code profile.
 
-Use the \`ccps-create-profile\skill\` skill (pre-installed) to complete all work.
+Use the \`ccps-create-profile\` skill (pre-installed) to complete all work.
 
 ## Workflow
 

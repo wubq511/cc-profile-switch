@@ -23,7 +23,9 @@ describe('profile validator', () => {
     return join(root, '.cc-profile-switch');
   }
 
-  async function makeProfile(name = 'coding'): Promise<{ appHome: string; paths: ReturnType<typeof getProfileTemplatePaths> }> {
+  async function makeProfile(
+    name = 'coding',
+  ): Promise<{ appHome: string; paths: ReturnType<typeof getProfileTemplatePaths> }> {
     const appHome = await makeAppHome();
     await createAppConfig(appHome);
     await createProfileFromTemplate({ appHomePath: appHome, name, template: 'coding' });
@@ -37,6 +39,59 @@ describe('profile validator', () => {
 
     expect(result.status).toBe('valid');
     expect(result.findings).toEqual([]);
+  });
+
+  it('warns when the auto-repairable ccps profile boundary rule is missing', async () => {
+    const { appHome, paths } = await makeProfile();
+    await rm(paths.ccpsProfileRulePath);
+
+    const result = await validateProfile({ appHomePath: appHome, name: 'coding' });
+
+    expect(result.status).toBe('warning');
+    expect(result.findings).toContainEqual(
+      expect.objectContaining({
+        severity: 'warning',
+        code: 'CCPS_PROFILE_RULE_MISSING',
+        path: paths.ccpsProfileRulePath,
+      }),
+    );
+  });
+
+  it('blocks launch when the ccps profile boundary path is not a file', async () => {
+    const { appHome, paths } = await makeProfile();
+    await rm(paths.ccpsProfileRulePath);
+    await fs.ensureDir(paths.ccpsProfileRulePath);
+
+    const result = await validateProfile({ appHomePath: appHome, name: 'coding' });
+
+    expect(result.status).toBe('error');
+    expect(result.findings).toContainEqual(
+      expect.objectContaining({
+        severity: 'error',
+        code: 'CCPS_PROFILE_RULE_INVALID',
+        path: paths.ccpsProfileRulePath,
+      }),
+    );
+  });
+
+  it('blocks launch when the ccps profile boundary markers are malformed', async () => {
+    const { appHome, paths } = await makeProfile();
+    await fs.writeFile(
+      paths.ccpsProfileRulePath,
+      '# Ambiguous\n\n<!-- ccps-managed-profile-boundary:end:v2 -->\n',
+      'utf8',
+    );
+
+    const result = await validateProfile({ appHomePath: appHome, name: 'coding' });
+
+    expect(result.status).toBe('error');
+    expect(result.findings).toContainEqual(
+      expect.objectContaining({
+        severity: 'error',
+        code: 'CCPS_PROFILE_RULE_CORRUPT',
+        path: paths.ccpsProfileRulePath,
+      }),
+    );
   });
 
   it('requires profile-scoped auto memory files and settings', async () => {
@@ -102,8 +157,16 @@ describe('profile validator', () => {
     expect(result.status).toBe('error');
     expect(result.findings).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ severity: 'error', code: 'REQUIRED_FILE_MISSING', path: paths.settingsPath }),
-        expect.objectContaining({ severity: 'error', code: 'REQUIRED_DIRECTORY_MISSING', path: paths.pluginsPath }),
+        expect.objectContaining({
+          severity: 'error',
+          code: 'REQUIRED_FILE_MISSING',
+          path: paths.settingsPath,
+        }),
+        expect.objectContaining({
+          severity: 'error',
+          code: 'REQUIRED_DIRECTORY_MISSING',
+          path: paths.pluginsPath,
+        }),
       ]),
     );
   });
@@ -119,7 +182,11 @@ describe('profile validator', () => {
     expect(result.findings).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ severity: 'error', code: 'PROFILE_MANIFEST_INVALID' }),
-        expect.objectContaining({ severity: 'error', code: 'JSON_INVALID', path: paths.mcpConfigPath }),
+        expect.objectContaining({
+          severity: 'error',
+          code: 'JSON_INVALID',
+          path: paths.mcpConfigPath,
+        }),
       ]),
     );
   });
@@ -157,7 +224,14 @@ describe('profile validator', () => {
 
   it('does not report benign documentation names containing sensitive substrings as high-risk', async () => {
     const { appHome, paths } = await makeProfile();
-    const designReferencesPath = join(paths.pluginsPath, 'marketplaces', 'waza', 'skills', 'design', 'references');
+    const designReferencesPath = join(
+      paths.pluginsPath,
+      'marketplaces',
+      'waza',
+      'skills',
+      'design',
+      'references',
+    );
     const designTokensPath = join(designReferencesPath, 'design-tokens.md');
     await fs.ensureDir(designReferencesPath);
     await fs.writeFile(designTokensPath, '# Design tokens\n', 'utf8');
@@ -175,5 +249,4 @@ describe('profile validator', () => {
       ]),
     );
   });
-
 });

@@ -37,7 +37,7 @@ const reservedProfileNames = new Set([
 ]);
 
 type PathPlatform = 'win32' | 'posix';
-type SupportedRuntimePlatform = 'win32' | 'darwin';
+type SupportedRuntimePlatform = 'win32' | 'darwin' | 'linux';
 type PathApi = typeof path.win32;
 
 export function resolveUserHome(
@@ -66,7 +66,7 @@ export function resolveUserHome(
     return resolveFilesystemPath(home);
   }
 
-  throw new CcpsError('USER_HOME_NOT_FOUND', 'Unable to resolve the macOS user home.', {
+  throw new CcpsError('USER_HOME_NOT_FOUND', 'Unable to resolve the POSIX user home.', {
     guidance: 'Set HOME before running ccps.',
   });
 }
@@ -77,7 +77,11 @@ export function getAppHomePath(userHome = resolveUserHome()): string {
 
 export function isPathInside(basePath: string, candidatePath: string): boolean {
   const pathApi = pathApiFor(basePath, candidatePath);
-  const [normalizedBasePath, normalizedCandidatePath] = normalizeSegments(pathApi, basePath, candidatePath);
+  const [normalizedBasePath, normalizedCandidatePath] = normalizeSegments(
+    pathApi,
+    basePath,
+    candidatePath,
+  );
   const base = normalizeForComparison(pathApi, pathApi.resolve(normalizedBasePath));
   const candidate = normalizeForComparison(pathApi, pathApi.resolve(normalizedCandidatePath));
   const relative = pathApi.relative(base, candidate);
@@ -104,9 +108,16 @@ export function resolveFilesystemPath(...segments: string[]): string {
 
 export function relativeFilesystemPath(basePath: string, candidatePath: string): string {
   const pathApi = pathApiFor(basePath, candidatePath);
-  const [normalizedBasePath, normalizedCandidatePath] = normalizeSegments(pathApi, basePath, candidatePath);
+  const [normalizedBasePath, normalizedCandidatePath] = normalizeSegments(
+    pathApi,
+    basePath,
+    candidatePath,
+  );
 
-  return pathApi.relative(pathApi.resolve(normalizedBasePath), pathApi.resolve(normalizedCandidatePath));
+  return pathApi.relative(
+    pathApi.resolve(normalizedBasePath),
+    pathApi.resolve(normalizedCandidatePath),
+  );
 }
 
 export function areSameFilesystemPath(left: string, right: string): boolean {
@@ -141,17 +152,18 @@ export function validateProfileName(name: string): string {
 
 function invalidProfileName(): CcpsError {
   return new CcpsError('INVALID_PROFILE_NAME', 'Profile name is not safe.', {
-    guidance: 'Use letters, numbers, hyphen, or underscore. Do not use path separators or reserved names.',
+    guidance:
+      'Use letters, numbers, hyphen, or underscore. Do not use path separators or reserved names.',
   });
 }
 
 function assertSupportedPlatform(platform: NodeJS.Platform): SupportedRuntimePlatform {
-  if (platform === 'win32' || platform === 'darwin') {
+  if (platform === 'win32' || platform === 'darwin' || platform === 'linux') {
     return platform;
   }
 
-  throw new CcpsError('PLATFORM_NOT_SUPPORTED', 'ccps supports Windows and macOS only.', {
-    guidance: 'Run ccps on Windows or macOS.',
+  throw new CcpsError('PLATFORM_NOT_SUPPORTED', 'ccps supports Windows, macOS, and Linux only.', {
+    guidance: 'Run ccps on Windows, macOS, or Linux.',
   });
 }
 

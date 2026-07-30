@@ -4,7 +4,7 @@
 
 本文档是 `CC-Profile-Switch` 的后续迭代规划附录。
 
-当前实现状态（2026-06-18）：ccps 支持 Windows 和 macOS；Linux 仍不支持。
+当前实现状态（更新于 2026-07-30）：ccps 支持 Windows、macOS 和 Linux，并以三平台 hosted CI 作为兼容性门禁。
 
 主 PRD 文件：
 
@@ -51,7 +51,7 @@ ccps backup <name>
 MVP 技术形态：
 
 ```text
-Windows and macOS
+Windows, macOS, and Linux
 Node.js CLI
 无 TUI
 无 GUI
@@ -110,17 +110,17 @@ MVP 不做：
 
 P1 重点是增强本地 profile 管理能力，不改变产品形态。V0.2 已实现 `copy`、`rename`、`remove`、`default`，并加入只覆盖同一套 core service 的轻量 TUI；GUI、云同步和账号切换仍不进入当前产品边界。
 
-| 功能 | 命令建议 | 当前状态 | 价值 | 风险 |
-|---|---|---|---|---|
-| 复制 profile | `ccps copy <from> <to>` | V0.2 已实现 | 基于已有配置快速创建变体 | 可能复制敏感文件，需要复用 validate |
-| 重命名 profile | `ccps rename <old> <new>` | V0.2 已实现 | 管理 profile 名称 | 需要处理引用关系 |
-| 删除 profile | `ccps remove <name>` | V0.2 已实现 | 清理不用的 profile | 有误删风险，必须删除前备份和精确确认 |
-| 设置默认 profile | `ccps default <name>` | V0.2 已实现 | 支持 `ccps launch` 默认启动 | 需要更新 config.json |
-| 轻量 TUI | `ccps tui` | V0.2 已实现 | 终端内操作常用 profile 管理动作 | 不能扩展成独立 GUI 或第二套业务逻辑 |
-| 最近使用记录 | `ccps recent` | 后续版本 | 快速查看使用历史 | 只记录 profile 名，不记录任务内容 |
-| 生成 PowerShell 函数 | `ccps alias <name>` | 后续版本 | 让用户用 `cc-study` 这类短命令启动 | 需要注意路径转义 |
-| 导出 profile | `ccps export <name>` | 后续版本 | 本地迁移、备份 | 必须排除敏感文件 |
-| 导入 profile | `ccps import <path>` | 后续版本 | 复用他人配置包 | 需要安全检查 |
+| 功能                 | 命令建议                  | 当前状态    | 价值                               | 风险                                 |
+| -------------------- | ------------------------- | ----------- | ---------------------------------- | ------------------------------------ |
+| 复制 profile         | `ccps copy <from> <to>`   | V0.2 已实现 | 基于已有配置快速创建变体           | 可能复制敏感文件，需要复用 validate  |
+| 重命名 profile       | `ccps rename <old> <new>` | V0.2 已实现 | 管理 profile 名称                  | 需要处理引用关系                     |
+| 删除 profile         | `ccps remove <name>`      | V0.2 已实现 | 清理不用的 profile                 | 有误删风险，必须删除前备份和精确确认 |
+| 设置默认 profile     | `ccps default <name>`     | V0.2 已实现 | 支持 `ccps launch` 默认启动        | 需要更新 config.json                 |
+| 轻量 TUI             | `ccps tui`                | V0.2 已实现 | 终端内操作常用 profile 管理动作    | 不能扩展成独立 GUI 或第二套业务逻辑  |
+| 最近使用记录         | `ccps recent`             | 后续版本    | 快速查看使用历史                   | 只记录 profile 名，不记录任务内容    |
+| 生成 PowerShell 函数 | `ccps alias <name>`       | 后续版本    | 让用户用 `cc-study` 这类短命令启动 | 需要注意路径转义                     |
+| 导出 profile         | `ccps export <name>`      | 后续版本    | 本地迁移、备份                     | 必须排除敏感文件                     |
+| 导入 profile         | `ccps import <path>`      | 后续版本    | 复用他人配置包                     | 需要安全检查                         |
 
 ---
 
@@ -274,15 +274,15 @@ function cc-study {
 
 P2 重点是提升可靠性和可维护性。
 
-| 功能 | 命令建议 | 价值 |
-|---|---|---|
-| 环境诊断 | `ccps doctor` | 检查 Node、Claude Code、路径、profile 状态 |
-| 深度校验 | `ccps validate <name> --deep` | 检查 plugins/skills/agents 内部结构 |
-| profile diff | `ccps diff <a> <b>` | 对比两个 profile 差异 |
-| 配置修复建议 | `ccps repair <name>` | 修复缺失目录和模板文件 |
-| Claude Code 行为验证助手 | `ccps verify-behavior` | 引导用户验证 CLAUDE_CONFIG_DIR 是否生效 |
-| profile export/import 增强 | `ccps export/import` | 支持本地迁移 |
-| 模板列表 | `ccps templates` | 查看内置模板 |
+| 功能                       | 命令建议                      | 价值                                       |
+| -------------------------- | ----------------------------- | ------------------------------------------ |
+| 环境诊断                   | `ccps doctor`                 | 检查 Node、Claude Code、路径、profile 状态 |
+| 深度校验                   | `ccps validate <name> --deep` | 检查 plugins/skills/agents 内部结构        |
+| profile diff               | `ccps diff <a> <b>`           | 对比两个 profile 差异                      |
+| 配置修复建议               | `ccps repair <name>`          | 修复缺失目录和模板文件                     |
+| Claude Code 行为验证助手   | `ccps verify-behavior`        | 引导用户验证 CLAUDE_CONFIG_DIR 是否生效    |
+| profile export/import 增强 | `ccps export/import`          | 支持本地迁移                               |
+| 模板列表                   | `ccps templates`              | 查看内置模板                               |
 
 ---
 
@@ -382,7 +382,8 @@ ccps diff coding study
 profile.json
 claude-home\CLAUDE.md
 claude-home\settings.json
-mcp.json
+claude-home\rules\
+native user-scope MCP server 摘要（通过 claude mcp list/get）
 claude-home\skills\
 claude-home\agents\
 claude-home\plugins\
@@ -402,17 +403,16 @@ MVP 后再做
 
 P3 是更远期的增强，不建议早做。
 
-| 功能 | 价值 | 风险 |
-|---|---|---|
-| GUI 管理台 | 降低门槛 | 开发成本高，容易偏离核心 |
-| TUI 增强 | 已有 V0.2 轻量入口，后续可改善体验 | 必须继续复用 core service，不能形成第二套业务逻辑 |
-| VS Code 集成 | 方便开发者使用 | 需要插件开发 |
-| Windows Terminal 集成 | 每个 profile 一个启动入口 | 需要修改系统级配置 |
-| 模板市场 | 分享 profile 模板 | 安全审核成本高 |
-| 插件市场 | 分享 plugins/skills/agents | 安全风险高 |
-| 云同步 | 多设备使用 | 账号、隐私、安全复杂 |
-| 团队共享 | 团队统一配置 | 超出个人工具定位 |
-| Linux 支持 | 扩大用户范围 | 需要新增 Linux 路径和 shell 适配 |
+| 功能                  | 价值                               | 风险                                              |
+| --------------------- | ---------------------------------- | ------------------------------------------------- |
+| GUI 管理台            | 降低门槛                           | 开发成本高，容易偏离核心                          |
+| TUI 增强              | 已有 V0.2 轻量入口，后续可改善体验 | 必须继续复用 core service，不能形成第二套业务逻辑 |
+| VS Code 集成          | 方便开发者使用                     | 需要插件开发                                      |
+| Windows Terminal 集成 | 每个 profile 一个启动入口          | 需要修改系统级配置                                |
+| 模板市场              | 分享 profile 模板                  | 安全审核成本高                                    |
+| 插件市场              | 分享 plugins/skills/agents         | 安全风险高                                        |
+| 云同步                | 多设备使用                         | 账号、隐私、安全复杂                              |
+| 团队共享              | 团队统一配置                       | 超出个人工具定位                                  |
 
 ---
 
@@ -756,14 +756,14 @@ TUI 不应演变成 GUI 或独立产品模式
 结论：
 
 ```text
-TUI 可以保留和小步增强，但必须继续服从 CLI-first、Windows/macOS、本地 profile 管理边界。
+TUI 可以保留和小步增强，但必须继续服从 CLI-first、Windows/macOS/Linux、本地 profile 管理边界。
 ```
 
 ---
 
 ## 7.7 默认 strict MCP
 
-不建议作为默认行为。
+已退役为 legacy 兼容讨论，不应进入新 profile 的默认行为。
 
 原因：
 
@@ -776,7 +776,7 @@ strict MCP 可能忽略项目 MCP
 结论：
 
 ```text
-MVP 默认 merge，strict 只作为显式选项或后续能力。
+新 profile 使用 Claude Code 原生 user scope，不传 MCP flag。strict 只适用于明确保留旧 profile `mcp.json` 的兼容场景。
 ```
 
 ---
@@ -793,15 +793,15 @@ Node.js CLI first
 
 未来如果需要增强，可以考虑：
 
-| 能力 | 可选技术 |
-|---|---|
-| 命令解析 | commander / cac / yargs |
-| 彩色输出 | chalk / picocolors |
-| 文件复制 | fs-extra |
-| JSON 校验 | zod / ajv |
-| 打包发布 | tsup / pkg |
-| 测试 | vitest |
-| 交互确认 | prompts / enquirer |
+| 能力      | 可选技术                |
+| --------- | ----------------------- |
+| 命令解析  | commander / cac / yargs |
+| 彩色输出  | chalk / picocolors      |
+| 文件复制  | fs-extra                |
+| JSON 校验 | zod / ajv               |
+| 打包发布  | tsup / pkg              |
+| 测试      | vitest                  |
+| 交互确认  | prompts / enquirer      |
 
 注意：
 

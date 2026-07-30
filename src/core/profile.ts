@@ -10,6 +10,7 @@ import {
 } from './app-config';
 import {
   createProfileFromTemplate,
+  ensureCcpsProfileRule,
   ensureDefaultProfileSettingsEnv,
   ensureProfileClaudeMdExcludes,
   getProfileTemplatePaths,
@@ -19,7 +20,13 @@ import {
 import { importClaudeApiSettings, type ImportClaudeApiSettingsResult } from './claude-settings';
 import { CcpsError } from '../utils/errors';
 
-export const defaultProfileNames: ProfileTemplateName[] = ['coding', 'study', 'work', 'research', 'general'];
+export const defaultProfileNames: ProfileTemplateName[] = [
+  'coding',
+  'study',
+  'work',
+  'research',
+  'general',
+];
 
 export type InitProfilesOptions = {
   appHomePath?: string;
@@ -95,7 +102,10 @@ export async function initProfiles(options: InitProfilesOptions = {}): Promise<I
   };
 }
 
-async function ensureExistingProfileSettingsEnv(appHomePath: string, profilesPath: string): Promise<void> {
+async function ensureExistingProfileSettingsEnv(
+  appHomePath: string,
+  profilesPath: string,
+): Promise<void> {
   const entries = await fs.readdir(profilesPath, { withFileTypes: true });
 
   await Promise.all(
@@ -112,6 +122,7 @@ async function ensureExistingProfileSettingsEnv(appHomePath: string, profilesPat
 
         await ensureDefaultProfileSettingsEnv(profilePaths.settingsPath);
         await ensureProfileClaudeMdExcludes(profilePaths.settingsPath);
+        await ensureCcpsProfileRule(profilePaths.ccpsProfileRulePath);
       }),
   );
 }
@@ -161,7 +172,11 @@ export async function backupProfile(options: BackupProfileOptions): Promise<Back
   };
 }
 
-function getBackupPath(backupsPath: string, profileName: string, clock: Clock = () => new Date()): string {
+function getBackupPath(
+  backupsPath: string,
+  profileName: string,
+  clock: Clock = () => new Date(),
+): string {
   const safeName = validateProfileName(profileName);
   const timestamp = formatBackupTimestamp(clock());
   return resolveInside(backupsPath, `${safeName}-${timestamp}`);

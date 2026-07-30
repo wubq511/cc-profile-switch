@@ -30,7 +30,9 @@ describe('editor integration', () => {
   });
 
   it('builds a macOS open command for a new VS Code window', () => {
-    expect(buildEditorSpawnCommand('/Users/robert/.cc-profile-switch/profiles/coding', 'darwin')).toEqual({
+    expect(
+      buildEditorSpawnCommand('/Users/robert/.cc-profile-switch/profiles/coding', 'darwin'),
+    ).toEqual({
       command: 'open',
       args: ['-n', '-a', 'Visual Studio Code', '/Users/robert/.cc-profile-switch/profiles/coding'],
       options: {
@@ -41,8 +43,25 @@ describe('editor integration', () => {
     });
   });
 
+  it('builds a Linux code command for a new VS Code window', () => {
+    expect(
+      buildEditorSpawnCommand('/home/robert/.cc-profile-switch/profiles/coding', 'linux'),
+    ).toEqual({
+      command: 'code',
+      args: ['-n', '/home/robert/.cc-profile-switch/profiles/coding'],
+      options: {
+        stdio: 'ignore',
+      },
+      failureGuidance:
+        'Install Visual Studio Code and its "code" command or open the path manually: /home/robert/.cc-profile-switch/profiles/coding',
+    });
+  });
+
   it('keeps the Windows PowerShell editor command explicit', () => {
-    const command = buildEditorSpawnCommand('C:\\Users\\h\\.cc-profile-switch\\profiles\\coding', 'win32');
+    const command = buildEditorSpawnCommand(
+      'C:\\Users\\h\\.cc-profile-switch\\profiles\\coding',
+      'win32',
+    );
 
     expect(command.command).toBe('powershell.exe');
     expect(command.args).toEqual([

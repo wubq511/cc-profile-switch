@@ -23,7 +23,14 @@ describe('process spawning', () => {
 
   it('resolves npm cmd shims to the underlying executable on Windows', async () => {
     const binDir = join(await makeTempRoot('ccps-process-'), 'npm bin');
-    const exePath = join(binDir, 'node_modules', '@anthropic-ai', 'claude-code', 'bin', 'claude.exe');
+    const exePath = join(
+      binDir,
+      'node_modules',
+      '@anthropic-ai',
+      'claude-code',
+      'bin',
+      'claude.exe',
+    );
     const shimPath = join(binDir, 'claude.cmd');
     await fs.ensureFile(exePath);
     await fs.writeFile(
@@ -50,7 +57,14 @@ describe('process spawning', () => {
 
   it('does not rewrite commands through Windows shim parsing on macOS', async () => {
     const binDir = join(await makeTempRoot('ccps-process-'), 'npm bin');
-    const exePath = join(binDir, 'node_modules', '@anthropic-ai', 'claude-code', 'bin', 'claude.exe');
+    const exePath = join(
+      binDir,
+      'node_modules',
+      '@anthropic-ai',
+      'claude-code',
+      'bin',
+      'claude.exe',
+    );
     const shimPath = join(binDir, 'claude.cmd');
     await fs.ensureFile(exePath);
     await fs.writeFile(
@@ -59,11 +73,30 @@ describe('process spawning', () => {
       'utf8',
     );
 
-    const resolved = await resolveSpawnCommand('claude', ['--print', 'hello'], { PATH: binDir }, 'darwin');
+    const resolved = await resolveSpawnCommand(
+      'claude',
+      ['--print', 'hello'],
+      { PATH: binDir },
+      'darwin',
+    );
 
     expect(resolved).toEqual({
       command: 'claude',
       args: ['--print', 'hello'],
+    });
+  });
+
+  it('passes commands and arguments through unchanged on Linux', async () => {
+    const resolved = await resolveSpawnCommand(
+      'claude',
+      ['--print', 'hello world'],
+      { PATH: '/usr/local/bin:/usr/bin' },
+      'linux',
+    );
+
+    expect(resolved).toEqual({
+      command: 'claude',
+      args: ['--print', 'hello world'],
     });
   });
 });

@@ -11,7 +11,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
 
   program
     .name('ccps')
-    .description('CC-Profile-Switch: Windows and macOS Claude Code profile launcher.')
+    .description('CC-Profile-Switch: Windows, macOS, and Linux Claude Code profile launcher.')
     .version(cliVersion)
     .showHelpAfterError()
     .showSuggestionAfterError();

@@ -26,8 +26,10 @@ describe('Claude settings import', () => {
     return root;
   }
 
-  it('resolves Windows and macOS Claude settings paths from the user home', () => {
-    expect(getClaudeSettingsPath('C:\\Users\\Robert')).toBe('C:\\Users\\Robert\\.claude\\settings.json');
+  it('resolves Windows and POSIX Claude settings paths from the user home', () => {
+    expect(getClaudeSettingsPath('C:\\Users\\Robert')).toBe(
+      'C:\\Users\\Robert\\.claude\\settings.json',
+    );
     expect(getClaudeSettingsPath('/Users/robert')).toBe('/Users/robert/.claude/settings.json');
   });
 
@@ -94,7 +96,9 @@ describe('Claude settings import', () => {
 
     await fs.ensureDir(appHome);
 
-    await expect(importClaudeApiSettings({ appHomePath: appHome, userHomePath: userHome })).resolves.toMatchObject({
+    await expect(
+      importClaudeApiSettings({ appHomePath: appHome, userHomePath: userHome }),
+    ).resolves.toMatchObject({
       skipped: true,
       importedKeys: [],
     });
@@ -103,7 +107,9 @@ describe('Claude settings import', () => {
     await fs.ensureDir(join(userHome, '.claude'));
     await fs.writeFile(getClaudeSettingsPath(userHome), '{not-json', 'utf8');
 
-    await expect(importClaudeApiSettings({ appHomePath: appHome, userHomePath: userHome })).resolves.toMatchObject({
+    await expect(
+      importClaudeApiSettings({ appHomePath: appHome, userHomePath: userHome }),
+    ).resolves.toMatchObject({
       skipped: true,
       importedKeys: [],
     });
