@@ -10,6 +10,7 @@ description: >
 你为 ccps profile 配置 `settings.json`（Claude Code 用户级设置）和 `profile.json` 的启动配置（ccps 启动抽象）。
 
 两者职责不同：
+
 - **settings.json** — Claude Code 原生配置，控制模型行为、环境变量、权限、hooks 等。
 - **profile.json `launch` 字段** — ccps 自有的启动层抽象，控制如何把 Claude Code 拉起来（传哪些 CLI flag、MCP 合并策略、是否跳过权限确认等）。
 
@@ -21,26 +22,27 @@ settings.json 放在 `<profile>/claude-home/settings.json`，通过 `CLAUDE_CONF
 
 ### 完整字段参考
 
-| 字段 | 类型 | 默认值 | 说明 |
-|---|---|---|---|
-| `model` | string | Claude Code 内置默认 | 指定默认使用的模型 ID，如 `"claude-sonnet-4-6"` |
-| `env` | object | `{}` | 注入到 Claude Code 进程的环境变量键值对。**值必须是字符串** |
-| `permissions` | object | — | 细粒度权限规则（allow/deny 命令或工具） |
-| `hooks` | object | — | 事件钩子（PreToolUse / PostToolUse / Notification 等），用于自动化拦截或补充 |
-| `language` | string | — | Claude 回复使用的语言偏好，如 `"zh"` / `"en"` |
-| `outputStyle` | string | — | 输出风格偏好 |
-| `verbose` | boolean | `false` | 是否输出详细调试日志 |
-| `theme` | string | — | CLI 主题（`"dark"` / `"light"` 等） |
-| `teammateMode` | boolean | `false` | 团队协作模式 |
-| `autoMemoryEnabled` | boolean | `true` | 是否启用自动记忆（Claude 自己写 learnings） |
-| `respectGitignore` | boolean | — | 是否遵守 `.gitignore` 规则过滤文件 |
-| `includeGitInstructions` | boolean | — | 是否在上下文中注入 git 状态信息 |
-| `skillListingBudgetFraction` | number | — | Skill 列表在 context window 中占比上限 |
-| `skillListingMaxDescChars` | number | — | 单个 skill 描述的最大字符数 |
-| `pluginSuggestionMarketplaces` | array | — | 插件推荐来源 |
-| `strictPluginOnlyCustomization` | boolean | — | 严格限制插件自定义范围 |
+| 字段                            | 类型    | 默认值               | 说明                                                                         |
+| ------------------------------- | ------- | -------------------- | ---------------------------------------------------------------------------- |
+| `model`                         | string  | Claude Code 内置默认 | 指定默认使用的模型 ID，如 `"claude-sonnet-4-6"`                              |
+| `env`                           | object  | `{}`                 | 注入到 Claude Code 进程的环境变量键值对。**值必须是字符串**                  |
+| `permissions`                   | object  | —                    | 细粒度权限规则（allow/deny 命令或工具）                                      |
+| `hooks`                         | object  | —                    | 事件钩子（PreToolUse / PostToolUse / Notification 等），用于自动化拦截或补充 |
+| `language`                      | string  | —                    | Claude 回复使用的语言偏好，如 `"zh"` / `"en"`                                |
+| `outputStyle`                   | string  | —                    | 输出风格偏好                                                                 |
+| `verbose`                       | boolean | `false`              | 是否输出详细调试日志                                                         |
+| `theme`                         | string  | —                    | CLI 主题（`"dark"` / `"light"` 等）                                          |
+| `teammateMode`                  | boolean | `false`              | 团队协作模式                                                                 |
+| `autoMemoryEnabled`             | boolean | `true`               | 是否启用自动记忆（Claude 自己写 learnings）                                  |
+| `respectGitignore`              | boolean | —                    | 是否遵守 `.gitignore` 规则过滤文件                                           |
+| `includeGitInstructions`        | boolean | —                    | 是否在上下文中注入 git 状态信息                                              |
+| `skillListingBudgetFraction`    | number  | —                    | Skill 列表在 context window 中占比上限                                       |
+| `skillListingMaxDescChars`      | number  | —                    | 单个 skill 描述的最大字符数                                                  |
+| `pluginSuggestionMarketplaces`  | array   | —                    | 插件推荐来源                                                                 |
+| `strictPluginOnlyCustomization` | boolean | —                    | 严格限制插件自定义范围                                                       |
 
 **ccps 管控的字段：**
+
 - `autoMemoryDirectory` — 由 ccps 自动设置为 `<profile>/claude-home/memory/auto`，不要手动修改。
 - `env.CLAUDE_CODE_ATTRIBUTION_HEADER` — ccps 初始化时自动设为 `"0"`，不要删除。
 
@@ -60,15 +62,8 @@ settings.json 放在 `<profile>/claude-home/settings.json`，通过 `CLAUDE_CONF
     "CLAUDE_CODE_MAX_TURNS": "50"
   },
   "permissions": {
-    "allow": [
-      "Bash(npm run *)",
-      "Bash(npx *)",
-      "Bash(git *)"
-    ],
-    "deny": [
-      "Bash(rm -rf /)",
-      "Bash(git push --force *)"
-    ]
+    "allow": ["Bash(npm run *)", "Bash(npx *)", "Bash(git *)"],
+    "deny": ["Bash(rm -rf /)", "Bash(git push --force *)"]
   }
 }
 ```
@@ -83,17 +78,17 @@ settings.json 放在 `<profile>/claude-home/settings.json`，通过 `CLAUDE_CONF
 
 控制 Claude Code 连接哪个后端、用什么凭证。**ccps 不负责设置这些**——它们通过 `api-settings.json` 或真实 `~/.claude/settings.json` 的 `env.ANTHROPIC_*` 键自动合并。
 
-| 变量 | 用途 |
-|---|---|
-| `ANTHROPIC_API_KEY` | 直接 API 密钥 |
-| `ANTHROPIC_AUTH_TOKEN` | OAuth token（用于企业/组织认证） |
-| `ANTHROPIC_MODEL` | 覆盖默认模型（优先级低于 settings.json `model` 字段） |
-| `ANTHROPIC_SMALL_FAST_MODEL` | 轻量快速模型 ID |
-| `ANTHROPIC_BASE_URL` | API base URL（自建代理 / OpenRouter 等） |
-| `ANTHROPIC_VERTEX_PROJECT` | Google Vertex AI 项目 ID |
-| `ANTHROPIC_VERTEX_REGION` | Google Vertex AI 区域 |
-| `ANTHROPIC_BEDROCK_*` | AWS Bedrock 相关配置 |
-| `ANTHROPIC_FOUNDRY_*` | Anthropic Foundry 相关配置 |
+| 变量                         | 用途                                                  |
+| ---------------------------- | ----------------------------------------------------- |
+| `ANTHROPIC_API_KEY`          | 直接 API 密钥                                         |
+| `ANTHROPIC_AUTH_TOKEN`       | OAuth token（用于企业/组织认证）                      |
+| `ANTHROPIC_MODEL`            | 覆盖默认模型（优先级低于 settings.json `model` 字段） |
+| `ANTHROPIC_SMALL_FAST_MODEL` | 轻量快速模型 ID                                       |
+| `ANTHROPIC_BASE_URL`         | API base URL（自建代理 / OpenRouter 等）              |
+| `ANTHROPIC_VERTEX_PROJECT`   | Google Vertex AI 项目 ID                              |
+| `ANTHROPIC_VERTEX_REGION`    | Google Vertex AI 区域                                 |
+| `ANTHROPIC_BEDROCK_*`        | AWS Bedrock 相关配置                                  |
+| `ANTHROPIC_FOUNDRY_*`        | Anthropic Foundry 相关配置                            |
 
 > **注意**：`ANTHROPIC_*` 系列键在 `ccps init` 时会从真实 `~/.claude/settings.json` 自动导入到 `api-settings.json`。profile 创建阶段不需要手动设置。
 
@@ -101,20 +96,20 @@ settings.json 放在 `<profile>/claude-home/settings.json`，通过 `CLAUDE_CONF
 
 控制 Claude Code 运行时行为，不涉及认证。
 
-| 变量 | 用途 | 推荐值 |
-|---|---|---|
-| `CLAUDE_CODE_MAX_TURNS` | 单次会话最大轮数上限 | `"50"` / `"100"` / `"200"` |
-| `CLAUDE_CODE_DISABLE_AUTO_MEMORY` | 禁用自动记忆（`"1"` = 禁用） | 通常不设，用 settings.json `autoMemoryEnabled` 代替 |
-| `CLAUDE_CODE_MCP_ALLOWLIST_ENV` | MCP 服务器允许访问的宿主环境变量白名单 | 按需设置 |
-| `CLAUDE_CODE_ATTRIBUTION_HEADER` | 禁用归因头 | `"0"`（ccps 自动设置） |
-| `EDITOR` | 默认编辑器命令 | `"code"` / `"vim"` 等 |
+| 变量                              | 用途                                   | 推荐值                                              |
+| --------------------------------- | -------------------------------------- | --------------------------------------------------- |
+| `CLAUDE_CODE_MAX_TURNS`           | 单次会话最大轮数上限                   | `"50"` / `"100"` / `"200"`                          |
+| `CLAUDE_CODE_DISABLE_AUTO_MEMORY` | 禁用自动记忆（`"1"` = 禁用）           | 通常不设，用 settings.json `autoMemoryEnabled` 代替 |
+| `CLAUDE_CODE_MCP_ALLOWLIST_ENV`   | MCP 服务器允许访问的宿主环境变量白名单 | 按需设置                                            |
+| `CLAUDE_CODE_ATTRIBUTION_HEADER`  | 禁用归因头                             | `"0"`（ccps 自动设置）                              |
+| `EDITOR`                          | 默认编辑器命令                         | `"code"` / `"vim"` 等                               |
 
 ### Integration 类 — 集成配置
 
 控制 Claude Code 的配置目录和集成点。
 
-| 变量 | 用途 |
-|---|---|
+| 变量                | 用途                                            |
+| ------------------- | ----------------------------------------------- |
 | `CLAUDE_CONFIG_DIR` | 覆盖 Claude Code 配置根目录（默认 `~/.claude`） |
 
 ---
@@ -137,10 +132,10 @@ settings.json 放在 `<profile>/claude-home/settings.json`，通过 `CLAUDE_CONF
 spawn('claude', args, {
   cwd,
   env: {
-    ...process.env,        // 继承宿主环境
-    ...realClaudeEnv,       // 合并真实 ~/.claude/settings.json 中的 env.ANTHROPIC_*
-    ...apiEnv,              // 合并 api-settings.json 中的公共 API 键
-    CLAUDE_CONFIG_DIR: profileClaudeHome,  // 覆盖配置目录
+    ...process.env, // 继承宿主环境
+    ...realClaudeEnv, // 合并真实 ~/.claude/settings.json 中的 env.ANTHROPIC_*
+    ...apiEnv, // 合并 api-settings.json 中的公共 API 键
+    CLAUDE_CONFIG_DIR: profileClaudeHome, // 覆盖配置目录
   },
 });
 ```
@@ -156,24 +151,25 @@ spawn('claude', args, {
 
 profile.json 的 `launch` 字段是 **ccps 自有抽象**，不是 Claude Code 官方配置。以下是映射关系：
 
-| ccps launch 字段 | 类型 | 默认值 | 官方对应概念 | 说明 |
-|---|---|---|---|---|
-| `mcpMode` | string | `"merge"` | CLI flag `--mcp-config` / `--strict-mcp-config` | `"merge"` = 加载 mcp.json 但允许项目覆盖；`"strict"` = 追加 `--strict-mcp-config`；`"none"` = 不加载 |
-| `pluginDirs` | string[] | `[]` | CLI flag `--plugin-dir` | 每个路径映射为一个 `--plugin-dir <path>` 参数 |
-| `disableAutoMemory` | boolean | `false` | settings.json `autoMemoryEnabled` | **映射关系见下方详述** |
-| `skipPermissions` | boolean | `true` | CLI flag `--dangerously-skip-permissions` | `true` = 自动追加该 flag；`false` = 不追加。等价于官方 permissionMode 中的 bypassPermissions 语义 |
-| `claudeArgs` | string[] | `[]` | 直接透传的 CLI 参数 | 数组中每个元素原样追加到 `claude` 命令行。可以放 `--model`、`--max-turns`、`--verbose` 等任意合法 flag |
+| ccps launch 字段    | 类型     | 默认值    | 官方对应概念                                  | 说明                                                                                                   |
+| ------------------- | -------- | --------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `mcpMode`           | string   | `"none"`  | legacy `--mcp-config` / `--strict-mcp-config` | 新 profile 使用 `none`；只在兼容旧 `<profile>/mcp.json` 时改为 `merge` 或 `strict`                    |
+| `pluginDirs`        | string[] | `[]`      | CLI flag `--plugin-dir`                       | 每个路径映射为一个 `--plugin-dir <path>` 参数                                                          |
+| `disableAutoMemory` | boolean  | `false`   | settings.json `autoMemoryEnabled`             | **映射关系见下方详述**                                                                                 |
+| `skipPermissions`   | boolean  | `true`    | CLI flag `--dangerously-skip-permissions`     | `true` = 自动追加该 flag；`false` = 不追加。等价于官方 permissionMode 中的 bypassPermissions 语义      |
+| `claudeArgs`        | string[] | `[]`      | 直接透传的 CLI 参数                           | 数组中每个元素原样追加到 `claude` 命令行。可以放 `--model`、`--max-turns`、`--verbose` 等任意合法 flag |
 
 ### disableAutoMemory 与 autoMemoryEnabled 的映射关系
 
 这两个字段控制同一件事，但分属不同层：
 
-| 层 | 字段 | 默认值 | 行为 |
-|---|---|---|---|
-| **Claude Code 官方** | `settings.json` `autoMemoryEnabled` | `true` | `false` = Claude 不会自动写 learnings 到 memory 目录 |
-| **ccps 启动抽象** | `profile.json` `launch.disableAutoMemory` | `false` | `true` = ccps 在启动时设置 `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` 环境变量 |
+| 层                   | 字段                                      | 默认值  | 行为                                                                    |
+| -------------------- | ----------------------------------------- | ------- | ----------------------------------------------------------------------- |
+| **Claude Code 官方** | `settings.json` `autoMemoryEnabled`       | `true`  | `false` = Claude 不会自动写 learnings 到 memory 目录                    |
+| **ccps 启动抽象**    | `profile.json` `launch.disableAutoMemory` | `false` | `true` = ccps 在启动时设置 `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` 环境变量 |
 
 **实际效果**：两者最终都控制"是否禁用自动记忆"，但作用路径不同：
+
 - 修改 `autoMemoryEnabled` 是直接改 Claude Code 原生设置。
 - 设置 `disableAutoMemory: true` 是通过环境变量间接禁用，不修改 settings.json。
 
@@ -210,10 +206,7 @@ profile.json 的 `launch` 字段是 **ccps 自有抽象**，不是 Claude Code �
       "Bash(pnpm *)",
       "Bash(yarn *)"
     ],
-    "deny": [
-      "Bash(rm -rf /)",
-      "Bash(git push --force *)"
-    ]
+    "deny": ["Bash(rm -rf /)", "Bash(git push --force *)"]
   }
 }
 ```
@@ -222,7 +215,7 @@ profile.json 的 `launch` 字段是 **ccps 自有抽象**，不是 Claude Code �
 // profile.json launch 部分
 {
   "launch": {
-    "mcpMode": "merge",
+    "mcpMode": "none",
     "pluginDirs": [],
     "disableAutoMemory": false,
     "skipPermissions": true,
@@ -251,14 +244,8 @@ profile.json 的 `launch` 字段是 **ccps 自有抽象**，不是 Claude Code �
     "EDITOR": "code"
   },
   "permissions": {
-    "allow": [
-      "Read",
-      "Write"
-    ],
-    "deny": [
-      "Bash(rm *)",
-      "Bash(git push *)"
-    ]
+    "allow": ["Read", "Write"],
+    "deny": ["Bash(rm *)", "Bash(git push *)"]
   }
 }
 ```
@@ -267,7 +254,7 @@ profile.json 的 `launch` 字段是 **ccps 自有抽象**，不是 Claude Code �
 // profile.json launch 部分
 {
   "launch": {
-    "mcpMode": "merge",
+    "mcpMode": "none",
     "pluginDirs": [],
     "disableAutoMemory": false,
     "skipPermissions": true,
@@ -294,16 +281,8 @@ profile.json 的 `launch` 字段是 **ccps 自有抽象**，不是 Claude Code �
     "CLAUDE_CODE_MAX_TURNS": "200"
   },
   "permissions": {
-    "allow": [
-      "Read",
-      "WebFetch",
-      "WebSearch",
-      "Bash(curl *)"
-    ],
-    "deny": [
-      "Bash(rm -rf /)",
-      "Bash(git push --force *)"
-    ]
+    "allow": ["Read", "WebFetch", "WebSearch", "Bash(curl *)"],
+    "deny": ["Bash(rm -rf /)", "Bash(git push --force *)"]
   }
 }
 ```
@@ -312,7 +291,7 @@ profile.json 的 `launch` 字段是 **ccps 自有抽象**，不是 Claude Code �
 // profile.json launch 部分
 {
   "launch": {
-    "mcpMode": "merge",
+    "mcpMode": "none",
     "pluginDirs": [],
     "disableAutoMemory": false,
     "skipPermissions": true,
@@ -341,15 +320,8 @@ profile.json 的 `launch` 字段是 **ccps 自有抽象**，不是 Claude Code �
     "CLAUDE_CODE_MAX_TURNS": "50"
   },
   "permissions": {
-    "allow": [
-      "Read",
-      "Bash(npm run test *)",
-      "Bash(npm run build *)"
-    ],
-    "deny": [
-      "Bash(rm -rf *)",
-      "Bash(git push *)"
-    ]
+    "allow": ["Read", "Bash(npm run test *)", "Bash(npm run build *)"],
+    "deny": ["Bash(rm -rf *)", "Bash(git push *)"]
   }
 }
 ```
@@ -358,7 +330,7 @@ profile.json 的 `launch` 字段是 **ccps 自有抽象**，不是 Claude Code �
 // profile.json launch 部分
 {
   "launch": {
-    "mcpMode": "merge",
+    "mcpMode": "none",
     "pluginDirs": [],
     "disableAutoMemory": false,
     "skipPermissions": true,
@@ -378,6 +350,7 @@ profile.json 的 `launch` 字段是 **ccps 自有抽象**，不是 Claude Code �
 "需要配置额外的环境变量、模型偏好或权限规则吗？"
 
 用户可能的回答及你的应对：
+
 - "不需要" / "默认就行" → 跳过，使用模板默认值
 - "我是做 xxx 的" → 参考上方工作流预设，推荐对应模板
 - 具体需求 → 按需求逐项配置
@@ -387,6 +360,7 @@ profile.json 的 `launch` 字段是 **ccps 自有抽象**，不是 Claude Code �
 用 Edit 工具将配置合并到 `<profile>/claude-home/settings.json`。
 
 **必须保留的字段：**
+
 - `autoMemoryDirectory` — ccps 自动设置的值
 - `env.CLAUDE_CODE_ATTRIBUTION_HEADER: "0"` — ccps 自动设置
 
@@ -394,14 +368,15 @@ profile.json 的 `launch` 字段是 **ccps 自有抽象**，不是 Claude Code �
 
 ### 第 3 步：更新 profile.json launch 配置
 
-如果需要调整启动行为（skipPermissions、claudeArgs、mcpMode 等），用 Edit 工具更新 `<profile>/profile.json` 的 `launch` 字段。
+如果需要调整启动行为（skipPermissions、claudeArgs 等），用 Edit 工具更新 `<profile>/profile.json` 的 `launch` 字段。只有用户明确维护旧 `<profile>/mcp.json` 时才调整 legacy `mcpMode`。
 
 ### 第 4 步：确认
 
 向用户展示最终配置的关键项：
+
 - 使用的模型
 - 权限策略（allow/deny 摘要）
-- 启动行为（skipPermissions、mcpMode）
+- 启动行为（skipPermissions；仅在适用时显示 legacy mcpMode）
 - 自定义环境变量（列出键名，不展示值）
 
 ---
@@ -410,7 +385,7 @@ profile.json 的 `launch` 字段是 **ccps 自有抽象**，不是 Claude Code �
 
 - 不修改 `autoMemoryDirectory` 的值
 - 不删除 `env.CLAUDE_CODE_ATTRIBUTION_HEADER: "0"`
-- 不在 settings.json 的 `env` 中写入 API keys 或 secrets（这些由 `api-settings.json` 和 `ccps init` 的导入机制管理）
+- Profile 专属 secret 可以由用户保存在本机 `settings.json` 的 `env` 中；不要在聊天、命令、文档或输出中回显值，也不要提交到项目仓库
 - 环境变量值必须是字符串类型（数字要写成 `"100"` 而非 `100`）
 - `claudeArgs` 中的参数必须是 Claude Code CLI 支持的合法 flag
-- 不使用 `--strict-mcp-config` 作为默认 mcpMode（除非用户明确要求严格隔离）
+- 不为原生 user-scope MCP 调整 `mcpMode`；`strict` 只保留给明确使用旧 profile `mcp.json` 的兼容场景

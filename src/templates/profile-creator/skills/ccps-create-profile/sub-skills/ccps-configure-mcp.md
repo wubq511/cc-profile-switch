@@ -1,342 +1,167 @@
 ---
 name: ccps-configure-mcp
 description: >
-  子 Skill：为 ccps profile 配置 MCP 服务器。
+  子 Skill：为目标 ccps profile 配置 Claude Code 原生 user-scope MCP 服务器。
   由主 Skill ccps-create-profile 在阶段 6 中读取和使用。
 ---
 
 # Profile MCP 配置指南
 
-你为 ccps profile 配置 MCP (Model Context Protocol) 服务器。
+你为目标 ccps profile 配置 MCP (Model Context Protocol) 服务器。
 
-## MCP 核心概念
+## 配置边界
 
-MCP 是开放协议，让 Claude Code 连接外部工具、资源和提示模板。配置存放在 `<profile-root>/mcp.json`。
+Claude Code 当前有三种常用 MCP scope：
 
-MCP server 可暴露三类能力：
-- **Tools**：可调用的函数（搜索、数据库查询、API 调用等）
-- **Resources**：可读取的数据源
-- **Prompts**：预定义的提示模板
+| Scope     | 用途                     | Claude Code 存储位置                         | ccps 中的用法                  |
+| --------- | ------------------------ | -------------------------------------------- | ------------------------------ |
+| `user`    | 当前 profile 跨项目使用  | `$CLAUDE_CONFIG_DIR/.claude.json`            | **profile MCP 的正确 scope**   |
+| `project` | 团队共享、提交到项目仓库 | 当前项目根目录 `.mcp.json`                   | 仅在用户明确要求项目共享时使用 |
+| `local`   | 当前用户、当前项目私有   | `$CLAUDE_CONFIG_DIR/.claude.json` 的项目条目 | 不用于 profile-wide 配置       |
 
-## Transport 选择指南
+`settings.json` 不支持 `mcpServers`。不要把 MCP 写入：
 
-| Transport | type 值 | 推荐度 | 适用场景 | 说明 |
-|---|---|---|---|---|
-| 远程 HTTP (Streamable HTTP) | `http` | 推荐 | 大多数远程服务 | 官方推荐方式，支持认证 header |
-| 本地 stdio | `stdio` | 推荐 | 本地工具、CLI 封装 | 通过子进程通信，无需网络 |
-| 远程 SSE | `sse` | 已废弃 | 不推荐新配置 | 已被 HTTP 取代，仅保留向后兼容 |
-| 远程 WebSocket | `ws` | 特殊场景 | 需要持久双向连接 | 少数服务专用 |
+- 真实的 `~/.claude/settings.json` 或 `~/.claude.json`
+- `<profile>/mcp.json`
+- `<profile>/claude-home/.mcp.json`
+- `<profile>/claude-home/settings.json` 的 `mcpServers`
 
-**选择原则**：远程服务优先用 `http`，本地工具用 `stdio`，避免 `sse`。
+旧 profile 根目录可能保留 `mcp.json`。这是 ccps 的 legacy `--mcp-config` 兼容文件，不是新 MCP 的写入目标。
 
-## mcpMode 说明
+## 最重要的执行规则
 
-> **注意**：`mcpMode` 是 ccps 自己的启动抽象，不是 Claude Code 官方公开字段。
+当前会话运行在 `profile-creator` 自己的 `CLAUDE_CONFIG_DIR` 下。直接执行：
 
-profile.json 中的 `launch.mcpMode` 控制 ccps 如何传递 MCP 配置：
+```bash
+claude mcp add --scope user ...
+```
 
-| 模式 | ccps 行为 | 映射 | 适用场景 |
-|---|---|---|---|
-| `merge` | Profile MCP + 项目 MCP 都传递 | 默认合并行为 | 大多数场景（默认） |
-| `strict` | 只传递 Profile MCP | `--strict-mcp-config` | 隔离环境 |
-| `none` | 不传递 Profile MCP | ccps 推断型建模 | 不需要 MCP |
+会改错 profile。为目标 profile 执行任何 `claude mcp` 命令时，必须按当前平台显式覆盖。
 
-## 配置格式
+macOS、Linux 或 Git Bash：
 
-### 远程 HTTP MCP（推荐）
+```bash
+env CLAUDE_CONFIG_DIR="<target-profile>/claude-home" claude mcp ...
+```
 
-```json
-{
-  "mcpServers": {
-    "example-http": {
-      "type": "http",
-      "url": "${API_BASE_URL:-https://api.example.com}/mcp",
-      "headers": {
-        "Authorization": "Bearer ${API_KEY}"
-      }
-    }
+Windows PowerShell：
+
+```powershell
+$previousClaudeConfigDir = $env:CLAUDE_CONFIG_DIR
+try {
+  $env:CLAUDE_CONFIG_DIR = 'C:\absolute\profile\claude-home'
+  claude mcp ...
+} finally {
+  if ($null -eq $previousClaudeConfigDir) {
+    Remove-Item Env:CLAUDE_CONFIG_DIR -ErrorAction SilentlyContinue
+  } else {
+    $env:CLAUDE_CONFIG_DIR = $previousClaudeConfigDir
   }
 }
 ```
 
-### 动态 Header HTTP MCP
+先解析目标 profile 的绝对路径，不依赖相对路径，不永久修改用户或 shell 环境。
 
-适用于需要短期 token 或复杂认证流程的场景：
+## Transport 选择
 
-```json
-{
-  "mcpServers": {
-    "internal-api": {
-      "type": "http",
-      "url": "https://mcp.internal.example.com",
-      "headersHelper": "/opt/bin/get-mcp-auth-headers.sh"
-    }
-  }
-}
+| Transport | 适用场景                  | 选择               |
+| --------- | ------------------------- | ------------------ |
+| `http`    | 官方提供远程 MCP endpoint | 优先               |
+| `stdio`   | 本地 CLI 或 npm/pip 包    | 需要本地进程时使用 |
+| `sse`     | 旧服务兼容                | 新配置避免使用     |
+
+不要根据名称猜 endpoint、包名或参数。先查 MCP 提供方的官方安装文档，再构造命令。
+
+## 命令格式
+
+Claude Code 要求所有 Claude 选项放在 server name 前面。
+
+### HTTP
+
+```bash
+env CLAUDE_CONFIG_DIR="<target-profile>/claude-home" \
+  claude mcp add --scope user --transport http <name> <url>
 ```
 
-### 本地 stdio MCP
+### stdio
 
-```json
-{
-  "mcpServers": {
-    "example-stdio": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["-y", "@scope/package"],
-      "env": {
-        "CACHE_DIR": "/tmp/server-cache"
-      }
-    }
-  }
-}
+```bash
+env CLAUDE_CONFIG_DIR="<target-profile>/claude-home" \
+  claude mcp add --scope user --transport stdio <name> -- <command> <args...>
 ```
 
-### 环境变量展开
+### 查看、验证、删除
 
-支持 `${VAR}` 和 `${VAR:-default}` 语法，运行时自动替换：
-
-```json
-{
-  "url": "${API_BASE_URL:-https://api.example.com}/mcp",
-  "headers": {
-    "Authorization": "Bearer ${API_KEY}"
-  }
-}
+```bash
+env CLAUDE_CONFIG_DIR="<target-profile>/claude-home" claude mcp list
+env CLAUDE_CONFIG_DIR="<target-profile>/claude-home" claude mcp remove <name>
 ```
 
-## MCP 服务器推荐（按官方验证级别）
+不要在 Agent 可见的终端运行 `claude mcp get`。当前 Claude Code 版本可能原样打印 server
+environment 或 header 中的 secret。`claude mcp list` 与重启后的 `/mcp` 足以验证名称和连接状态。
 
-### 高置信（有官方插件页）
+## Secret 处理
 
-#### 文档和知识
-
-| 服务器 | 用途 | 工具 | 推荐场景 |
-|---|---|---|---|
-| Context7 | 最新库文档与代码样例 | resolve-library-id, query-docs | 使用流行库（React, Express, Prisma 等） |
-| Exa | AI 网络搜索、深度研究、内容提取 | web search, deep research | 研究任务、需要最新信息 |
-
-#### 浏览器和前端
-
-| 服务器 | 用途 | 推荐场景 |
-|---|---|---|
-| Playwright | 通过 accessibility data 做浏览器自动化 | 前端项目、E2E 测试 |
-
-#### 数据库
-
-| 服务器 | 用途 | 推荐场景 |
-|---|---|---|
-| Supabase | 20+ 工具，覆盖数据库、项目管理、后端 | 使用 Supabase 的项目 |
-| Neon | 管理 Neon projects 与 databases | 使用 Neon 无服务器 Postgres |
-| Prisma（Postgres） | 数据库管理、migrations、SQL 查询 | 使用 Prisma ORM 的项目 |
-
-#### 版本控制和项目管理
-
-| 服务器 | 用途 | 推荐场景 |
-|---|---|---|
-| GitHub | 管理仓库、issue、PR、workflow | GitHub 仓库 |
-| GitLab | repo、merge request、CI/CD、issues、wiki | GitLab 仓库 |
-| Linear | issue/project/status/workspace 级能力 | 使用 Linear 的团队 |
-
-#### 云基础设施
-
-| 服务器 | 用途 | 推荐场景 |
-|---|---|---|
-| Vercel | 管理 deployments、builds、logs、domains | Vercel 部署 |
-| Cloudflare | Workers、Durable Objects、Agents SDK | Cloudflare 用户 |
-
-#### 监控和通信
-
-| 服务器 | 用途 | 推荐场景 |
-|---|---|---|
-| Sentry | 错误分析与生产问题排查 | 使用 Sentry 的项目 |
-| Datadog | 直接查询 logs、metrics、traces、dashboards | 使用 Datadog 的项目 |
-| Slack | 消息、频道、搜索 | 使用 Slack 的团队 |
-| Notion | workspace 搜索、page/database 读写 | 使用 Notion 的团队 |
-| Chrome DevTools | performance trace、network request 分析 | 前端性能调优 |
-
-### 中等置信（第三方目录可验证）
-
-| 服务器 | 用途 | 推荐场景 |
-|---|---|---|
-| Brave Search | web/news/image/video/local search，需 BRAVE_API_KEY | 需要网络搜索的场景 |
-
-### 候选生态项（证据较弱，使用前请自行验证）
-
-| 服务器 | 用途 | 推荐场景 |
-|---|---|---|
-| Convex | Convex 后端集成 | 使用 Convex 的项目 |
-| Turso | 边缘 SQLite 数据库 | 使用 Turso 的项目 |
-| Docker | 容器管理 | Docker 工作流 |
-| Kubernetes | 集群管理 | K8s 部署 |
-
-## 场景化推荐组合
-
-根据 profile 用途选择合适的 MCP 组合，避免盲目叠加。
-
-### 开发包（全栈开发）
-
-适用于日常编码、调试、部署。
-
-```json
-{
-  "mcpServers": {
-    "context7": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["-y", "@upstash/context7-mcp"]
-    },
-    "github": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-github"],
-      "env": {
-        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
-      }
-    },
-    "playwright": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["-y", "@anthropic-ai/playwright-mcp"]
-    }
-  }
-}
-```
-
-### 研究包（调研、写作、分析）
-
-适用于深度研究、信息收集、文档写作。
-
-```json
-{
-  "mcpServers": {
-    "context7": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["-y", "@upstash/context7-mcp"]
-    },
-    "exa": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["-y", "exa-mcp-server"],
-      "env": {
-        "EXA_API_KEY": "${EXA_API_KEY}"
-      }
-    },
-    "notion": {
-      "type": "http",
-      "url": "https://mcp.notion.com/mcp"
-    }
-  }
-}
-```
-
-### 协作包（团队协作、项目管理）
-
-适用于团队开发、issue 追踪、沟通协作。
-
-```json
-{
-  "mcpServers": {
-    "github": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-github"],
-      "env": {
-        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
-      }
-    },
-    "linear": {
-      "type": "http",
-      "url": "https://mcp.linear.app/mcp"
-    },
-    "slack": {
-      "type": "http",
-      "url": "https://mcp.slack.com/mcp"
-    }
-  }
-}
-```
+- 不要求用户把 API key、token 或密码粘贴到聊天中。
+- 不把 secret 放进文档、CLAUDE.md、Skill、命令示例或 project `.mcp.json`。
+- 如果 stdio server 从进程环境读取 key，把对应环境变量放在目标 profile 的 `claude-home/settings.json` `env` 中，并在回复和日志里只显示变量名。
+- 不使用包含真实 secret 的 `-e KEY=value` 命令，因为命令和 `.claude.json` 都可能留下明文。
+- OAuth MCP 优先使用远程 HTTP endpoint，并让用户在目标 profile 启动后通过 `/mcp` 完成交互认证。
 
 ## 配置流程
 
-### 第 1 步：分析技术栈
+### 1. 确认目标和 scope
 
-根据用户的 profile 用途和提到的技术栈，推荐合适的 MCP 服务器。
-只推荐真正相关的，不要推荐所有可用的。
+确认用户要的是：
 
-### 第 2 步：选择 transport
+- 目标 profile 跨项目使用 → `user`
+- 当前项目团队共享 → `project`，退出本流程并明确说明会修改项目根 `.mcp.json`
 
-根据服务器类型选择 transport：
-- 远程服务（有 HTTP 端点）：用 `type: "http"`
-- 本地 npm 包或 CLI 工具：用 `type: "stdio"` + `npx -y`
-- 避免使用 `sse`
+没有明确要求 project scope 时，一律使用目标 profile 的 `user` scope。
 
-### 第 3 步：呈现推荐
+### 2. 核对官方配置
 
-```
-根据你的技术栈，推荐以下 MCP 服务器：
+确认：
 
-1. **Context7** (stdio) — 实时查询 React/TypeScript/Tailwind 文档
-   价值：避免 Claude 使用过时的 API
+- transport
+- 官方 URL 或包名
+- 所需环境变量名
+- OAuth/认证方式
+- 最低 Claude Code 或 runtime 版本
 
-2. **Playwright** (stdio) — 浏览器自动化和 E2E 测试
-   价值：可以直接在浏览器中测试 UI
+### 3. 展示不含 secret 的计划
 
-要配置哪些？
-```
+只展示 server 名、transport、来源和环境变量名。用户确认 server 后再执行。
 
-### 第 4 步：生成 mcp.json
+### 4. 写入目标 profile
 
-用户确认后，更新 `<profile-root>/mcp.json`。
+使用目标 `CLAUDE_CONFIG_DIR` 执行 `claude mcp add --scope user`。不要直接编辑 `.claude.json`。
 
-示例（stdio 为主）：
+### 5. 验证写入位置和内容
 
-```json
-{
-  "mcpServers": {
-    "context7": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["-y", "@upstash/context7-mcp"]
-    },
-    "playwright": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["-y", "@anthropic-ai/playwright-mcp"]
-    }
-  }
-}
+使用同一目标 `CLAUDE_CONFIG_DIR` 执行 `claude mcp list`。不要运行会回显存储配置的
+`claude mcp get`。
+
+```bash
+claude mcp list
 ```
 
-**注意**：保留已有的 mcpServers 配置，用 Edit 工具合并新服务器。
+只报告 server 名和连接状态。scope、transport、来源和环境变量名来自执行前已经确认的不含
+secret 的计划，不通过读取 `.claude.json` 或回显存储配置再次推断。
 
-### 第 5 步：更新 profile.json（如果需要）
+### 6. 会话内验证
 
-如果用户需要 strict 模式，更新 profile.json 的 `launch.mcpMode`。
-默认使用 `merge`，不需要更改。
+已启动的 Claude Code 会话可能不会热加载外部命令刚写入的 MCP。若 `/mcp` 未刷新：
 
-### 第 6 步：健康检查
+1. 退出当前目标 profile 会话
+2. 使用 `ccps launch <profile>` 重新启动
+3. 在新会话运行 `/mcp`
 
-配置完成后，验证 MCP 服务器是否正常工作：
+## 完成标准
 
-1. **CLI 验证**：
-   ```bash
-   claude mcp list          # 列出已配置的 MCP 服务器
-   claude mcp get <name>    # 查看特定服务器详情
-   ```
-
-2. **交互验证**：启动 Claude Code 后使用 `/mcp` 命令检查：
-   - 连接状态是否为 connected
-   - 工具数量是否正确
-   - 认证状态是否通过（如有 OAuth）
-
-3. **OAuth 服务器**：如需认证，使用 `claude mcp login <name>` 完成授权。
-
-## 重要约束
-
-- 不添加用户未确认的 MCP 服务器
-- 不在 mcp.json 中写入真实的 API key、token 或密码，使用 `${VAR}` 变量
-- 默认使用 `merge` 模式，不随意改为 `strict`
-- stdio 类型使用 `npx -y` 包名格式，确保自动安装
-- 远程服务优先推荐 `http` transport，不推荐 `sse`（已废弃）
+- 配置写入目标 profile 的 native user scope
+- 真实 `~/.claude` 和 `~/.claude.json` 未修改
+- 项目 `.mcp.json` 未被误改
+- 没有把 `mcpServers` 写入 `settings.json`
+- `claude mcp list` 在目标 `CLAUDE_CONFIG_DIR` 下可见
+- 输出不包含 secret 值

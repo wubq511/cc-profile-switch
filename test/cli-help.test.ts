@@ -14,7 +14,7 @@ describe('ccps help', () => {
 
     expect(help).toContain('CC-Profile-Switch');
     expect(help).toContain('Usage: ccps');
-    expect(help).toContain('Windows and macOS');
+    expect(help).toContain('Windows, macOS, and Linux');
     expect(help).not.toContain('Windows-only');
     expect(help).toContain('init');
     expect(help).toContain('copy');
@@ -35,7 +35,7 @@ describe('ccps help', () => {
     const output: string[] = [];
 
     process.env.HOME = userHome;
-    delete process.env.USERPROFILE;
+    process.env.USERPROFILE = userHome;
 
     try {
       const program = createProgram();

@@ -1,174 +1,148 @@
-This file provides guidance to Coding Agents (Claude Code, Codex, and other coding agents) when working with this repository.
+# CC-Profile-Switch Agent Guide
 
-## Project
+`AGENTS.md` is a symlink to this canonical file. Keep rules here concise and behavior-changing.
 
-CC-Profile-Switch (`ccps`) is a Windows and macOS Node.js CLI that switches Claude Code user-level global configuration by profile while preserving project-level config.
+## Product Contract
 
-## Core Concept
+CC-Profile-Switch (`ccps`) is a Node.js CLI for Windows, macOS, and Linux. It switches Claude Code user-level configuration by profile while preserving the launch directory and its project-level configuration.
 
-```powershell
-cd D:\Projects\my-app
+```bash
+cd /path/to/project
 ccps launch coding
 ```
 
-This starts Claude Code from `D:\Projects\my-app`, sets `CLAUDE_CONFIG_DIR` to the selected profile's `claude-home`, keeps project config active, and never touches the real `C:\Users\h\.claude`.
+Launch sets `CLAUDE_CONFIG_DIR=<profile>/claude-home`, keeps `cwd` unchanged, and never copies or overwrites the real user Claude directory.
 
-Default launch mode: **Global User Config Switch Mode**. Switch user scope only, preserve project scope.
-
-## Tech Stack
-
-TypeScript, Node.js LTS, Commander, Zod, Vitest, tsup, fs-extra, picocolors. Supported platforms: Windows and macOS. Linux is intentionally unsupported.
+Tech stack: TypeScript, Node.js LTS, Commander, Zod, Vitest, tsup, fs-extra, picocolors.
 
 ## Commands
 
 ```bash
 npm run dev          # tsx src/index.ts
-npm run build        # tsup src/index.ts --format cjs --dts false --clean
-npm run start        # node dist/index.js
-npm run test         # vitest run
-npm run test:watch   # vitest
-npm run lint         # eslint .
-npm run format       # prettier --write .
+npm run build        # build dist/
+npm run start        # run dist/index.js
+npm run test         # Vitest once
+npm run test:watch
+npm run lint
+npm run format
 npm run check        # lint + test + build
 ```
 
-Binary entry: `"bin": { "ccps": "dist/index.js" }`. Use `npm link` for local dev.
+Binary entry: `"bin": { "ccps": "dist/index.js" }`. Use `npm link` for local development.
 
-## CodeGraph
+## Code Navigation
 
-This repository commits a `.codegraph/` index and uses the project-local CodeGraph CLI through npm scripts. When you need to understand, locate, or explore code in this repository, prefer CodeGraph before broad `rg`/file reads:
+Prefer the committed project-local CodeGraph index before broad searches:
 
 ```bash
 npm run codegraph:status
 npm run codegraph:query -- <symbol>
-npm run codegraph:explore -- "<question or area>"
+npm run codegraph:explore -- "<question>"
 ```
 
-Use the project-local dependency only. Do not require or modify global Codex MCP configuration such as `~/.codex/config.toml`; Codex project-local MCP is not available here.
-
-## Source Structure
+Do not require or modify global Codex MCP configuration.
 
 ```text
 src/
-  index.ts          # CLI entry, commander setup
-  commands/         # CLI command handlers (parse args -> call core -> output)
-  core/             # app-config, profile, profile-management, validator, launcher
-  platform/         # Platform-neutral path helpers plus Windows/macOS spawn/editor adapters
-  schemas/          # Zod schemas for config.json, profile.json
-  templates/        # Profile template files
-  tui/              # Lightweight terminal UI controller and readline adapter
-  utils/            # Logger, error formatting
+  commands/   CLI parsing and output
+  core/       shared application services
+  platform/   Windows/macOS/Linux path, process, and editor adapters
+  schemas/    Zod schemas
+  templates/  profile and skill templates
+  tui/        terminal UI over shared core services
+  utils/
 test/
 ```
 
-## Profile Data Structure
+Keep CLI and TUI behavior routed through the same core services.
+
+## Profile Contract
+
+App home is `%USERPROFILE%\.cc-profile-switch` on Windows and `$HOME/.cc-profile-switch` on macOS/Linux.
 
 ```text
-%USERPROFILE%\.cc-profile-switch\
+.cc-profile-switch/
   config.json
-  api-settings.json          # optional common API env
-  profiles\
-    <name>\
-      profile.json           # name, description, template, launch config
-      claude-home\           # profile-scoped user config source
-        CLAUDE.md            # profile-scoped user memory / instructions
-        settings.json        # autoMemoryDirectory + env overrides
-        memory\
-          auto\
-        skills\
-        agents\
-        plugins\             # Claude Code-managed user plugin state
-        projects\            # Claude Code-created user/project state
-        sessions\            # Claude Code-created session state
-      mcp.json               # ccps-provided profile MCP config passed with --mcp-config
-  backups\
+  api-settings.json
+  profiles/<name>/
+    profile.json
+    claude-home/
+      .claude.json          # Claude-managed state; native user MCP lives here
+      CLAUDE.md
+      settings.json
+      rules/ccps-profile.md
+      memory/auto/
+      skills/
+      agents/
+      plugins/
+      projects/
+      sessions/
+    mcp.json                # optional legacy ccps input; never create for new profiles
+  backups/
 ```
 
-macOS uses the same structure under `~/.cc-profile-switch` with POSIX path separators.
+New profiles:
 
-`claude-home` maps to `CLAUDE_CONFIG_DIR` at launch. Project `CLAUDE.md`, `.claude/settings.json`, `.claude/agents`, `.claude/skills`, and `.mcp.json` still come from the launch cwd.
+- set `launch.mcpMode` to `none`;
+- set `CLAUDE_CODE_ATTRIBUTION_HEADER=0`;
+- set `autoMemoryDirectory` inside that profile;
+- exclude the real user `CLAUDE.md` through `claudeMdExcludes`;
+- include the managed `rules/ccps-profile.md` boundary rule.
 
-New profiles include `CLAUDE_CODE_ATTRIBUTION_HEADER=0` in `claude-home\settings.json` `env` and `claudeMdExcludes` pointing to the real `~/.claude/CLAUDE.md`. `claudeMdExcludes` is a workaround for a Claude Code behavior: even with `CLAUDE_CONFIG_DIR` set, Claude Code still reads the real user-level `CLAUDE.md`. By excluding it, each profile only sees its own CLAUDE.md. Re-running `ccps init` backfills both keys for preserved default profiles when missing, without overwriting existing settings fields or env keys. `ccps launch` also ensures `claudeMdExcludes` before spawning Claude Code.
+`ccps init` and `ccps launch` backfill managed settings/rules without overwriting unrelated fields. `ccps init` may import missing string `env.ANTHROPIC_*` keys from the real user `settings.json` into common `api-settings.json`; preserve existing common keys and print names only, never values.
 
-`ccps init` also imports string `env.ANTHROPIC_*` keys from the current user Claude settings into common `api-settings.json` when missing: Windows reads `%USERPROFILE%\.claude\settings.json`, macOS reads `~/.claude/settings.json`. Existing common keys are preserved and command output must show key names only, never values.
+## MCP Contract
 
-## Current CLI Surface
+Profile-wide MCP is Claude Code native user scope:
 
-| Command | Purpose |
-|---|---|
-| `ccps init` | Create app home and default profiles. |
-| `ccps list` | List profiles with launch-readiness status. |
-| `ccps create <name> --template <t>` | Create a profile from a built-in template. |
-| `ccps show <name>` | Display profile structure and file status. |
-| `ccps edit <name> [file-or-folder]` | Open the profile folder or an existing safe target in VS Code. |
-| `ccps validate <name>` | Check launch readiness: required files/dirs, JSON/schema, auto memory path, launch path safety. |
-| `ccps backup <name>` | Copy profile to `backups\<name>-YYYYMMDD-HHmmss\`. |
-| `ccps copy <from> <to>` | Copy a profile to a new name without overwriting existing profiles. |
-| `ccps rename <old> <new>` | Rename a profile and update default/last-used references. |
-| `ccps remove <name>` | Back up, exact-name confirm, then remove a profile; default/last-used references are cleared. |
-| `ccps default [name]` | Show or set the default profile; `--clear` clears it. |
-| `ccps launch [profile]` | Start Claude Code from cwd with the selected/default profile. |
-| `ccps create-profile` | Launch Claude Code with the profile creator wizard (uses ccps-create-profile skill). |
-| `ccps tui` | Lightweight terminal helper over the same core services; not a GUI or separate product mode. |
-
-## Launch Behavior
-
-```ts
-spawn('claude', args, {
-  cwd,
-  stdio: 'inherit',
-  shell: false,
-  env: {
-    ...process.env,
-    ...apiEnv,
-    CLAUDE_CONFIG_DIR: profileClaudeHome,
-  },
-});
+```bash
+claude mcp add --scope user ...
 ```
 
-MCP default: `mcpMode = "merge"` passes `--mcp-config <profile>\mcp.json` without `--strict-mcp-config`, so project `.mcp.json` still loads. Strict mode is opt-in only.
+With `CLAUDE_CONFIG_DIR` set, Claude stores this in the selected profile's `claude-home/.claude.json`. Project `.mcp.json` remains project scope. Never put `mcpServers` in `settings.json` or `claude-home/.mcp.json`.
 
-Launch defaults:
+Only older profiles with a non-empty root `mcp.json` may receive legacy `--mcp-config`; `strict` remains explicit opt-in. Do not run `claude mcp get` in an agent-visible terminal because it may print stored secrets. Verify with `claude mcp list` and a restarted session's `/mcp`, reporting names and connection state only.
 
-- Add `--dangerously-skip-permissions` unless `profile.json` sets `launch.skipPermissions` to `false`.
-- Use `ccps default <profile>` when `ccps launch` omits `[profile]`.
-- Common app-home `api-settings.json` env merges with profile `claude-home\settings.json` env; profile wins.
-- `autoMemoryDirectory` must point to `<profile>\claude-home\memory\auto`.
+## Platform Contract
 
-## Safety Rules
+- Windows: resolve home from `USERPROFILE` or `HOMEDRIVE`/`HOMEPATH`; account for `.cmd`/`.bat` shims; open VS Code through PowerShell.
+- macOS: resolve home from `HOME`; use `open -a "Visual Studio Code"`; keep the PTY wrapper required by interactive Claude launch.
+- Linux: resolve home from `HOME`; use the `code` CLI; launch Claude directly.
+- Use Node `path` APIs and argument arrays. Never concatenate shell command strings.
+- Platform-specific changes need explicit `win32`, `darwin`, and `linux` tests when the behavior differs.
+
+## Safety
 
 Never:
 
-- Copy or overwrite the real Windows `%USERPROFILE%\.claude` or macOS `~/.claude`.
-- Modify project `.claude` or project config files.
-- Read/migrate OAuth, session, token, history, cache, or credential contents. The only allowed real Claude settings read is string `env.ANTHROPIC_*` import from `settings.json` during `ccps init`.
-- Use `--strict-mcp-config` as default.
-- Change cwd to the tool runtime directory.
-- Use `--add-dir` for current-project access.
+- copy or overwrite the real `~/.claude`, `~/.claude.json`, or Windows equivalents;
+- modify project `.claude`, `CLAUDE.md`, or `.mcp.json`;
+- read or migrate OAuth, sessions, tokens, history, caches, or credentials;
+- default to `--strict-mcp-config`;
+- change launch `cwd` to the tool directory or use `--add-dir` for project access.
 
 Always:
 
-- Resolve paths to absolute paths with Node `path` APIs.
-- Block path traversal.
-- Validate profile launch readiness before launch.
-- Keep dry-run and real launch plan behavior in parity.
-- Use args arrays for spawn, never shell string concatenation.
-- Keep CLI and TUI behavior routed through shared core services.
+- resolve absolute paths and block traversal;
+- validate launch readiness before spawning;
+- keep dry-run and real launch plans equivalent;
+- use `spawn(command, args, { shell: false })`;
+- treat `ccps validate` as launch readiness, not a runtime/cache audit;
+- block credential-like targets in `ccps edit`.
 
-`ccps validate` is launch-readiness only. Runtime/cache/session filename matches do not block launch. `ccps edit` still blocks path traversal and credential-like target names; future export/import flows must handle sensitive filenames before packaging or exposing profile contents.
+## Change and CI Gates
 
-## Completed Baselines
+Before every commit or push:
 
-MVP baseline is complete: init, list, create, show, validate, backup, edit, dry-run launch, real launch, README, and Claude Code behavior verification.
+1. run `npm run check`;
+2. review the diff for secrets, generated residue, stale platform claims, and unintended files;
+3. when templates change, rebuild and confirm committed template output is synchronized;
+4. when CodeGraph-tracked source changes, refresh the committed index and confirm it is current.
 
-V0.2 profile-management-tui is complete:
+`.github/workflows/ci.yml` runs the full check on Ubuntu, macOS, and Windows with supported Node.js LTS versions for every pull request and push. A local macOS run does not prove Windows or Linux compatibility. After pushing, wait for every relevant matrix job to pass before merging, releasing, or claiming cross-platform compatibility; skipped, cancelled, or failing jobs are not a pass.
 
-- Core profile management services for copy, rename, remove, default, and launch default resolution.
-- CLI commands for `copy`, `rename`, `remove`, `default`, optional-profile `launch`, and `tui`.
-- TUI controller and terminal adapter share the same core services as CLI.
-- V0.2 README and roadmap updates.
-- Final regression verification recorded in `.claude/epics/profile-management-tui/updates/23/progress.md`.
+Do not commit, push, merge, release, or publish unless the user requested that action.
 
-## Still Excluded
+## Scope
 
-No GUI, cloud sync, multi-account switching, OAuth/session migration, plugin marketplace, Linux support, or runtime project isolation mode. TUI exists only as a lightweight terminal helper over CLI/core behavior.
+Current CLI includes init, list, create, show, validate, backup, copy, rename, remove, default, launch, create-profile, edit, and TUI. GUI, cloud sync, multi-account/OAuth migration, plugin marketplace, and runtime project isolation remain out of scope.

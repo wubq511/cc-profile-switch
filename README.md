@@ -1,6 +1,6 @@
 # CC-Profile-Switch
 
-`ccps` 是一个支持 Windows 和 macOS 的 Node.js CLI，用于在保留当前项目上下文的同时，切换 Claude Code 的用户级全局配置（Profile）。
+`ccps` 是一个支持 Windows、macOS 和 Linux 的 Node.js CLI，用于在保留当前项目上下文的同时，切换 Claude Code 的用户级全局配置（Profile）。
 
 Windows：
 
@@ -10,6 +10,13 @@ ccps launch coding
 ```
 
 macOS：
+
+```sh
+cd ~/Projects/my-app
+ccps launch coding
+```
+
+Linux：
 
 ```sh
 cd ~/Projects/my-app
@@ -54,7 +61,7 @@ npm run dev -- init
 npm run dev -- launch coding --dry-run
 ```
 
-`ccps edit` 会打开新的 VS Code 窗口：Windows 通过 VS Code 的 `code` 命令解析，macOS 会通过 Visual Studio Code app 打开。
+`ccps edit` 会打开新的 VS Code 窗口：Windows 通过 PowerShell 解析 VS Code 的 `code` 命令，macOS 通过 Visual Studio Code app 打开，Linux 使用 `code` CLI。
 
 ## 命令
 
@@ -89,7 +96,7 @@ ccps tui
 
 `ccps remove <name>` 删除前会先创建备份，并要求精确输入 profile 名称确认。它允许删除当前 default profile，也允许删除最后一个 profile；删除后会清理 default / last-used 中指向该 profile 的引用。没有任何 profile 时，`ccps list` 和 `ccps tui` 会提示先运行 `ccps init` 或 `ccps create <name> --template blank`。
 
-`ccps edit <name>` 会用新的 VS Code 窗口打开整个 profile 文件夹。带上文件或文件夹参数时，会打开该 profile 内的已有目标；常用别名包括 `CLAUDE.md`、`settings.json`、`mcp.json`、`profile.json`、`claude-home`、`memory`、`skills`、`agents`、`plugins`。
+`ccps edit <name>` 会用新的 VS Code 窗口打开整个 profile 文件夹。带上文件或文件夹参数时，会打开该 profile 内的已有目标；常用别名包括 `CLAUDE.md`、`settings.json`、`profile.json`、`claude-home`、`memory`、`skills`、`agents`、`rules`、`plugins`。MCP 应使用 `claude mcp` 管理，不直接编辑 Claude Code 的状态文件。
 
 `ccps create-profile` 会启动一个内置的 profile-creator profile，其中预装了 ccps-create-profile skill。进入 Claude Code 后，直接描述你要创建什么样的 profile，skill 会引导你完成完整的 8 阶段配置流程（CLAUDE.md 生成、Skills 安装、Agents 创建、MCP 配置、Settings 设置等）。首次运行会自动创建 profile-creator profile，后续运行会更新 skill 文件到最新版本。
 
@@ -100,7 +107,7 @@ ccps tui
 配置文件（Profiles）默认存放路径：
 
 - Windows：`%USERPROFILE%\.cc-profile-switch`
-- macOS：`~/.cc-profile-switch`
+- macOS / Linux：`~/.cc-profile-switch`
 
 Windows 结构：
 
@@ -112,19 +119,22 @@ Windows 结构：
     <name>\
       profile.json
       claude-home\
+        .claude.json         # Claude Code 按需创建；native user-scope MCP 状态
         CLAUDE.md            # 当前 profile 的用户级 memory / instructions
         settings.json        # autoMemoryDirectory + 默认 env + 可选 API env 覆盖
+        rules\
+          ccps-profile.md    # ccps 托管的 profile/MCP 边界规则
         memory\
           auto\
             MEMORY.md         # 当前 profile 的 Claude Code auto memory
         skills\
         agents\
         plugins\              # Claude Code 自己安装/管理的 plugins
-      mcp.json
+      mcp.json               # 仅旧 profile 可能存在；新 profile 不创建
   backups\
 ```
 
-macOS 结构相同，只使用 POSIX 路径分隔符：
+macOS 和 Linux 结构相同，只使用 POSIX 路径分隔符：
 
 ```text
 ~/.cc-profile-switch/
@@ -134,15 +144,18 @@ macOS 结构相同，只使用 POSIX 路径分隔符：
     <name>/
       profile.json
       claude-home/
+        .claude.json         # Claude Code 按需创建；native user-scope MCP 状态
         CLAUDE.md
         settings.json        # autoMemoryDirectory + 默认 env + 可选 API env 覆盖
+        rules/
+          ccps-profile.md
         memory/
           auto/
             MEMORY.md
         skills/
         agents/
         plugins/
-      mcp.json
+      mcp.json               # 仅旧 profile 可能存在；新 profile 不创建
   backups/
 ```
 
@@ -154,9 +167,9 @@ macOS 结构相同，只使用 POSIX 路径分隔符：
 
 - 用户级 memory / instructions：`profiles\<name>\claude-home\CLAUDE.md`
 - Claude Code auto memory：`profiles\<name>\claude-home\memory\auto`
-- macOS 对应路径：`profiles/<name>/claude-home/CLAUDE.md` 和 `profiles/<name>/claude-home/memory/auto`
+- macOS / Linux 对应路径：`profiles/<name>/claude-home/CLAUDE.md` 和 `profiles/<name>/claude-home/memory/auto`
 
-`profiles\<name>\claude-home\settings.json`（macOS：`profiles/<name>/claude-home/settings.json`）会显式包含：
+`profiles\<name>\claude-home\settings.json`（macOS / Linux：`profiles/<name>/claude-home/settings.json`）会显式包含：
 
 ```json
 {
@@ -168,19 +181,35 @@ macOS 结构相同，只使用 POSIX 路径分隔符：
 }
 ```
 
-macOS 下同一字段会写入 `"/Users/<you>/.cc-profile-switch/profiles/<name>/claude-home/memory/auto"` 和 `"/Users/<you>/.claude/CLAUDE.md"`。
+macOS 下同一字段使用 `/Users/<you>/...`，Linux 使用 `/home/<you>/...`；二者都通过 `$HOME` 解析 app home 和真实用户 `CLAUDE.md` 路径。
 
 `claudeMdExcludes` 用于排除真实 `~/.claude/CLAUDE.md`。这是 ccps 对 Claude Code 行为的 workaround：即使设置了 `CLAUDE_CONFIG_DIR`，Claude Code 仍会读取真实用户目录的 `CLAUDE.md`，导致 profile 上下文与真实用户指令混用。`claudeMdExcludes` 确保每个 profile 只看到自己 profile 下的 `CLAUDE.md`。
 
 因此使用 `ccps launch coding` 启动时，Claude Code 的用户配置目录是 coding 的 `claude-home`，auto memory 写入 coding 的 `claude-home\memory\auto`；切换到 `study` 时会写入 study 自己的 `claude-home\memory\auto`，互不混用。
 
-新建 profile 会默认写入 `CLAUDE_CODE_ATTRIBUTION_HEADER=0` 和 `claudeMdExcludes`。对已经存在的 profile，重新运行 `ccps init` 会在缺失时补齐这两个字段，并保留已有 `settings.json` 字段。`ccps launch` 在启动前也会自动确保当前 profile 的 `claudeMdExcludes` 存在。
+新建 profile 会默认写入 `CLAUDE_CODE_ATTRIBUTION_HEADER=0`、`claudeMdExcludes` 和 `rules/ccps-profile.md`。对已经存在的 profile，重新运行 `ccps init` 会补齐缺失设置和 ccps 托管 rule，并保留其他 `settings.json` 字段及非 ccps 托管的 rule 内容。`ccps launch` 在启动前也会自动确保当前 profile 的 `claudeMdExcludes` 和托管 rule 存在。
 
-Claude Code 自己安装和管理的 plugin 位于当前 profile 的 `claude-home\plugins`。`profiles\<name>\mcp.json` 是 ccps 传给 Claude Code 的 profile MCP 配置文件；项目级 `.mcp.json` 仍由启动 cwd 控制。
+Claude Code 自己安装和管理的 plugin 位于当前 profile 的 `claude-home\plugins`。
+
+## MCP 隔离
+
+Profile-wide MCP 使用 Claude Code 原生 user scope。在 `ccps launch <name>` 启动的会话中运行：
+
+```bash
+claude mcp add --scope user <name> ...
+claude mcp list
+```
+
+由于该会话已设置 `CLAUDE_CONFIG_DIR=<profile>/claude-home`，Claude Code 会把 user-scope MCP 写入当前 profile 的 `claude-home/.claude.json`，不会写入真实用户的 `~/.claude.json`。不要把 `mcpServers` 写进 `settings.json`；Claude Code 不从该字段加载 MCP。项目根 `.mcp.json` 只用于明确的 project scope。
+
+不要在 Agent 可见的终端运行 `claude mcp get`；当前 Claude Code 版本可能回显 MCP
+environment 或 header 中保存的 secret。用 `claude mcp list` 和重启后的 `/mcp` 验证名称及连接状态。
+
+新 profile 将 legacy `mcpMode` 设为 `none`，不再创建或传递 `<profile>/mcp.json`。旧 profile 若有非空的 `mcp.json`，ccps 仍会按其已有 `merge`/`strict` 设置通过 `--mcp-config` 兼容加载；空文件不再参与启动，且不会被自动删除。
 
 ## API 配置
 
-通用 API 认证信息放在 Windows 的 `%USERPROFILE%\.cc-profile-switch\api-settings.json` 或 macOS 的 `~/.cc-profile-switch/api-settings.json`：
+通用 API 认证信息放在 Windows 的 `%USERPROFILE%\.cc-profile-switch\api-settings.json` 或 macOS / Linux 的 `~/.cc-profile-switch/api-settings.json`：
 
 ```json
 {
@@ -192,9 +221,9 @@ Claude Code 自己安装和管理的 plugin 位于当前 profile 的 `claude-hom
 }
 ```
 
-`ccps init` 会尝试从当前用户 Claude settings（Windows：`%USERPROFILE%\.claude\settings.json`；macOS：`~/.claude/settings.json`）读取 `env.ANTHROPIC_*` 字符串键，并把缺失的键写入 common `api-settings.json`。已有 `api-settings.json` 的同名键会保留，命令输出只显示导入的键名，不显示值。所有 profile 都会通过 common api-settings.json 复用这些模型/API 配置，所以不需要为每个 profile 单独配置模型和 API。
+`ccps init` 会尝试从当前用户 Claude settings（Windows：`%USERPROFILE%\.claude\settings.json`；macOS / Linux：`~/.claude/settings.json`）读取 `env.ANTHROPIC_*` 字符串键，并把缺失的键写入 common `api-settings.json`。已有 `api-settings.json` 的同名键会保留，命令输出只显示导入的键名，不显示值。所有 profile 都会通过 common api-settings.json 复用这些模型/API 配置，所以不需要为每个 profile 单独配置模型和 API。
 
-某个 profile 自己的 API 覆盖直接写在 `profiles\<name>\claude-home\settings.json`（macOS：`profiles/<name>/claude-home/settings.json`）的 `env` 中。优先级为：profile 优先，其次是通用 `api-settings.json`，最后是启动 `ccps` 时继承的进程环境变量。也就是说，`claude-home\settings.json` 中的同名 `env` 键会覆盖 app home 下的 `api-settings.json`，profile 没有配置的键会从通用配置继承。
+某个 profile 自己的 API 覆盖直接写在 `profiles\<name>\claude-home\settings.json`（macOS / Linux：`profiles/<name>/claude-home/settings.json`）的 `env` 中。优先级为：profile 优先，其次是通用 `api-settings.json`，最后是启动 `ccps` 时继承的进程环境变量。也就是说，`claude-home\settings.json` 中的同名 `env` 键会覆盖 app home 下的 `api-settings.json`，profile 没有配置的键会从通用配置继承。
 
 `ccps launch <profile> --dry-run` 只显示 API 环境变量键名和配置来源状态，不显示 token 或其他值。
 
@@ -210,9 +239,9 @@ spawn('claude', args, {
   env: {
     ...process.env,
     ...apiEnv,
-    CLAUDE_CONFIG_DIR: profileClaudeHome
-  }
-})
+    CLAUDE_CONFIG_DIR: profileClaudeHome,
+  },
+});
 ```
 
 默认会传入 `--dangerously-skip-permissions`，让 Claude Code 跳过权限确认。单个 profile 可以在 `profile.json` 中关闭：
@@ -225,13 +254,13 @@ spawn('claude', args, {
 }
 ```
 
-默认 MCP 模式为 `merge`（合并）：`ccps` 传递 `--mcp-config <profile>\mcp.json` 且**不**传递 `--strict-mcp-config`。严格模式（Strict mode）仅在配置文件显式配置时启用。只有在 `profile.json` 显式配置 `launch.pluginDirs` 时，ccps 才会额外传递 `--plugin-dir`，这些路径相对当前 profile 的 `claude-home` 解析。
+默认使用 Claude Code 原生 user-scope MCP，不传 `--mcp-config`。只有旧 profile 的 `mcp.json` 实际包含 server 时，ccps 才按 legacy `mcpMode` 追加 `--mcp-config`；`--strict-mcp-config` 仍只在旧配置显式要求 strict 时使用。只有在 `profile.json` 显式配置 `launch.pluginDirs` 时，ccps 才会额外传递 `--plugin-dir`，这些路径相对当前 profile 的 `claude-home` 解析。
 
 `ccps` 永远不会对当前项目使用 `--add-dir`，也永远不会将 cwd 更改为 `.cc-profile-switch` 目录。
 
 ## 安全边界
 
-`ccps` 不会自动从真实的 Windows `C:\Users\<you>\.claude` 或 macOS `~/.claude` 中复制或管理 OAuth、会话（session）、令牌（token）、历史记录、缓存或凭据内容。`ccps init` 只会为 API 复用读取 `settings.json` 的 `env.ANTHROPIC_*` 字符串键，并写入本机 app home 的 common `api-settings.json`。
+`ccps` 不会自动从真实的 Windows `C:\Users\<you>\.claude` / `C:\Users\<you>\.claude.json` 或 macOS / Linux `~/.claude` / `~/.claude.json` 中复制或管理 OAuth、MCP、会话（session）、令牌（token）、历史记录、缓存或凭据内容。`ccps init` 只会为 API 复用读取 `settings.json` 的 `env.ANTHROPIC_*` 字符串键，并写入本机 app home 的 common `api-settings.json`。
 
 基于 API 的 Claude Code 用户可以把通用 `ANTHROPIC_*` 环境变量放进 `api-settings.json`，把 profile 专属覆盖放进对应的 `claude-home\settings.json`。这些文件包含真实密钥时应只留在本机用户目录，不要复制进项目仓库或提交到 Git。验证说明详见 `VERIFY-CLAUDE-CODE-BEHAVIOR.md`。
 
@@ -245,6 +274,8 @@ npm run check
 ```
 
 `npm run check` 会运行 lint、测试和构建。
+
+提交或推送前必须先运行 `npm run check`。推送或创建 Pull Request 后，`.github/workflows/ci.yml` 会在 Ubuntu、macOS、Windows 上分别使用 Node.js 22 和 24 执行同一完整检查。所有相关 matrix job 通过后，才能合并、发布或宣称跨平台兼容；本地单平台通过不能替代 hosted CI。
 
 ## CodeGraph
 

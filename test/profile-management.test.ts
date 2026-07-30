@@ -16,7 +16,11 @@ import {
   resolveLaunchProfile,
   setDefaultProfile,
 } from '../src/core/profile-management';
-import { createProfileFromTemplate, getProfileTemplatePaths, getRealClaudeMdExcludePaths } from '../src/core/profile-template';
+import {
+  createProfileFromTemplate,
+  getProfileTemplatePaths,
+  getRealClaudeMdExcludePaths,
+} from '../src/core/profile-template';
 
 describe('profile management services', () => {
   const tempRoots: string[] = [];
@@ -88,6 +92,7 @@ describe('profile management services', () => {
         ANTHROPIC_MODEL: 'profile-model',
       },
     });
+    await rm(sourcePaths.ccpsProfileRulePath);
 
     const result = await copyProfile({
       appHomePath: appHome,
@@ -102,8 +107,12 @@ describe('profile management services', () => {
       sourcePath: sourcePaths.profileRootPath,
       targetPath: targetPaths.profileRootPath,
     });
-    await expect(fs.readFile(sourcePaths.claudeMdPath, 'utf8')).resolves.toBe('# user edited source\n');
-    await expect(fs.readFile(targetPaths.claudeMdPath, 'utf8')).resolves.toBe('# user edited source\n');
+    await expect(fs.readFile(sourcePaths.claudeMdPath, 'utf8')).resolves.toBe(
+      '# user edited source\n',
+    );
+    await expect(fs.readFile(targetPaths.claudeMdPath, 'utf8')).resolves.toBe(
+      '# user edited source\n',
+    );
     await expect(fs.readJson(targetPaths.profileConfigPath)).resolves.toMatchObject({
       name: 'deep_work',
       template: 'coding',
@@ -118,6 +127,9 @@ describe('profile management services', () => {
         ANTHROPIC_MODEL: 'profile-model',
       },
     });
+    await expect(fs.readFile(targetPaths.ccpsProfileRulePath, 'utf8')).resolves.toContain(
+      'claude mcp add --scope user',
+    );
   });
 
   it('renames a profile, repairs metadata and memory path, and updates config references', async () => {
@@ -125,6 +137,7 @@ describe('profile management services', () => {
     const oldPaths = getProfileTemplatePaths(appHome, 'coding');
     const newPaths = getProfileTemplatePaths(appHome, 'focus');
     await makeProfile(appHome, 'coding', 'coding');
+    await rm(oldPaths.ccpsProfileRulePath);
     await saveAppConfig(
       appHome,
       {
@@ -157,6 +170,9 @@ describe('profile management services', () => {
     await expect(fs.readJson(newPaths.settingsPath)).resolves.toMatchObject({
       autoMemoryDirectory: newPaths.autoMemoryPath,
     });
+    await expect(fs.readFile(newPaths.ccpsProfileRulePath, 'utf8')).resolves.toContain(
+      'claude mcp add --scope user',
+    );
     await expect(fs.readJson(getAppHomePaths(appHome).configPath)).resolves.toMatchObject({
       defaultProfile: 'focus',
       lastUsedProfile: 'focus',
@@ -228,7 +244,9 @@ describe('profile management services', () => {
     await makeProfile(appHome, 'coding', 'coding');
 
     await expect(getDefaultProfile({ appHomePath: appHome })).resolves.toBeUndefined();
-    await expect(resolveLaunchProfile({ appHomePath: appHome, requestedProfile: 'coding' })).resolves.toBe('coding');
+    await expect(
+      resolveLaunchProfile({ appHomePath: appHome, requestedProfile: 'coding' }),
+    ).resolves.toBe('coding');
 
     await setDefaultProfile({
       appHomePath: appHome,
@@ -256,17 +274,25 @@ describe('profile management services', () => {
     await makeProfile(appHome, 'coding', 'coding');
     await makeProfile(appHome, 'study', 'study');
 
-    await expect(copyProfile({ appHomePath: appHome, from: 'coding', to: '..' })).rejects.toMatchObject({
+    await expect(
+      copyProfile({ appHomePath: appHome, from: 'coding', to: '..' }),
+    ).rejects.toMatchObject({
       code: 'INVALID_PROFILE_NAME',
     });
-    await expect(copyProfile({ appHomePath: appHome, from: 'missing', to: 'copy' })).rejects.toMatchObject({
+    await expect(
+      copyProfile({ appHomePath: appHome, from: 'missing', to: 'copy' }),
+    ).rejects.toMatchObject({
       code: 'PROFILE_NOT_FOUND',
     });
-    await expect(copyProfile({ appHomePath: appHome, from: 'coding', to: 'study' })).rejects.toMatchObject({
+    await expect(
+      copyProfile({ appHomePath: appHome, from: 'coding', to: 'study' }),
+    ).rejects.toMatchObject({
       code: 'PROFILE_ALREADY_EXISTS',
     });
     await rm(codingPaths.settingsPath);
-    await expect(copyProfile({ appHomePath: appHome, from: 'coding', to: 'copy' })).rejects.toMatchObject({
+    await expect(
+      copyProfile({ appHomePath: appHome, from: 'coding', to: 'copy' }),
+    ).rejects.toMatchObject({
       code: 'PROFILE_VALIDATION_FAILED',
     });
     await expect(

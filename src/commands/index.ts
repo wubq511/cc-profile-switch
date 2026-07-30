@@ -56,7 +56,9 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
       runtime.writeOut(`Created default profiles: ${created}\n`);
       runtime.writeOut(`Preserved existing profiles: ${preserved}\n`);
       if (result.apiSettingsImport.importedKeys.length > 0) {
-        runtime.writeOut(`Imported API env keys: ${result.apiSettingsImport.importedKeys.join(', ')}\n`);
+        runtime.writeOut(
+          `Imported API env keys: ${result.apiSettingsImport.importedKeys.join(', ')}\n`,
+        );
       }
       runtime.writeOut('Next: ccps list\n');
     });
@@ -64,7 +66,10 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
   program
     .command('create <name>')
     .description('Create a profile. Optionally specify a template; defaults to a blank profile.')
-    .option('--template <template>', 'Profile template to use (coding, study, work, research, general).')
+    .option(
+      '--template <template>',
+      'Profile template to use (coding, study, work, research, general).',
+    )
     .action(async (name: string, options: { template?: string }) => {
       const template = parseTemplateName(options.template);
       const result = await createProfile({ name, template, clock: runtime.clock });
@@ -131,18 +136,26 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
       runtime.writeOut(`  profile.json: ${await pathStatus(paths.profileConfigPath, 'file')}\n`);
       runtime.writeOut(`  CLAUDE.md: ${await pathStatus(paths.claudeMdPath, 'file')}\n`);
       runtime.writeOut(`  settings.json: ${await jsonStatus(paths.settingsPath)}\n`);
-      runtime.writeOut(`  MEMORY.md: ${await pathStatus(paths.autoMemoryEntrypointPath, 'file')}\n`);
-      runtime.writeOut(`  mcp.json: ${await jsonStatus(paths.mcpConfigPath)}\n`);
-      runtime.writeOut('Required directories:\n');
+      runtime.writeOut(
+        `  MEMORY.md: ${await pathStatus(paths.autoMemoryEntrypointPath, 'file')}\n`,
+      );
+      runtime.writeOut('Profile directories:\n');
       runtime.writeOut(`  claude-home: ${await pathStatus(paths.claudeHomePath, 'directory')}\n`);
       runtime.writeOut(`  memory: ${await pathStatus(paths.memoryPath, 'directory')}\n`);
       runtime.writeOut(`  memory/auto: ${await pathStatus(paths.autoMemoryPath, 'directory')}\n`);
       runtime.writeOut(`  skills: ${await pathStatus(paths.skillsPath, 'directory')}\n`);
       runtime.writeOut(`  agents: ${await pathStatus(paths.agentsPath, 'directory')}\n`);
+      runtime.writeOut(`  rules: ${await pathStatus(paths.rulesPath, 'directory')}\n`);
       runtime.writeOut(`  plugins: ${await pathStatus(paths.pluginsPath, 'directory')}\n`);
+      runtime.writeOut('MCP configuration:\n');
+      runtime.writeOut(`  native user scope: ${paths.claudeUserConfigPath}\n`);
+      runtime.writeOut('  manage with: claude mcp add --scope user ...\n');
+      runtime.writeOut(`  legacy mcp.json: ${await jsonStatus(paths.mcpConfigPath)}\n`);
       runtime.writeOut(`JSON validation: ${validation.status}\n`);
       runtime.writeOut('Project config: preserved from the launch cwd\n');
-      runtime.writeOut('Real user config: never copied from or written to the real ~/.claude\n');
+      runtime.writeOut(
+        'Real user config: never copied from or written to the real ~/.claude or ~/.claude.json\n',
+      );
 
       if (validation.findings.length > 0) {
         runtime.writeOut(formatFindings(validation.findings));
@@ -340,7 +353,7 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
       });
       runtime.writeOut(`Profile creator ready. Launching Claude Code...\n`);
 
-      const result = await launchProfile({
+      await launchProfile({
         appHomePath: appPaths.appHomePath,
         profileName,
         cwd: options.cwd,
@@ -448,6 +461,7 @@ function editTargetAliases(
     'memory\\auto': paths.autoMemoryPath,
     skills: paths.skillsPath,
     agents: paths.agentsPath,
+    rules: paths.rulesPath,
     plugins: paths.pluginsPath,
   };
 }

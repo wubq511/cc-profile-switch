@@ -4,7 +4,11 @@ import { loadAppConfig, saveAppConfig, type Clock } from './app-config';
 import { resolveApiSettings, type ApiSettingsSource } from './api-settings';
 import { extractAnthropicApiEnv, getClaudeSettingsPath } from './claude-settings';
 import { resolveLaunchProfile } from './profile-management';
-import { ensureProfileClaudeMdExcludes, getRealClaudeMdExcludePaths } from './profile-template';
+import {
+  ensureCcpsProfileRule,
+  ensureProfileClaudeMdExcludes,
+  getRealClaudeMdExcludePaths,
+} from './profile-template';
 import { spawnProcess as defaultSpawnProcess, type SpawnProcess } from '../platform/process';
 import { resolveFilesystemPath, resolveInside } from '../platform/path';
 import { type ProfileLaunchConfig } from '../schemas/profile';
@@ -56,6 +60,9 @@ export type LaunchPlan = {
   apiEnv: Record<string, string>;
   realClaudeEnv: Record<string, string>;
   mcpMode: ProfileLaunchConfig['mcpMode'];
+  userMcpConfigPath: string;
+  legacyMcpConfigPath: string;
+  legacyMcpConfigActive: boolean;
   pluginDirs: string[];
   claudeMdExcludes: string[];
   validationStatus: ValidationStatus;
@@ -99,7 +106,14 @@ export async function buildLaunchPlan(options: LaunchPlanOptions): Promise<Launc
     resolveInside(validation.claudeHomePath, pluginDir),
   );
   const cwd = await resolveLaunchCwd(options.cwd);
-  const args = buildClaudeArgs(validation.config.launch, validation.paths.mcpConfigPath, pluginDirs);
+  const legacyMcpConfigActive =
+    validation.config.launch.mcpMode !== 'none' &&
+    (await hasConfiguredLegacyMcpServers(validation.paths.mcpConfigPath));
+  const args = buildClaudeArgs(
+    validation.config.launch,
+    legacyMcpConfigActive ? validation.paths.mcpConfigPath : undefined,
+    pluginDirs,
+  );
   const apiSettings = await resolveApiSettings({
     appHomePath: options.appHomePath,
     profileName: validation.profileName,
@@ -130,6 +144,9 @@ export async function buildLaunchPlan(options: LaunchPlanOptions): Promise<Launc
     apiEnv: apiSettings.env,
     realClaudeEnv,
     mcpMode: validation.config.launch.mcpMode,
+    userMcpConfigPath: validation.paths.claudeUserConfigPath,
+    legacyMcpConfigPath: validation.paths.mcpConfigPath,
+    legacyMcpConfigActive,
     pluginDirs,
     claudeMdExcludes: getRealClaudeMdExcludePaths(),
     validationStatus: validation.status,
@@ -144,7 +161,9 @@ export function formatLaunchDryRun(plan: LaunchPlan): string {
     `Profile path: ${plan.profileRootPath}`,
     `Claude home: ${plan.claudeHomePath}`,
     `Cwd: ${plan.cwd}`,
-    `MCP mode: ${plan.mcpMode}`,
+    `MCP mode: native user scope (${plan.userMcpConfigPath})`,
+    `Legacy MCP mode: ${plan.mcpMode}`,
+    `Legacy MCP config: ${plan.legacyMcpConfigActive ? `active (${plan.legacyMcpConfigPath})` : 'inactive'}`,
     'Plugin dirs:',
     ...formatList(plan.pluginDirs),
     'CLAUDE.md excludes:',
@@ -183,6 +202,7 @@ export async function launchProfile(options: LaunchProfileOptions): Promise<Laun
   // Ensure claudeMdExcludes is present before spawning Claude Code.
   // This is done here (not in buildLaunchPlan) so dry-run remains side-effect-free.
   await ensureProfileClaudeMdExcludes(resolveInside(plan.claudeHomePath, 'settings.json'));
+  await ensureCcpsProfileRule(resolveInside(plan.claudeHomePath, 'rules', 'ccps-profile.md'));
 
   let result: { exitCode: number | null };
   try {
@@ -190,9 +210,7 @@ export async function launchProfile(options: LaunchProfileOptions): Promise<Laun
     // Without this, Claude Code detects non-TTY stdout and auto-enters --print mode.
     const isMac = process.platform === 'darwin';
     const spawnCommand = isMac ? 'script' : plan.command;
-    const spawnArgs = isMac
-      ? ['-q', '/dev/null', plan.command, ...plan.args]
-      : plan.args;
+    const spawnArgs = isMac ? ['-q', '/dev/null', plan.command, ...plan.args] : plan.args;
 
     result = await runProcess(spawnCommand, spawnArgs, {
       cwd: plan.cwd,
@@ -233,25 +251,22 @@ export async function launchProfile(options: LaunchProfileOptions): Promise<Laun
 
 function buildClaudeArgs(
   launch: ProfileLaunchConfig,
-  mcpConfigPath: string,
+  legacyMcpConfigPath: string | undefined,
   pluginDirs: string[],
 ): string[] {
   const args: string[] = [];
 
-  if (
-    launch.skipPermissions &&
-    !launch.claudeArgs.includes('--dangerously-skip-permissions')
-  ) {
+  if (launch.skipPermissions && !launch.claudeArgs.includes('--dangerously-skip-permissions')) {
     args.push('--dangerously-skip-permissions');
   }
 
   args.push(...launch.claudeArgs);
 
-  if (launch.mcpMode === 'merge' || launch.mcpMode === 'strict') {
-    args.push('--mcp-config', mcpConfigPath);
+  if (legacyMcpConfigPath) {
+    args.push('--mcp-config', legacyMcpConfigPath);
   }
 
-  if (launch.mcpMode === 'strict') {
+  if (legacyMcpConfigPath && launch.mcpMode === 'strict') {
     args.push('--strict-mcp-config');
   }
 
@@ -260,6 +275,19 @@ function buildClaudeArgs(
   }
 
   return args;
+}
+
+async function hasConfiguredLegacyMcpServers(filePath: string): Promise<boolean> {
+  if (!(await fs.pathExists(filePath))) {
+    return false;
+  }
+
+  const config = await fs.readJson(filePath);
+  if (!isRecord(config) || !isRecord(config.mcpServers)) {
+    return false;
+  }
+
+  return Object.keys(config.mcpServers).length > 0;
 }
 
 async function resolveLaunchCwd(cwd?: string): Promise<string> {
@@ -315,6 +343,10 @@ function invalidLaunchCwd(cwd: string, message: string): CcpsError {
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && 'code' in error;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function sortedKeys(value: Record<string, string>): string[] {

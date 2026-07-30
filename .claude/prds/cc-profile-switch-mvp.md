@@ -1,6 +1,6 @@
 ---
 name: cc-profile-switch-mvp
-description: Windows-only Node.js CLI for switching Claude Code user-level config profiles while preserving project config
+description: Cross-platform Node.js CLI for switching Claude Code user-level config profiles while preserving project config
 status: completed
 created: 2026-05-16T09:33:18Z
 ---
@@ -9,7 +9,7 @@ created: 2026-05-16T09:33:18Z
 
 ## Executive Summary
 
-CC-Profile-Switch (`ccps`) is a Windows-only Node.js CLI that launches Claude Code with a selected user-level configuration profile. It switches the Claude Code user config source through `CLAUDE_CONFIG_DIR`, while preserving the current project directory and project-level Claude Code configuration.
+CC-Profile-Switch (`ccps`) is a Windows, macOS, and Linux Node.js CLI that launches Claude Code with a selected user-level configuration profile. It switches the Claude Code user config source through `CLAUDE_CONFIG_DIR`, while preserving the current project directory and project-level Claude Code configuration.
 
 Source documents:
 
@@ -18,9 +18,9 @@ Source documents:
 
 ## Problem Statement
 
-Claude Code has a single user-level global configuration under `C:\Users\h\.claude`. When that global configuration is tuned for coding, it pollutes other workflows such as study, work, research, and general use. Manual replacement of global files is error-prone and risks overwriting or leaking sensitive state.
+Claude Code normally has one user-level global configuration under `~/.claude` plus state in `~/.claude.json`. When that global configuration is tuned for coding, it pollutes other workflows such as study, work, research, and general use. Manual replacement of global files is error-prone and risks overwriting or leaking sensitive state.
 
-The product must solve this by making profile switching explicit, repeatable, reversible, and safe. It must not modify the real `C:\Users\h\.claude`, and it must not replace or hide project-level configuration.
+The product must solve this by making profile switching explicit, repeatable, reversible, and safe. It must not modify the real `~/.claude` or `~/.claude.json`, and it must not replace or hide project-level configuration.
 
 ## User Stories
 
@@ -32,7 +32,7 @@ Acceptance criteria:
 
 - The spawned Claude process keeps `cwd` equal to the user's current project directory.
 - `CLAUDE_CONFIG_DIR` points to the selected profile's `claude-home`.
-- The real `C:\Users\h\.claude` is not copied, overwritten, or modified.
+- The real `~/.claude` and `~/.claude.json` are not copied, overwritten, or modified.
 - Project-level `CLAUDE.md`, `.claude`, and `.mcp.json` remain discoverable by Claude Code.
 
 ### Initialize default profiles
@@ -41,10 +41,10 @@ As a user, I want `ccps init` to create default profiles for `coding`, `study`, 
 
 Acceptance criteria:
 
-- The command creates `%USERPROFILE%\.cc-profile-switch`.
-- Each default profile contains `profile.json`, `claude-home\CLAUDE.md`, `claude-home\settings.json`, `claude-home\memory\auto\MEMORY.md`, `claude-home\skills`, `claude-home\agents`, `claude-home\plugins`, and `mcp.json`.
+- The command creates `%USERPROFILE%\.cc-profile-switch` on Windows or `~/.cc-profile-switch` on macOS.
+- Each default profile contains `profile.json`, `claude-home\CLAUDE.md`, `claude-home\settings.json`, `claude-home\rules\ccps-profile.md`, `claude-home\memory\auto\MEMORY.md`, `claude-home\skills`, `claude-home\agents`, and `claude-home\plugins`. New profiles do not create `mcp.json`.
 - Re-running `ccps init` does not overwrite user-edited files.
-- The command never reads from or copies `C:\Users\h\.claude`.
+- The command never copies the real Claude state. The only allowed read is string `env.ANTHROPIC_*` keys from the real `settings.json`.
 
 ### Manage profiles
 
@@ -56,7 +56,7 @@ Acceptance criteria:
 - `ccps create <name> --template <template>` supports `coding`, `study`, `work`, `research`, `general`, and `blank`.
 - `ccps show <name>` displays absolute paths, core file status, JSON validation status, and that project config is preserved.
 - `ccps edit <name> [file-or-folder]` opens the selected profile directory, built-in aliases, or an existing target inside the profile in a new VS Code window.
-- `ccps validate <name>` detects invalid JSON, missing required files, unsafe profile names, path traversal, and sensitive filenames.
+- `ccps validate <name>` detects invalid JSON/schema, missing required files, unsafe profile names, managed rule problems, memory-path mismatches, and launch path traversal. Runtime/cache/session filenames do not block launch.
 - `ccps backup <name>` copies the selected profile into a timestamped backup directory without modifying the source.
 
 ### Preview launch safely
@@ -73,11 +73,11 @@ Acceptance criteria:
 ## Functional Requirements
 
 - Provide CLI commands: `init`, `list`, `create`, `show`, `edit`, `validate`, `backup`, and `launch`.
-- Store app data under `%USERPROFILE%\.cc-profile-switch`.
+- Store app data under `%USERPROFILE%\.cc-profile-switch` on Windows or `~/.cc-profile-switch` on macOS.
 - Store each profile under `profiles\<name>` with a nested `claude-home` directory.
 - Use `CLAUDE_CONFIG_DIR=<profile>\claude-home` for launch.
-- Default MCP mode is merge: pass `--mcp-config <profile>\mcp.json` when present, without `--strict-mcp-config`.
-- `--strict-mcp-config` is opt-in only.
+- New profiles use Claude Code native user-scope MCP in `CLAUDE_CONFIG_DIR/.claude.json` and set legacy `mcpMode` to `none`.
+- Only an older profile with a non-empty legacy `mcp.json` and an existing `merge` or `strict` setting receives `--mcp-config`; `--strict-mcp-config` remains legacy opt-in only.
 - Launch passes `--dangerously-skip-permissions` by default unless `launch.skipPermissions=false`.
 - API env comes from `%USERPROFILE%\.cc-profile-switch\api-settings.json` and profile `claude-home\settings.json` `env`, with profile values taking priority.
 - New profile settings include `env.CLAUDE_CODE_ATTRIBUTION_HEADER=0`; re-running `ccps init` backfills the key for preserved default profiles when missing.
@@ -86,15 +86,15 @@ Acceptance criteria:
 - Launch must use `child_process.spawn` with command and args array, `shell: false`, and `stdio: inherit`.
 - Profile names must be safe: lowercase or mixed-case letters, numbers, hyphen, and underscore, with no traversal.
 - All paths must resolve to absolute paths with Node `path` APIs.
-- Validation must block high-risk credential names such as `token`, `secret`, `credential`, `credentials`, and `oauth`; Claude-created state names such as `.claude.json`, `session`, `sessions`, `history`, `cache`, `log`, and `transcript` are warnings.
+- Validation checks launch readiness, JSON/schema validity, managed boundary presence, memory paths, and launch path safety. Runtime/cache/session filenames do not block launch.
 
 ## Non-Functional Requirements
 
-- Windows-only for MVP.
+- Windows, macOS, and Linux are supported and verified by the cross-platform CI matrix.
 - No backend service, database, cloud sync, or paid dependency.
 - CLI output should be short, readable, explicit, and developer-friendly.
 - Errors should include clear next-step suggestions.
-- The codebase should be modular: commands call core services; core services own business logic; platform modules own Windows-specific behavior.
+- The codebase should be modular: commands call core services; core services own business logic; platform modules own Windows/macOS/Linux-specific behavior.
 - Automated tests should cover path safety, schemas, templates, validation, backup, and launch-plan generation.
 - Manual verification must document real Claude Code behavior for `CLAUDE_CONFIG_DIR`, project config preservation, MCP behavior, auth/session behavior, and memory behavior.
 
@@ -105,19 +105,19 @@ Acceptance criteria:
 - `ccps launch <name> --dry-run` shows the correct launch plan without starting Claude Code.
 - `ccps launch <name>` starts Claude Code from the current working directory.
 - The launched process receives `CLAUDE_CONFIG_DIR` pointing to the selected profile's `claude-home`.
-- The real `C:\Users\h\.claude` is not copied, overwritten, or modified.
+- The real `~/.claude` and `~/.claude.json` are not copied, overwritten, or modified.
 - Project-level config remains active.
 - The marker verification proves Claude sees `PROFILE_CODING_MARKER` and `PROJECT_MARKER`, and does not see `GLOBAL_ORIGINAL_MARKER`.
 - README documents installation, usage, safety boundaries, and verification steps.
 
 ## Constraints & Assumptions
 
-- MVP supports Windows, PowerShell, and Windows Terminal only.
+- The product supports Windows, macOS, and Linux terminals.
 - The runtime is Node.js LTS with TypeScript.
 - Recommended libraries are Commander, Zod, Vitest, tsup, fs-extra, and picocolors.
 - Claude Code supports `CLAUDE_CONFIG_DIR` for switching user-level config.
 - Verification has shown isolated profiles can require separate OAuth/keychain-style authentication unless API env is supplied.
-- Verification has shown profile MCP and project MCP merge in default mode, while strict mode excludes project MCP.
+- Verification has shown native user-scope profile MCP and project MCP both load by Claude scope precedence. Legacy strict mode can exclude project MCP only for older non-empty profile `mcp.json` files.
 - Auto memory is constrained through profile `autoMemoryDirectory`; future Claude Code changes should be rechecked in `VERIFY-CLAUDE-CODE-BEHAVIOR.md`.
 
 ## Out of Scope
@@ -127,7 +127,6 @@ Acceptance criteria:
 - Multi-account switching.
 - OAuth, session, token, history, or cache migration.
 - Plugin marketplace or automatic plugin downloads.
-- macOS or Linux support.
 - Runtime project isolation mode.
 - Project config switching, replacement, deletion, or isolation.
 - `settings.local.json` management.

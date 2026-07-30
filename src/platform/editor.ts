@@ -71,8 +71,19 @@ export function buildEditorSpawnCommand(
     };
   }
 
-  throw new CcpsError('PLATFORM_NOT_SUPPORTED', 'ccps supports Windows and macOS only.', {
-    guidance: 'Run ccps edit on Windows or macOS.',
+  if (platform === 'linux') {
+    return {
+      command: 'code',
+      args: ['-n', targetPath],
+      options: {
+        stdio: 'ignore',
+      },
+      failureGuidance: `Install Visual Studio Code and its "code" command or open the path manually: ${targetPath}`,
+    };
+  }
+
+  throw new CcpsError('PLATFORM_NOT_SUPPORTED', 'ccps supports Windows, macOS, and Linux only.', {
+    guidance: 'Run ccps edit on Windows, macOS, or Linux.',
   });
 }
 

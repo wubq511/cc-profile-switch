@@ -1,7 +1,7 @@
 ---
 name: profile-management-tui
 description: V0.2 profile management commands with a lightweight TUI assistant entry
-status: backlog
+status: completed
 created: 2026-05-20T07:50:37Z
 ---
 
@@ -37,7 +37,7 @@ Acceptance criteria:
 - The copied profile keeps user-authored files under `claude-home`.
 - The copied `profile.json` updates `name`, `createdAt`, and `updatedAt` to the target profile.
 - Profile-local memory settings are repaired so `autoMemoryDirectory` points at the target profile's `claude-home\memory\auto`.
-- The command never reads from, copies from, or writes to the real `C:\Users\h\.claude`.
+- The command never reads from, copies from, or writes to the real `~/.claude` or `~/.claude.json`.
 
 ### Rename a profile
 
@@ -118,9 +118,9 @@ Acceptance criteria:
 
 ## Non-Functional Requirements
 
-- Windows-only behavior remains unchanged.
+- Windows, macOS, and Linux behavior must remain in parity; hosted CI is the compatibility gate.
 - CLI output must stay short, explicit, and actionable.
-- TUI must be keyboard-first and suitable for Windows Terminal / PowerShell.
+- TUI must be keyboard-first and suitable for Windows Terminal / PowerShell and macOS/Linux terminals.
 - TUI must not require a backend, database, browser, or GUI runtime.
 - The implementation should minimize new dependencies. If a TUI dependency is needed, it must be actively maintained, work on Windows, and be justified in the implementation plan.
 - No command may print secrets, token values, or environment variable values.
@@ -144,13 +144,13 @@ Acceptance criteria:
 ## Constraints & Assumptions
 
 - The current MVP architecture remains the baseline: Commander for CLI, TypeScript, Node.js LTS, Zod, fs-extra, Vitest, tsup, and picocolors.
-- The app data root remains `%USERPROFILE%\.cc-profile-switch`.
-- The profile structure remains `profiles\<name>\profile.json`, `profiles\<name>\claude-home`, and `profiles\<name>\mcp.json`.
+- The app data root remains `%USERPROFILE%\.cc-profile-switch` on Windows and `~/.cc-profile-switch` on macOS.
+- The profile structure remains `profiles\<name>\profile.json` plus `profiles\<name>\claude-home`; new profiles include `claude-home\rules\ccps-profile.md` and do not create `mcp.json`.
 - `config.json.defaultProfile` is optional and may be absent or cleared.
 - An empty `profiles` directory is a valid app state after explicit removals.
 - Backup creation is the rollback path for `remove`.
 - TUI is an auxiliary entry and does not replace the CLI.
-- V0.2 should not change launch isolation, MCP merge behavior, skip-permissions defaults, API env resolution, or profile memory isolation semantics.
+- V0.2 should not change launch isolation, skip-permissions defaults, API env resolution, or profile memory isolation semantics. Current profile MCP uses native user scope; legacy merge/strict behavior applies only to older non-empty `mcp.json` files.
 
 ## Out of Scope
 
@@ -160,7 +160,7 @@ Acceptance criteria:
 - `doctor`, `repair`, `diff`, `verify-behavior`, and `validate --deep`.
 - GUI or browser-based management.
 - Cloud sync, account switching, OAuth/session migration, token migration, history migration, or cache migration.
-- Reading from, copying from, overwriting, or managing the real `C:\Users\h\.claude`.
+- Reading from, copying from, overwriting, or managing the real `~/.claude` or `~/.claude.json`, except the established string `env.ANTHROPIC_*` settings import.
 - Modifying project `.claude`, project `CLAUDE.md`, project `.mcp.json`, or project-level Claude Code config.
 - Publishing an npm package or creating a public release.
 
@@ -169,6 +169,6 @@ Acceptance criteria:
 - Existing MVP profile structure and validation logic.
 - Existing `backupProfile` behavior or a shared backup utility derived from it.
 - Existing app config schema with optional `defaultProfile` and `lastUsedProfile`.
-- A Windows-compatible TUI/prompt library, only if the implementation plan proves the existing dependency set is insufficient.
+- A Windows-and-macOS-compatible TUI/prompt library, only if the implementation plan proves the existing dependency set is insufficient.
 - Node.js LTS and npm.
 - Vitest for automated tests.

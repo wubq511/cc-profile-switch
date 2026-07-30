@@ -12,7 +12,12 @@ import {
   writeJsonFile,
 } from './app-config';
 import { backupProfile } from './profile';
-import { ensureProfileClaudeMdExcludes, getProfileTemplatePaths, type ProfileTemplatePaths } from './profile-template';
+import {
+  ensureCcpsProfileRule,
+  ensureProfileClaudeMdExcludes,
+  getProfileTemplatePaths,
+  type ProfileTemplatePaths,
+} from './profile-template';
 import {
   isLaunchBlocking,
   validateProfile,
@@ -86,7 +91,9 @@ export type ResolveLaunchProfileOptions = ProfileManagementOptions & {
 
 type ConfigUpdater = (config: AppConfig) => AppConfig;
 
-export async function listProfilesForDisplay(options: ProfileManagementOptions = {}): Promise<ProfileSummary[]> {
+export async function listProfilesForDisplay(
+  options: ProfileManagementOptions = {},
+): Promise<ProfileSummary[]> {
   const appHomePath = resolveAppHomePath(options.appHomePath);
   const config = await loadAppConfig(appHomePath);
   const { profilesPath } = getAppHomePaths(appHomePath);
@@ -178,7 +185,11 @@ export async function renameProfile(options: RenameProfileOptions): Promise<Rena
     updatedAt: resolveTimestamp(options.clock),
   });
   await repairProfileSettings(newPaths);
-  await updateConfig(appHomePath, (config) => renameConfigReferences(config, source.profileName, newName), options.clock);
+  await updateConfig(
+    appHomePath,
+    (config) => renameConfigReferences(config, source.profileName, newName),
+    options.clock,
+  );
 
   return {
     oldName: source.profileName,
@@ -194,9 +205,13 @@ export async function removeProfile(options: RemoveProfileOptions): Promise<Remo
 
   const profileName = validateProfileName(options.name);
   if (options.confirmation !== profileName) {
-    throw new CcpsError('PROFILE_DELETE_CONFIRMATION_MISMATCH', 'Profile removal confirmation did not match.', {
-      guidance: `Type the exact profile name to remove it: ${profileName}`,
-    });
+    throw new CcpsError(
+      'PROFILE_DELETE_CONFIRMATION_MISMATCH',
+      'Profile removal confirmation did not match.',
+      {
+        guidance: `Type the exact profile name to remove it: ${profileName}`,
+      },
+    );
   }
 
   const profile = await validateExistingProfile(appHomePath, profileName);
@@ -207,7 +222,11 @@ export async function removeProfile(options: RemoveProfileOptions): Promise<Remo
   });
 
   await fs.remove(profile.profileRootPath);
-  await updateConfig(appHomePath, (config) => clearConfigReferences(config, profile.profileName), options.clock);
+  await updateConfig(
+    appHomePath,
+    (config) => clearConfigReferences(config, profile.profileName),
+    options.clock,
+  );
 
   return {
     profileName: profile.profileName,
@@ -216,7 +235,9 @@ export async function removeProfile(options: RemoveProfileOptions): Promise<Remo
   };
 }
 
-export async function getDefaultProfile(options: ProfileManagementOptions = {}): Promise<string | undefined> {
+export async function getDefaultProfile(
+  options: ProfileManagementOptions = {},
+): Promise<string | undefined> {
   const config = await loadAppConfig(resolveAppHomePath(options.appHomePath));
   return config.defaultProfile;
 }
@@ -253,9 +274,13 @@ export async function resolveLaunchProfile(options: ResolveLaunchProfileOptions)
 
   const defaultProfile = await getDefaultProfile({ appHomePath });
   if (defaultProfile === undefined) {
-    throw new CcpsError('DEFAULT_PROFILE_NOT_SET', 'No profile was requested and no default profile is configured.', {
-      guidance: 'Pass a profile name or set one with ccps default <profile>.',
-    });
+    throw new CcpsError(
+      'DEFAULT_PROFILE_NOT_SET',
+      'No profile was requested and no default profile is configured.',
+      {
+        guidance: 'Pass a profile name or set one with ccps default <profile>.',
+      },
+    );
   }
 
   await ensureProfileExists(appHomePath, defaultProfile);
@@ -266,15 +291,22 @@ function resolveAppHomePath(appHomePath?: string): string {
   return appHomePath ?? getAppHomePaths().appHomePath;
 }
 
-async function validateExistingProfile(appHomePath: string, name: string): Promise<ProfileValidationResult> {
+async function validateExistingProfile(
+  appHomePath: string,
+  name: string,
+): Promise<ProfileValidationResult> {
   const profileName = validateProfileName(name);
   await ensureProfileExists(appHomePath, profileName);
 
   const validation = await validateProfile({ appHomePath, name: profileName });
   if (isLaunchBlocking(validation)) {
-    throw new CcpsError('PROFILE_VALIDATION_FAILED', 'Profile validation failed; refusing profile mutation.', {
-      guidance: `Run ccps validate ${profileName} and fix error findings before changing this profile.`,
-    });
+    throw new CcpsError(
+      'PROFILE_VALIDATION_FAILED',
+      'Profile validation failed; refusing profile mutation.',
+      {
+        guidance: `Run ccps validate ${profileName} and fix error findings before changing this profile.`,
+      },
+    );
   }
 
   requireProfileConfig(validation);
@@ -290,7 +322,10 @@ async function ensureProfileExists(appHomePath: string, profileName: string): Pr
   }
 }
 
-async function ensureTargetDoesNotExist(targetName: string, paths: ProfileTemplatePaths): Promise<void> {
+async function ensureTargetDoesNotExist(
+  targetName: string,
+  paths: ProfileTemplatePaths,
+): Promise<void> {
   if (await fs.pathExists(paths.profileRootPath)) {
     throw new CcpsError('PROFILE_ALREADY_EXISTS', 'Refusing to overwrite an existing profile.', {
       guidance: `Choose a different profile name or remove the existing profile intentionally: ${targetName}`,
@@ -300,15 +335,22 @@ async function ensureTargetDoesNotExist(targetName: string, paths: ProfileTempla
 
 function requireProfileConfig(validation: ProfileValidationResult): ProfileConfig {
   if (validation.config === undefined) {
-    throw new CcpsError('PROFILE_CONFIG_UNAVAILABLE', 'Profile config could not be loaded after validation.', {
-      guidance: `Run ccps validate ${validation.profileName} and fix profile.json.`,
-    });
+    throw new CcpsError(
+      'PROFILE_CONFIG_UNAVAILABLE',
+      'Profile config could not be loaded after validation.',
+      {
+        guidance: `Run ccps validate ${validation.profileName} and fix profile.json.`,
+      },
+    );
   }
 
   return validation.config;
 }
 
-async function writeProfileManifest(profileConfigPath: string, config: ProfileConfig): Promise<void> {
+async function writeProfileManifest(
+  profileConfigPath: string,
+  config: ProfileConfig,
+): Promise<void> {
   await writeJsonFile(profileConfigPath, profileConfigSchema.parse(config), { overwrite: true });
 }
 
@@ -326,9 +368,14 @@ async function repairProfileSettings(paths: ProfileTemplatePaths): Promise<void>
   );
 
   await ensureProfileClaudeMdExcludes(paths.settingsPath);
+  await ensureCcpsProfileRule(paths.ccpsProfileRulePath);
 }
 
-async function updateConfig(appHomePath: string, updater: ConfigUpdater, clock?: Clock): Promise<AppConfig> {
+async function updateConfig(
+  appHomePath: string,
+  updater: ConfigUpdater,
+  clock?: Clock,
+): Promise<AppConfig> {
   const config = await loadAppConfig(appHomePath);
   return saveAppConfig(appHomePath, updater(config), { clock });
 }

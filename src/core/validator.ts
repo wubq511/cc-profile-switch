@@ -3,7 +3,11 @@ import fs from 'fs-extra';
 import { areSameFilesystemPath, resolveInside, validateProfileName } from '../platform/path';
 import { profileConfigSchema, type ProfileConfig } from '../schemas/profile';
 import { CcpsError } from '../utils/errors';
-import { getProfileTemplatePaths, type ProfileTemplatePaths } from './profile-template';
+import {
+  getProfileTemplatePaths,
+  hasUnrepairableCcpsProfileRuleMarkers,
+  type ProfileTemplatePaths,
+} from './profile-template';
 
 export type ValidationSeverity = 'warning' | 'error';
 export type ValidationStatus = 'valid' | 'warning' | 'error';
@@ -36,7 +40,6 @@ const requiredFiles = [
   ['CLAUDE.md', 'claudeMdPath'],
   ['settings.json', 'settingsPath'],
   ['MEMORY.md', 'autoMemoryEntrypointPath'],
-  ['mcp.json', 'mcpConfigPath'],
 ] as const;
 
 const requiredDirectories = [
@@ -54,7 +57,9 @@ const jsonFiles = [
   ['mcp.json', 'mcpConfigPath'],
 ] as const;
 
-export async function validateProfile(options: ValidateProfileOptions): Promise<ProfileValidationResult> {
+export async function validateProfile(
+  options: ValidateProfileOptions,
+): Promise<ProfileValidationResult> {
   const findings: ValidationFinding[] = [];
   let profileName = options.name;
 
@@ -78,6 +83,8 @@ export async function validateProfile(options: ValidateProfileOptions): Promise<
   for (const [label, key] of requiredFiles) {
     await requirePath(paths[key], 'file', label, findings);
   }
+
+  await validateManagedProfileRule(paths.ccpsProfileRulePath, findings);
 
   const parsedJson = new Map<string, unknown>();
   for (const [, key] of jsonFiles) {
@@ -124,6 +131,49 @@ export async function validateProfile(options: ValidateProfileOptions): Promise<
     config,
     findings,
   };
+}
+
+async function validateManagedProfileRule(
+  rulePath: string,
+  findings: ValidationFinding[],
+): Promise<void> {
+  try {
+    const stats = await fs.stat(rulePath);
+    if (!stats.isFile()) {
+      findings.push({
+        severity: 'error',
+        code: 'CCPS_PROFILE_RULE_INVALID',
+        message: 'The ccps-managed profile boundary path is not a file.',
+        path: rulePath,
+        suggestion: 'Replace this path with a file, then run ccps init.',
+      });
+      return;
+    }
+
+    const content = await fs.readFile(rulePath, 'utf8');
+    if (hasUnrepairableCcpsProfileRuleMarkers(content)) {
+      findings.push({
+        severity: 'error',
+        code: 'CCPS_PROFILE_RULE_CORRUPT',
+        message: 'The ccps-managed profile boundary markers are malformed.',
+        path: rulePath,
+        suggestion: 'Repair or remove the malformed managed markers, then run ccps init.',
+      });
+    }
+  } catch (error) {
+    if (isNodeError(error) && error.code === 'ENOENT') {
+      findings.push({
+        severity: 'warning',
+        code: 'CCPS_PROFILE_RULE_MISSING',
+        message: 'The ccps-managed profile boundary rule is missing.',
+        path: rulePath,
+        suggestion: 'Run ccps init to restore the rule; real launch also repairs it.',
+      });
+      return;
+    }
+
+    throw error;
+  }
 }
 
 function validateProfileMemorySettings(
@@ -190,7 +240,10 @@ async function requirePath(
     throw error;
   }
 
-  if ((expectedType === 'file' && !stats.isFile()) || (expectedType === 'directory' && !stats.isDirectory())) {
+  if (
+    (expectedType === 'file' && !stats.isFile()) ||
+    (expectedType === 'directory' && !stats.isDirectory())
+  ) {
     findings.push({
       severity: 'error',
       code: expectedType === 'file' ? 'REQUIRED_FILE_INVALID' : 'REQUIRED_DIRECTORY_INVALID',
@@ -219,7 +272,11 @@ async function readJsonForValidation(
   }
 }
 
-function validateLaunchPaths(claudeHomePath: string, config: ProfileConfig, findings: ValidationFinding[]): void {
+function validateLaunchPaths(
+  claudeHomePath: string,
+  config: ProfileConfig,
+  findings: ValidationFinding[],
+): void {
   for (const pluginDir of config.launch.pluginDirs) {
     try {
       resolveInside(claudeHomePath, pluginDir);
