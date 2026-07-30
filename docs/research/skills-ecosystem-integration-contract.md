@@ -1,7 +1,7 @@
 # Skills Ecosystem Integration Contract
 
-Status: decision research  
-Investigated: 2026-07-30  
+Status: decision research
+Investigated: 2026-07-30
 Upstream snapshot: `skills@1.5.21`, `vercel-labs/skills` commit
 [`7cb7db64dc1201052dea305e508a2fc490f7e5e2`](https://github.com/vercel-labs/skills/commit/7cb7db64dc1201052dea305e508a2fc490f7e5e2)
 

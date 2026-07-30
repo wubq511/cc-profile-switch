@@ -1,6 +1,6 @@
 # Profile Workbench 跨平台 TUI 框架边界
 
-日期：2026-07-30  
+日期：2026-07-30
 决策票：[Verify the cross-platform TUI framework boundary](https://github.com/wubq511/cc-profile-switch/issues/26)
 
 ## 结论
@@ -30,13 +30,13 @@
 
 ## 候选比较
 
-| 候选 | Node / 模块与打包 | Workbench 交互适配 | 输入、resize、无障碍 | 测试与跨平台证据 | 决定 |
-|---|---|---|---|---|---|
-| **Ink 7.1.1** | ESM-only；Node `>=22`；React `>=19.2`；JS 依赖面明显增大，但没有 OpenTUI 那类按 OS/CPU 分发的原生包 | React + Yoga/Flexbox 适合 Profile 列表、资源树、预览、状态栏、modal；原生支持 alternate screen 与子进程 suspend/resume | `useInput`、focus、`useWindowSize`；基础 screen-reader 模式与一小部分 ARIA 语义；核心未提供鼠标组件模型 | 有静态 `renderToString` 和 `ink-testing-library`；Ink 上游 CI 只有 Ubuntu Node 22/24 | **首选，但须通过本项目 Windows/macOS 原型** |
-| **OpenTUI 0.4.5** | ESM + Zig native core；Node renderer 要求 Node 26.4 + experimental FFI；发布包含 8 个 OS/CPU native optional packages | 内建 Select、ScrollBox、Markdown、Code、Diff 等，能力最强 | 完整键盘、鼠标、resize 与 capability 模型；官方文档未给出可替代 Ink screen-reader 模式的语义层 | 官方 test renderer 很强，可确定性驱动 keyboard、mouse、resize、clock 和 frames | **当前淘汰；等 LTS Node 无实验 FFI 后重评** |
-| **Inquirer 8.5.2 代表的增强 prompt stack** | ESM；支持 Node 20.17、22.13、23.5+；可从 CJS 动态加载 | Search、Select、Checkbox、Editor 适合向导与确认，但一次一个 prompt，无法提供常驻的列表 + 资源树 + 预览上下文 | 依赖 raw TTY；可注入 input/output；没有 Workbench 级 layout、focus graph 或 screen-reader semantic tree | 官方有 unit/E2E testing，CI 覆盖 Ubuntu + Windows，但没有 macOS | **只作非全屏向导/降级，不作 Workbench 基础** |
-| **Terminal Kit 3.1.4** | CommonJS；Node `>=16.13`；8 个直接 runtime dependencies；包内没有 first-party TypeScript 类型入口 | Document model 有多 widget、focus、menu、form、text box 和 screen buffer，能承载 Workbench | 提供 key、mouse、resize events；主文档未定义 screen-reader 语义 | 有项目测试，但没有消费端 test renderer 或公开 Windows/macOS CI；document model 文档仍在完善 | **Ink 原型失败时的 CommonJS 备选** |
-| **neo-blessed 0.2.0** | CommonJS；发布于 2018；widget 丰富 | 传统 full-screen TUI 能力足够 | 官方明确写明 Windows 没有 mouse 或 resize event | 官方说明多数测试是交互式、由人判断显示是否正确 | **淘汰** |
+| 候选                                       | Node / 模块与打包                                                                                                     | Workbench 交互适配                                                                                                     | 输入、resize、无障碍                                                                                    | 测试与跨平台证据                                                                            | 决定                                         |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| **Ink 7.1.1**                              | ESM-only；Node `>=22`；React `>=19.2`；JS 依赖面明显增大，但没有 OpenTUI 那类按 OS/CPU 分发的原生包                   | React + Yoga/Flexbox 适合 Profile 列表、资源树、预览、状态栏、modal；原生支持 alternate screen 与子进程 suspend/resume | `useInput`、focus、`useWindowSize`；基础 screen-reader 模式与一小部分 ARIA 语义；核心未提供鼠标组件模型 | 有静态 `renderToString` 和 `ink-testing-library`；Ink 上游 CI 只有 Ubuntu Node 22/24        | **首选，但须通过本项目 Windows/macOS 原型**  |
+| **OpenTUI 0.4.5**                          | ESM + Zig native core；Node renderer 要求 Node 26.4 + experimental FFI；发布包含 8 个 OS/CPU native optional packages | 内建 Select、ScrollBox、Markdown、Code、Diff 等，能力最强                                                              | 完整键盘、鼠标、resize 与 capability 模型；官方文档未给出可替代 Ink screen-reader 模式的语义层          | 官方 test renderer 很强，可确定性驱动 keyboard、mouse、resize、clock 和 frames              | **当前淘汰；等 LTS Node 无实验 FFI 后重评**  |
+| **Inquirer 8.5.2 代表的增强 prompt stack** | ESM；支持 Node 20.17、22.13、23.5+；可从 CJS 动态加载                                                                 | Search、Select、Checkbox、Editor 适合向导与确认，但一次一个 prompt，无法提供常驻的列表 + 资源树 + 预览上下文           | 依赖 raw TTY；可注入 input/output；没有 Workbench 级 layout、focus graph 或 screen-reader semantic tree | 官方有 unit/E2E testing，CI 覆盖 Ubuntu + Windows，但没有 macOS                             | **只作非全屏向导/降级，不作 Workbench 基础** |
+| **Terminal Kit 3.1.4**                     | CommonJS；Node `>=16.13`；8 个直接 runtime dependencies；包内没有 first-party TypeScript 类型入口                     | Document model 有多 widget、focus、menu、form、text box 和 screen buffer，能承载 Workbench                             | 提供 key、mouse、resize events；主文档未定义 screen-reader 语义                                         | 有项目测试，但没有消费端 test renderer 或公开 Windows/macOS CI；document model 文档仍在完善 | **Ink 原型失败时的 CommonJS 备选**           |
+| **neo-blessed 0.2.0**                      | CommonJS；发布于 2018；widget 丰富                                                                                    | 传统 full-screen TUI 能力足够                                                                                          | 官方明确写明 Windows 没有 mouse 或 resize event                                                         | 官方说明多数测试是交互式、由人判断显示是否正确                                              | **淘汰**                                     |
 
 ## 为什么首选 Ink
 
