@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createAppConfig } from '../src/core/app-config';
 import { createProfileFromTemplate, getProfileTemplatePaths } from '../src/core/profile-template';
 import { validateProfile } from '../src/core/validator';
+import { getPathPlatform } from '../src/platform/path';
 
 describe('profile validator', () => {
   const tempRoots: string[] = [];
@@ -120,22 +121,36 @@ describe('profile validator', () => {
     );
   });
 
-  it('compares POSIX auto memory settings with case-sensitive path semantics', async () => {
+  it('compares auto memory settings with platform-appropriate case semantics', async () => {
     const { appHome, paths } = await makeProfile();
+    const caseVariant = paths.autoMemoryPath.replace(/ccps-validator-/i, (value) =>
+      value.toUpperCase(),
+    );
+    expect(caseVariant).not.toBe(paths.autoMemoryPath);
+
     await fs.writeJson(paths.settingsPath, {
-      autoMemoryDirectory: paths.autoMemoryPath.replace('/ccps-validator-', '/CCPS-validator-'),
+      autoMemoryDirectory: caseVariant,
     });
 
     const result = await validateProfile({ appHomePath: appHome, name: 'coding' });
 
-    expect(result.status).toBe('error');
-    expect(result.findings).toContainEqual(
-      expect.objectContaining({
-        severity: 'error',
-        code: 'PROFILE_MEMORY_DIRECTORY_MISMATCH',
-        path: paths.settingsPath,
-      }),
-    );
+    if (getPathPlatform(paths.autoMemoryPath) === 'posix') {
+      expect(result.status).toBe('error');
+      expect(result.findings).toContainEqual(
+        expect.objectContaining({
+          severity: 'error',
+          code: 'PROFILE_MEMORY_DIRECTORY_MISMATCH',
+          path: paths.settingsPath,
+        }),
+      );
+    } else {
+      expect(result.status).toBe('valid');
+      expect(result.findings).not.toContainEqual(
+        expect.objectContaining({
+          code: 'PROFILE_MEMORY_DIRECTORY_MISMATCH',
+        }),
+      );
+    }
   });
 
   it('accepts exact POSIX auto memory settings on macOS-style app homes', async () => {

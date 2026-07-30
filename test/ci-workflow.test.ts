@@ -8,7 +8,7 @@ describe('cross-platform CI workflow', () => {
     const workflow = await readFile(join(process.cwd(), '.github', 'workflows', 'ci.yml'), 'utf8');
 
     expect(workflow).toContain('pull_request:');
-    expect(workflow).toContain('push:');
+    expect(workflow).toContain('push:\n    branches: [main]');
     expect(workflow).toContain('workflow_dispatch:');
     expect(workflow).toContain('os: [ubuntu-latest, macos-latest, windows-latest]');
     expect(workflow).toContain('node: [22, 24]');
