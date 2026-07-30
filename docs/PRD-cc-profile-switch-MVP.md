@@ -1,10 +1,16 @@
 # PRD: CC-Profile-Switch MVP
 
-> Current support note (2026-06-18): this MVP PRD was originally written around
-> the Windows implementation. The current product supports Windows and macOS
-> with the same profile, validation, launch, API reuse, and project-cwd
-> semantics. Windows paths in this document remain historical examples; macOS
-> uses `~/.cc-profile-switch`. Linux is still unsupported.
+> Current support note (updated 2026-07-30): this MVP PRD was originally written
+> around the Windows implementation. The current product supports Windows,
+> macOS, and Linux with the same profile, validation, launch, API reuse, and
+> project-cwd semantics. Windows paths remain historical examples; macOS and
+> Linux use `~/.cc-profile-switch`. Hosted CI is the compatibility gate.
+>
+> MCP architecture amendment (2026-07-30): current Claude Code profile-wide MCP
+> uses native `user` scope in `CLAUDE_CONFIG_DIR/.claude.json`, managed with
+> `claude mcp --scope user`. New profiles do not create `mcp.json` or pass
+> `--mcp-config`. Only a non-empty legacy profile `mcp.json` remains loadable
+> under an older profile's existing `merge`/`strict` setting.
 
 ## Product Overview
 
@@ -24,7 +30,7 @@ CC-Profile-Switch 是一个 Windows 和 macOS 本地 Claude Code 用户级全局
 
 ### What It Builds
 
-MVP 当前实现是一个 **Windows and macOS Node.js CLI**。
+MVP 当前实现是一个 **Windows, macOS, and Linux Node.js CLI**。
 
 用户可以在任意项目目录中执行：
 
@@ -146,13 +152,13 @@ plugins/
 
 例如：
 
-| 使用场景 | 用户真实需求 | 全局 coding 配置带来的问题 |
-|---|---|---|
-| coding | 项目开发、重构、测试 | 正常 |
-| study | 学习辅导、知识点讲解 | 容易被代码审查、工程流程污染 |
-| work | 文档整理、任务拆解 | 输出偏技术方案 |
-| research | 网页调研、资料归纳 | 过度关注实现，不够像调研助手 |
-| general | 临时通用任务 | 被默认当成开发任务处理 |
+| 使用场景 | 用户真实需求         | 全局 coding 配置带来的问题   |
+| -------- | -------------------- | ---------------------------- |
+| coding   | 项目开发、重构、测试 | 正常                         |
+| study    | 学习辅导、知识点讲解 | 容易被代码审查、工程流程污染 |
+| work     | 文档整理、任务拆解   | 输出偏技术方案               |
+| research | 网页调研、资料归纳   | 过度关注实现，不够像调研助手 |
+| general  | 临时通用任务         | 被默认当成开发任务处理       |
 
 ### Why Existing Manual Workflow Fails
 
@@ -271,7 +277,7 @@ ccps validate study
 profile.json
 claude-home\CLAUDE.md
 claude-home\settings.json
-mcp.json
+claude-home\rules\ccps-profile.md
 claude-home\skills\
 claude-home\agents\
 claude-home\plugins\
@@ -349,8 +355,9 @@ ccps init
             MEMORY.md
         skills\
         agents\
+        rules\
+          ccps-profile.md
         plugins\
-      mcp.json
     study\
     work\
     research\
@@ -365,7 +372,7 @@ ccps init
 [ ] 重复执行不会覆盖用户已有文件
 [ ] 默认 profile 都包含 claude-home
 [ ] 默认 profile 都包含 claude-home\memory\auto\MEMORY.md 和 claude-home\plugins
-[ ] 默认 settings.json 和 mcp.json 是合法 JSON
+[ ] 默认 settings.json 是合法 JSON，且存在 rules\ccps-profile.md
 [ ] settings.json 的 autoMemoryDirectory 指向本 profile 的 claude-home\memory\auto
 [ ] settings.json 默认包含 env.CLAUDE_CODE_ATTRIBUTION_HEADER=0
 [ ] 重复执行 init 会给已存在的默认 profile 补齐缺失的 CLAUDE_CODE_ATTRIBUTION_HEADER，且不覆盖已有 settings 字段
@@ -393,7 +400,7 @@ NAME       STATUS     LAST USED             DESCRIPTION
 coding     valid      2026-05-16 14:20      Coding global config profile
 study      valid      -                     Study global config profile
 work       valid      -                     Work global config profile
-research   warning    -                     Missing mcp.json
+research   warning    -                     Missing ccps profile boundary rule
 general    valid      -                     General lightweight profile
 ```
 
@@ -428,8 +435,9 @@ profiles\study-plus\
     settings.json
     skills\
     agents\
+    rules\
+      ccps-profile.md
     plugins\
-  mcp.json
 ```
 
 验收标准：
@@ -466,7 +474,7 @@ Files:
   ✓ profile.json
   ✓ claude-home\CLAUDE.md
   ✓ claude-home\settings.json
-  ✓ mcp.json
+  ✓ claude-home\rules\ccps-profile.md
 
 Directories:
   ✓ claude-home\skills\
@@ -501,7 +509,7 @@ Launch:
 ccps edit study
 ccps edit study CLAUDE.md
 ccps edit study settings.json
-ccps edit study mcp.json
+ccps edit study mcp.json # 仅编辑旧 profile 的 legacy 文件
 ccps edit study profile.json
 ccps edit study claude-home
 ccps edit study claude-home\skills
@@ -509,14 +517,15 @@ ccps edit study claude-home\skills
 
 文件映射：
 
-| 用户输入 | 实际打开 |
-|---|---|
-| `CLAUDE.md` | `profiles\<name>\claude-home\CLAUDE.md` |
-| `settings.json` | `profiles\<name>\claude-home\settings.json` |
-| `mcp.json` | `profiles\<name>\mcp.json` |
-| `profile.json` | `profiles\<name>\profile.json` |
-| 未指定文件 | 打开 profile 目录 |
-| profile 内已有相对路径 | 打开该文件或文件夹 |
+| 用户输入               | 实际打开                                    |
+| ---------------------- | ------------------------------------------- |
+| `CLAUDE.md`            | `profiles\<name>\claude-home\CLAUDE.md`     |
+| `settings.json`        | `profiles\<name>\claude-home\settings.json` |
+| `mcp.json`             | `profiles\<name>\mcp.json`（仅 legacy）     |
+| `rules`                | `profiles\<name>\claude-home\rules`         |
+| `profile.json`         | `profiles\<name>\profile.json`              |
+| 未指定文件             | 打开 profile 目录                           |
+| profile 内已有相对路径 | 打开该文件或文件夹                          |
 
 验收标准：
 
@@ -571,8 +580,8 @@ autoMemoryDirectory = profiles\coding\claude-home\memory\auto
 4. 设置 CLAUDE_CONFIG_DIR
 5. 合并 env：process.env < common api-settings.json < profile claude-home\settings.json env；新建 profile 默认带 CLAUDE_CODE_ATTRIBUTION_HEADER=0
 6. 默认添加 --dangerously-skip-permissions，除非 profile 显式关闭
-7. 通过 --mcp-config 加载 profile mcp.json
-8. 默认不使用 --strict-mcp-config，避免吞掉项目 MCP
+7. 默认使用 `CLAUDE_CONFIG_DIR/.claude.json` 中的原生 user-scope MCP，不传 MCP flag
+8. 仅旧 profile 的非空 `mcp.json` 按已有 `merge`/`strict` 设置加载
 9. 从当前 cwd 启动 claude
 ```
 
@@ -597,7 +606,7 @@ Environment:
   CLAUDE_CONFIG_DIR=C:\Users\h\.cc-profile-switch\profiles\coding\claude-home
 
 Command:
-  claude --dangerously-skip-permissions --mcp-config C:\Users\h\.cc-profile-switch\profiles\coding\mcp.json
+  claude --dangerously-skip-permissions
 
 Memory:
   user: C:\Users\h\.cc-profile-switch\profiles\coding\claude-home\CLAUDE.md
@@ -642,18 +651,18 @@ ccps validate study
 
 校验项：
 
-| 校验项 | 说明 |
-|---|---|
-| profile 目录存在 | `profiles\<name>` |
-| 用户级配置目录存在 | `claude-home\` |
-| 核心文件存在 | `claude-home\CLAUDE.md`、`claude-home\settings.json`、`mcp.json` |
-| JSON 合法性 | `profile.json`、`claude-home\settings.json`、`mcp.json` |
-| memory 目录 | `claude-home\memory\auto\MEMORY.md` |
-| auto memory 指向 | `claude-home\settings.json` 的 `autoMemoryDirectory` 必须指向本 profile 的 `claude-home\memory\auto` |
-| skills 目录 | `claude-home\skills\` |
-| agents 目录 | `claude-home\agents\` |
-| plugins 目录 | `claude-home\plugins\` |
-| 路径安全 | 不允许路径穿越 |
+| 校验项             | 说明                                                                                                 |
+| ------------------ | ---------------------------------------------------------------------------------------------------- |
+| profile 目录存在   | `profiles\<name>`                                                                                    |
+| 用户级配置目录存在 | `claude-home\`                                                                                       |
+| 核心文件存在       | `claude-home\CLAUDE.md`、`claude-home\settings.json`、`claude-home\rules\ccps-profile.md`             |
+| JSON 合法性        | `profile.json`、`claude-home\settings.json`；legacy `mcp.json` 存在时也校验                            |
+| memory 目录        | `claude-home\memory\auto\MEMORY.md`                                                                  |
+| auto memory 指向   | `claude-home\settings.json` 的 `autoMemoryDirectory` 必须指向本 profile 的 `claude-home\memory\auto` |
+| skills 目录        | `claude-home\skills\`                                                                                |
+| agents 目录        | `claude-home\agents\`                                                                                |
+| plugins 目录       | `claude-home\plugins\`                                                                               |
+| 路径安全           | 不允许路径穿越                                                                                       |
 
 `ccps validate` 只判断 profile 结构是否足够让 Claude Code 正常使用和正常启动。它不做敏感文件名审计，也不因为 `token`、`secret`、`credential`、`oauth`、`.claude.json`、`session`、`history`、`cache`、`log`、`transcript` 这类文件名改变 profile 状态。
 
@@ -689,7 +698,8 @@ ccps backup coding
 ```text
 profile.json
 claude-home\
-mcp.json
+  rules\
+    ccps-profile.md
 ```
 
 验收标准：
@@ -733,7 +743,6 @@ OAuth/session 迁移
 Claude Code 历史会话管理
 插件市场
 自动下载插件
-Linux 支持
 项目配置切换
 项目配置覆盖
 纯隔离 runtime 模式
@@ -754,16 +763,16 @@ APPENDIX-CC-Profile-Switch-Roadmap.md
 
 ### Launch Success Metrics (First 30 Days)
 
-| 指标 | 目标 |
-|---|---|
-| 默认 profiles 创建成功 | `ccps init` 后生成 5 个默认 profile |
-| 当前项目目录启动成功 | 用户可在任意项目目录执行 `ccps launch coding` |
-| 用户级配置切换成功 | `CLAUDE_CONFIG_DIR` 指向目标 profile 的 `claude-home` |
-| 项目配置保留成功 | 当前项目的 `CLAUDE.md` / `.claude` 继续生效 |
-| 原全局配置不被改动 | 不直接覆盖 `C:\Users\h\.claude` |
-| 校验可用 | 能发现非法 JSON 和缺失文件 |
-| 备份可用 | 能完整备份 profile |
-| dry-run 可用 | 能展示 cwd、CLAUDE_CONFIG_DIR、命令参数 |
+| 指标                   | 目标                                                  |
+| ---------------------- | ----------------------------------------------------- |
+| 默认 profiles 创建成功 | `ccps init` 后生成 5 个默认 profile                   |
+| 当前项目目录启动成功   | 用户可在任意项目目录执行 `ccps launch coding`         |
+| 用户级配置切换成功     | `CLAUDE_CONFIG_DIR` 指向目标 profile 的 `claude-home` |
+| 项目配置保留成功       | 当前项目的 `CLAUDE.md` / `.claude` 继续生效           |
+| 原全局配置不被改动     | 不直接覆盖 `C:\Users\h\.claude`                       |
+| 校验可用               | 能发现非法 JSON 和缺失文件                            |
+| 备份可用               | 能完整备份 profile                                    |
+| dry-run 可用           | 能展示 cwd、CLAUDE_CONFIG_DIR、命令参数               |
 
 ### Growth Metrics (Months 2-3)
 
@@ -817,7 +826,7 @@ NAME       STATUS     LAST USED             DESCRIPTION
 coding     valid      2026-05-16 14:20      Coding user config profile
 study      valid      -                     Study user config profile
 work       valid      -                     Work user config profile
-research   warning    -                     Missing mcp.json
+research   warning    -                     Missing ccps profile boundary rule
 general    valid      -                     General lightweight profile
 ```
 
@@ -842,7 +851,7 @@ Environment:
   CLAUDE_CONFIG_DIR=C:\Users\h\.cc-profile-switch\profiles\coding\claude-home
 
 Command:
-  claude --mcp-config C:\Users\h\.cc-profile-switch\profiles\coding\mcp.json
+  claude --dangerously-skip-permissions
 
 No command executed.
 ```
@@ -854,8 +863,8 @@ No command executed.
 ### Platform
 
 ```text
-Windows and macOS
-PowerShell / Windows Terminal and macOS Terminal first
+Windows, macOS, and Linux
+PowerShell / Windows Terminal and POSIX terminals
 Node.js CLI
 ```
 
@@ -889,8 +898,9 @@ tsup
             MEMORY.md
         skills\
         agents\
+        rules\
+          ccps-profile.md
         plugins\
-      mcp.json
     study\
     work\
     research\
@@ -925,27 +935,23 @@ Project scope: preserved
 
 ### MCP Strategy
 
-MVP 默认：
+当前默认：
 
 ```text
-mcpMode = merge
+claude mcp add --scope user
+CLAUDE_CONFIG_DIR=<profile>\claude-home
 ```
 
 含义：
 
 ```text
-如果 profile 中存在 mcp.json，则通过 --mcp-config 指定
-默认不加 --strict-mcp-config
-避免误伤项目级 MCP
+profile-wide MCP 写入 <profile>\claude-home\.claude.json
+项目 .mcp.json 仍由启动 cwd 控制
+settings.json 不接受 mcpServers
+新 profile 不创建或传递 profile mcp.json
 ```
 
-可选：
-
-```text
-ccps launch coding --strict-mcp
-```
-
-该选项可以进入 nice-to-have，但不是默认行为。
+旧 profile 的非空 `mcp.json` 仍可按 legacy `mcpMode` 加载；strict 仅是兼容行为，不是新配置入口。
 
 ### Critical Verification
 
@@ -1024,9 +1030,8 @@ launch 必须支持 --dry-run
 ### Platform Constraints
 
 ```text
-只做 Windows 和 macOS
-PowerShell / Windows Terminal 与 macOS Terminal 优先
-不考虑 Linux
+支持 Windows、macOS 和 Linux
+PowerShell / Windows Terminal 与 POSIX Terminal
 ```
 
 ### Security Constraints
@@ -1063,7 +1068,7 @@ ccps init 会把 C:\Users\h\.claude\settings.json 中字符串类型的 env.ANTH
 1. CLAUDE_CONFIG_DIR 会让 profile 的 claude-home 替代真实用户级 CLAUDE.md/settings/agents/skills。
 2. 无显式 API 设置时，隔离 profile 会提示 Not logged in，说明认证状态呈现为 profile 特有。
 3. Claude Code 会在 profile 的 claude-home 下创建 session-env/sessions 等状态；validate 不审计这些运行时文件名，也不阻止。
-4. --mcp-config merge 模式下 profile MCP 与项目 MCP 共存；strict 模式只加载 profile MCP。
+4. Claude Code `2.1.220` 下，`claude mcp add --scope user` 在设置 `CLAUDE_CONFIG_DIR` 时写入该目录的 `.claude.json`；旧 `--mcp-config` merge/strict 仅保留兼容。
 5. 用户级 plugins 位于 profile 的 claude-home\plugins；launch.pluginDirs 仅作为额外 session plugin-dir。
 6. autoMemoryDirectory 固定为 profile 的 claude-home\memory\auto，避免 memory 串 profile。
 ```
@@ -1106,7 +1111,7 @@ GUI
 [ ] ccps list 可以列出 profiles
 [ ] ccps create 可以创建新 profile
 [ ] ccps show 可以展示 profile 状态
-[x] ccps edit 可以用新的 VS Code 窗口打开 profile 目录、claude-home\CLAUDE.md、settings.json、mcp.json、profile.json 和 profile 内已有目标
+[x] ccps edit 可以用新的 VS Code 窗口打开 profile 目录、claude-home\CLAUDE.md、settings.json、rules、profile.json、仅 legacy 的 mcp.json 和 profile 内已有目标
 [x] ccps validate 可以校验 JSON、必需文件/目录、auto memory 指向和 launch 路径安全
 [ ] ccps backup 可以备份 profile
 [x] ccps launch 可以在当前项目目录启动 Claude Code

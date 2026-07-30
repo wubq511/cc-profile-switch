@@ -2,7 +2,7 @@
 name: ccps-create-profile
 description: >
   Create a new ccps (cc-profile-switch) profile — a complete Claude Code environment
-  with CLAUDE.md, skills, agents, MCP config, and settings. TRIGGER on: "create/set up/build
+  with CLAUDE.md, skills, agents, native user-scope MCP config, and settings. TRIGGER on: "create/set up/build
   a profile for X", "I need a profile for", "新建 profile", "帮我创建一个 profile",
   "配一个专用的 Claude 环境", "make me a coding/writing/research profile", even without
   "ccps" explicitly mentioned. Also trigger for customizing an existing profile's CLAUDE.md
@@ -16,12 +16,14 @@ description: >
 你帮助用户创建一个**完成度高、配置全面**的 ccps (cc-profile-switch) profile。
 
 一个 ccps profile 不只是 CLAUDE.md。完整的 profile 包含：
+
 - **CLAUDE.md** — 用户级指令（核心）
 - **skills/** — Profile 专属技能
 - **agents/** — Profile 专属子代理
-- **mcp.json** — MCP 服务器配置
+- **rules/ccps-profile.md** — ccps 托管的 profile 边界规则
+- **Claude user-scope MCP** — 由 `claude mcp --scope user` 管理，状态位于 `claude-home/.claude.json`
 - **settings.json** — 环境变量和其他设置
-- **profile.json** — 启动配置（mcpMode, skipPermissions, claudeArgs）
+- **profile.json** — 启动配置（skipPermissions, claudeArgs；mcpMode 仅兼容旧 profile）
 
 你的目标是根据用户需求，配置**所有这些组件**，而不是只写一个 CLAUDE.md。
 
@@ -31,6 +33,7 @@ description: >
 
 如果用户已经描述了用途（如"帮我创建一个写技术博客的 profile"），直接进入阶段 2。
 否则问 2-3 个问题：
+
 1. 这个 profile 主要做什么？
 2. 有没有特定的工具/集成需求？
 3. 权限偏好（是否跳过确认提示）？
@@ -49,17 +52,23 @@ ccps create <name> --template <template>
 这是最重要的文件。根据用户需求生成高质量的 CLAUDE.md。
 
 **结构要求：**
+
 ```markdown
 # <Profile Name> Profile
 
 ## Identity & Role
+
 ## Workflow
+
 ## Conventions
+
 ## Tools & Context
+
 ## Constraints
 ```
 
 **质量要求：**
+
 - 解释 WHY，不只是 WHAT。"用短段落因为读者在手机上扫读"优于"用短段落"
 - 写操作性语句，不写模糊要求。"提交前运行 `pytest`"优于"测试你的改动"
 - 每个技术栈都要有具体的代码规范、目录结构、命名约定
@@ -80,10 +89,13 @@ ccps create <name> --template <template>
 除非用户明确拒绝，否则**推荐配置**。skills 是 profile 高完成度的关键组件。
 
 如果用户同意，读取子 Skill：
+
 ```
 Read: <skill-path>/sub-skills/ccps-find-skills.md
 ```
+
 然后按子 Skill 的指引操作。简要流程：
+
 1. 使用 `npx skills find` 搜索 skills.sh 生态中的高质量 skills
 2. 验证质量（安装量、来源信誉、GitHub stars）
 3. 推荐给用户（1-3 个），用户确认后安装到 profile
@@ -96,10 +108,13 @@ Read: <skill-path>/sub-skills/ccps-find-skills.md
 除非用户明确拒绝，否则**推荐配置**。agents 提供隔离执行和专项能力。
 
 如果用户同意，读取子 Skill：
+
 ```
 Read: <skill-path>/sub-skills/ccps-configure-agents.md
 ```
+
 简要流程：
+
 1. 根据用途推荐合适的 agents（1-2 个）
 2. 生成 agent markdown 文件，包含完整的 frontmatter（name, description, model, tools, maxTurns, color 等）
 3. 写入 `<profile>/claude-home/agents/<agent-name>.md`
@@ -109,23 +124,29 @@ Read: <skill-path>/sub-skills/ccps-configure-agents.md
 **询问用户：** "需要配置 MCP 服务器吗？（如数据库、API 集成、浏览器自动化等）"
 
 如果用户同意，读取子 Skill：
+
 ```
 Read: <skill-path>/sub-skills/ccps-configure-mcp.md
 ```
+
 简要流程：
+
 1. 根据用户的技术栈推荐 MCP 服务器
-2. 用户确认后，更新 `<profile>/mcp.json`
-3. 如果需要 strict 模式，更新 profile.json 的 mcpMode
+2. 用户确认后，用目标 profile 的 `CLAUDE_CONFIG_DIR` 运行 `claude mcp add --scope user`
+3. 用同一 `CLAUDE_CONFIG_DIR` 运行 `claude mcp list/get` 验证
 
 ### 阶段 7：配置 Settings（推荐）
 
 **询问用户：** "需要配置环境变量或其他设置吗？"
 
 如果用户需要，读取子 Skill：
+
 ```
 Read: <skill-path>/sub-skills/ccps-configure-settings.md
 ```
+
 简要流程：
+
 1. 根据用户需求添加 env 变量到 settings.json
 2. 调整 launch 配置（skipPermissions, claudeArgs 等）
 3. **skipPermissions 默认策略**：所有 profile 默认设为 `true`。ccps 用户已经通过 profile 隔离做了权限边界，再加确认提示会打断工作流。如果用户明确要求某类 profile 保持确认，才设为 `false`
@@ -138,15 +159,18 @@ ccps show <name>
 ```
 
 展示给用户：
+
 - Profile 名称和模板
 - CLAUDE.md 的关键章节
 - 已安装的 skills、agents
-- MCP 服务器配置
+- 原生 user-scope MCP 服务器配置
 - 启动命令：`ccps launch <name>` 或 `ccps launch <name> --dry-run`
 
 ## 重要约束
 
-- 不读写真实的 `~/.claude` 目录
+- 不读写真实的 `~/.claude` 目录或真实的 `~/.claude.json`
+- 不直接编辑 `<profile>/claude-home/.claude.json`；必须通过 `claude mcp` 管理
+- 不把 profile MCP 写入 `settings.json.mcpServers`、`<profile>/mcp.json` 或 `claude-home/.mcp.json`
 - 不设置 API 密钥或 secrets
 - 不添加用户未请求的 MCP 服务器
 - Profile 名称必须是文件系统安全的：`[A-Za-z0-9][A-Za-z0-9_-]*`

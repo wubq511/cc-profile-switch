@@ -1,27 +1,34 @@
 # Technical Design Document: CC-Profile-Switch MVP
 
 > Current support note (2026-06-18): this technical design was originally
-> written around the Windows MVP. The current implementation supports Windows
-> and macOS with the same app-home/profile/launch semantics. Windows paths remain
-> valid examples; macOS uses `~/.cc-profile-switch`. Linux remains unsupported.
+> written around the Windows MVP. The current implementation supports Windows,
+> macOS, and Linux with the same app-home/profile/launch semantics. Windows paths
+> remain valid examples; macOS/Linux use `~/.cc-profile-switch`. Hosted CI is the
+> compatibility gate.
+>
+> MCP architecture amendment (2026-07-30): current profile-wide MCP uses Claude
+> Code native `user` scope in `CLAUDE_CONFIG_DIR/.claude.json`, managed through
+> `claude mcp --scope user`. New profiles do not create `mcp.json` or pass
+> `--mcp-config`. Non-empty legacy files remain loadable under older profiles'
+> existing `merge`/`strict` setting.
 
 ## 0. 文档信息
 
-| 项目 | 内容 |
-|---|---|
-| 产品名称 | CC-Profile-Switch |
-| CLI 命令 | `ccps` |
-| 文档类型 | MVP 技术设计文档 |
-| 目标用户 | Vibe-coder：AI 写全部代码，用户负责指导、测试、验收 |
-| 使用平台 | Windows 和 macOS 本地 CLI |
-| 技术形态 | Node.js CLI |
-| 推荐语言 | TypeScript |
-| MVP 是否包含 TUI | 不包含 |
-| MVP 是否包含 GUI | 不包含 |
-| 产品是否内置 AI | 不内置 |
-| 预算 | Free only |
-| 时间节奏 | 不着急，以稳定、安全、可维护为主 |
-| 关键变更 | 默认不再使用 Runtime Project Isolation；改为 Global User Config Switch Mode |
+| 项目             | 内容                                                                        |
+| ---------------- | --------------------------------------------------------------------------- |
+| 产品名称         | CC-Profile-Switch                                                           |
+| CLI 命令         | `ccps`                                                                      |
+| 文档类型         | MVP 技术设计文档                                                            |
+| 目标用户         | Vibe-coder：AI 写全部代码，用户负责指导、测试、验收                         |
+| 使用平台         | Windows 和 macOS 本地 CLI                                                   |
+| 技术形态         | Node.js CLI                                                                 |
+| 推荐语言         | TypeScript                                                                  |
+| MVP 是否包含 TUI | 不包含                                                                      |
+| MVP 是否包含 GUI | 不包含                                                                      |
+| 产品是否内置 AI  | 不内置                                                                      |
+| 预算             | Free only                                                                   |
+| 时间节奏         | 不着急，以稳定、安全、可维护为主                                            |
+| 关键变更         | 默认不再使用 Runtime Project Isolation；改为 Global User Config Switch Mode |
 
 ---
 
@@ -70,22 +77,22 @@ AI writes all code
 
 ### 1.4 Key Technical Decisions
 
-| 项目 | 决策 |
-|---|---|
-| Frontend | 无前端；MVP 不做 GUI / TUI |
-| Backend | 无后端；本地 CLI 工具 |
-| Database | 无数据库；使用本地文件系统 |
-| Language | TypeScript |
-| Runtime | Node.js LTS |
-| CLI Framework | Commander |
-| Main command | `ccps` |
-| Profile root | `%USERPROFILE%\.cc-profile-switch` |
-| Default launch mode | Global User Config Switch Mode |
-| Project config behavior | 保留当前项目配置，不覆盖、不隔离、不修改 |
-| Global config behavior | 通过 `CLAUDE_CONFIG_DIR` 切换用户级 `~/.claude` 来源 |
-| MCP behavior | 默认尽量保留项目 MCP；profile MCP 以 merge/additive 方式加载，strict 仅作为可选模式 |
-| Auth/session behavior | 不复制、不迁移、不管理 OAuth/session/token/history/cache |
-| Product AI | 工具本身不调用 AI，不内置模型功能 |
+| 项目                    | 决策                                                                                |
+| ----------------------- | ----------------------------------------------------------------------------------- |
+| Frontend                | 无前端；MVP 不做 GUI / TUI                                                          |
+| Backend                 | 无后端；本地 CLI 工具                                                               |
+| Database                | 无数据库；使用本地文件系统                                                          |
+| Language                | TypeScript                                                                          |
+| Runtime                 | Node.js LTS                                                                         |
+| CLI Framework           | Commander                                                                           |
+| Main command            | `ccps`                                                                              |
+| Profile root            | `%USERPROFILE%\.cc-profile-switch`                                                  |
+| Default launch mode     | Global User Config Switch Mode                                                      |
+| Project config behavior | 保留当前项目配置，不覆盖、不隔离、不修改                                            |
+| Global config behavior  | 通过 `CLAUDE_CONFIG_DIR` 切换用户级 `~/.claude` 来源                                |
+| MCP behavior            | 默认尽量保留项目 MCP；profile MCP 以 merge/additive 方式加载，strict 仅作为可选模式 |
+| Auth/session behavior   | 不复制、不迁移、不管理 OAuth/session/token/history/cache                            |
+| Product AI              | 工具本身不调用 AI，不内置模型功能                                                   |
 
 ### 1.5 Main Concern
 
@@ -114,7 +121,7 @@ Making wrong tech choices
 
 ### Primary Recommendation
 
-使用 **Node.js + TypeScript + Commander** 构建一个 Windows and macOS CLI。
+使用 **Node.js + TypeScript + Commander** 构建一个 Windows、macOS 和 Linux CLI。
 
 核心启动方式：
 
@@ -232,13 +239,13 @@ SaaS 后端
 
 ## 3. Alternative Options Compared
 
-| Option | Pros | Cons | Cost | Time to MVP | Recommendation |
-|---|---|---|---|---|---|
-| Global User Config Switch Mode | 符合用户真实需求；保留项目配置；只切换全局配置；用户可在项目目录直接运行 | 需要验证 `CLAUDE_CONFIG_DIR` 与 auth/MCP 的实际行为 | Free | 中等 | **MVP 主方案** |
-| Runtime Project Isolation | 隔离最强；不会加载项目配置污染 profile | 不符合当前需求；用户不能自然地在项目目录使用；项目配置被绕开 | Free | 中等偏高 | 不作为默认方案 |
-| Direct Copy/Swap `C:\Users\h\.claude` | 看起来最直观；实现简单 | 极高风险；可能破坏登录、history、cache、OAuth/session；不适合开源 | Free | 快 | **禁止** |
-| PowerShell-only Launcher | 实现最快；Windows 原生 | 工程化弱；测试差；开源维护困难 | Free | 快 | 只作为辅助思路 |
-| GUI/TUI Config Manager | 体验可能更友好 | 超出 MVP；增加复杂度；不符合当前要求 | Free/不确定 | 慢 | 不做 |
+| Option                                | Pros                                                                     | Cons                                                              | Cost        | Time to MVP | Recommendation |
+| ------------------------------------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------- | ----------- | ----------- | -------------- |
+| Global User Config Switch Mode        | 符合用户真实需求；保留项目配置；只切换全局配置；用户可在项目目录直接运行 | 需要验证 `CLAUDE_CONFIG_DIR` 与 auth/MCP 的实际行为               | Free        | 中等        | **MVP 主方案** |
+| Runtime Project Isolation             | 隔离最强；不会加载项目配置污染 profile                                   | 不符合当前需求；用户不能自然地在项目目录使用；项目配置被绕开      | Free        | 中等偏高    | 不作为默认方案 |
+| Direct Copy/Swap `C:\Users\h\.claude` | 看起来最直观；实现简单                                                   | 极高风险；可能破坏登录、history、cache、OAuth/session；不适合开源 | Free        | 快          | **禁止**       |
+| PowerShell-only Launcher              | 实现最快；Windows 原生                                                   | 工程化弱；测试差；开源维护困难                                    | Free        | 快          | 只作为辅助思路 |
+| GUI/TUI Config Manager                | 体验可能更友好                                                           | 超出 MVP；增加复杂度；不符合当前要求                              | Free/不确定 | 慢          | 不做           |
 
 ---
 
@@ -288,8 +295,9 @@ D:\Projects\my-app
         MEMORY.md
     agents\
     skills\
+    rules\
+      ccps-profile.md
     plugins\
-  mcp.json
 
 ccps launch coding
 
@@ -304,27 +312,28 @@ spawn:
 
 默认期望：
 
-| 来源 | 是否加载 | 说明 |
-|---|---:|---|
-| 当前项目 `CLAUDE.md` | 是 | 项目级配置应继续生效 |
-| 当前项目 `.claude/CLAUDE.md` | 是 | 项目级配置应继续生效 |
-| 当前项目 `.claude/settings.json` | 是 | 项目级配置应继续生效 |
-| 当前项目 `.claude/settings.local.json` | 是 | 用户在该项目的本地设置应继续生效 |
-| 当前项目 `.claude/agents` | 是 | 项目级 agents 应继续生效 |
-| 当前项目 `.claude/skills` | 是 | 项目级 skills 应继续生效 |
-| 当前项目 `.mcp.json` | 是，需验证 | 不应被默认 strict MCP 屏蔽 |
-| 真实 `C:\Users\h\.claude\CLAUDE.md` | 否 | 应由 profile 的 `claude-home\CLAUDE.md` 替代 |
-| 真实 `C:\Users\h\.claude\settings.json` | 否 | 应由 profile 的 `claude-home\settings.json` 替代 |
-| 真实 `C:\Users\h\.claude\agents` | 否 | 应由 profile 的 `claude-home\agents` 替代 |
-| 真实 `C:\Users\h\.claude\skills` | 否 | 应由 profile 的 `claude-home\skills` 替代 |
-| profile `claude-home\CLAUDE.md` | 是 | 作为当前场景的用户级全局 instructions |
-| profile `claude-home\settings.json` | 是 | 作为当前场景的用户级 settings |
-| profile `claude-home\agents` | 是 | 作为当前场景的用户级 agents |
-| profile `claude-home\skills` | 是 | 作为当前场景的用户级 skills |
-| profile `claude-home\memory\auto` | 是 | 作为当前场景的 auto memory 写入位置 |
-| profile `claude-home\plugins` | 是 | Claude Code 自己安装/管理的用户级 plugins |
-| profile `mcp.json` | 是，默认 merge/additive | 作为当前场景的全局 MCP 候选配置 |
-| profile `launch.pluginDirs` | 可选 | 额外 `--plugin-dir`，路径相对 `claude-home` 解析 |
+| 来源                                    |                是否加载 | 说明                                             |
+| --------------------------------------- | ----------------------: | ------------------------------------------------ |
+| 当前项目 `CLAUDE.md`                    |                      是 | 项目级配置应继续生效                             |
+| 当前项目 `.claude/CLAUDE.md`            |                      是 | 项目级配置应继续生效                             |
+| 当前项目 `.claude/settings.json`        |                      是 | 项目级配置应继续生效                             |
+| 当前项目 `.claude/settings.local.json`  |                      是 | 用户在该项目的本地设置应继续生效                 |
+| 当前项目 `.claude/agents`               |                      是 | 项目级 agents 应继续生效                         |
+| 当前项目 `.claude/skills`               |                      是 | 项目级 skills 应继续生效                         |
+| 当前项目 `.mcp.json`                    |              是，需验证 | 不应被默认 strict MCP 屏蔽                       |
+| 真实 `C:\Users\h\.claude\CLAUDE.md`     |                      否 | 应由 profile 的 `claude-home\CLAUDE.md` 替代     |
+| 真实 `C:\Users\h\.claude\settings.json` |                      否 | 应由 profile 的 `claude-home\settings.json` 替代 |
+| 真实 `C:\Users\h\.claude\agents`        |                      否 | 应由 profile 的 `claude-home\agents` 替代        |
+| 真实 `C:\Users\h\.claude\skills`        |                      否 | 应由 profile 的 `claude-home\skills` 替代        |
+| profile `claude-home\CLAUDE.md`         |                      是 | 作为当前场景的用户级全局 instructions            |
+| profile `claude-home\settings.json`     |                      是 | 作为当前场景的用户级 settings                    |
+| profile `claude-home\agents`            |                      是 | 作为当前场景的用户级 agents                      |
+| profile `claude-home\skills`            |                      是 | 作为当前场景的用户级 skills                      |
+| profile `claude-home\memory\auto`       |                      是 | 作为当前场景的 auto memory 写入位置              |
+| profile `claude-home\plugins`           |                      是 | Claude Code 自己安装/管理的用户级 plugins        |
+| profile `claude-home\.claude.json`      |       是，由 Claude 管理 | 原生 user-scope MCP 与其他 Claude 用户状态       |
+| profile `mcp.json`                      |        仅 legacy、非空时 | 旧 ccps `--mcp-config` 兼容输入                  |
+| profile `launch.pluginDirs`             |                    可选 | 额外 `--plugin-dir`，路径相对 `claude-home` 解析 |
 
 ---
 
@@ -363,9 +372,9 @@ C:\Users\h\.cc-profile-switch\
             MEMORY.md
         skills\
         agents\
+        rules\
+          ccps-profile.md
         plugins\
-
-      mcp.json
 
     study\
       profile.json
@@ -377,8 +386,9 @@ C:\Users\h\.cc-profile-switch\
             MEMORY.md
         skills\
         agents\
+        rules\
+          ccps-profile.md
         plugins\
-      mcp.json
 
     work\
     research\
@@ -397,7 +407,8 @@ profiles\coding\
   settings.json
   skills\
   agents\
-  mcp.json
+  rules\
+    ccps-profile.md
   plugins\
 ```
 
@@ -413,8 +424,9 @@ profiles\coding\
         MEMORY.md
     skills\
     agents\
+    rules\
+      ccps-profile.md
     plugins\
-  mcp.json
 ```
 
 原因：
@@ -437,15 +449,15 @@ profiles\coding\
 
 ```ts
 type AppConfig = {
-  version: string
-  profilesDir: string
-  backupsDir: string
-  defaultProfile: string
-  editor: string
-  lastUsedProfile: string
-  createdAt: string
-  updatedAt: string
-}
+  version: string;
+  profilesDir: string;
+  backupsDir: string;
+  defaultProfile: string;
+  editor: string;
+  lastUsedProfile: string;
+  createdAt: string;
+  updatedAt: string;
+};
 ```
 
 示例：
@@ -475,20 +487,20 @@ profiles\<name>\profile.json
 
 ```ts
 type ProfileManifest = {
-  name: string
-  description: string
-  template: 'coding' | 'study' | 'work' | 'research' | 'general' | 'blank' | string
-  version: string
-  createdAt: string
-  updatedAt: string
+  name: string;
+  description: string;
+  template: 'coding' | 'study' | 'work' | 'research' | 'general' | 'blank' | string;
+  version: string;
+  createdAt: string;
+  updatedAt: string;
   launch: {
-    mcpMode: 'merge' | 'strict' | 'off'
-    pluginDirs: string[]
-    disableAutoMemory: boolean
-    skipPermissions: boolean
-    claudeArgs: string[]
-  }
-}
+    mcpMode: 'merge' | 'strict' | 'none';
+    pluginDirs: string[];
+    disableAutoMemory: boolean;
+    skipPermissions: boolean;
+    claudeArgs: string[];
+  };
+};
 ```
 
 示例：
@@ -502,7 +514,7 @@ type ProfileManifest = {
   "createdAt": "2026-05-16T00:00:00.000Z",
   "updatedAt": "2026-05-16T00:00:00.000Z",
   "launch": {
-    "mcpMode": "merge",
+    "mcpMode": "none",
     "pluginDirs": [],
     "disableAutoMemory": false,
     "skipPermissions": true,
@@ -603,17 +615,18 @@ MVP 只校验：
 %USERPROFILE%\.claude\agents\
 ```
 
-## 5.10 `mcp.json`
+## 5.10 Native user-scope MCP
 
 作用：
 
 ```text
-当前 profile 的 MCP 配置文件
+当前 profile 跨项目使用的 MCP server
 ```
 
-注意：
-
-MCP 的 merge/strict 行为已通过 Claude Code `2.1.143` 验证。MVP 默认不使用 `--strict-mcp-config`，因为 strict 会让项目级 `.mcp.json` 不再加载，不符合“项目配置继续生效”的目标。
+Claude Code `2.1.220` 下，设置 `CLAUDE_CONFIG_DIR=<profile>\claude-home` 后运行
+`claude mcp add --scope user`，配置写入 `<profile>\claude-home\.claude.json`。
+`.mcp.json` 只用于项目 scope；`settings.json.mcpServers` 无效。旧 profile 根
+`mcp.json` 仅保留非空文件的 launch 兼容。
 
 ## 5.11 `claude-home\plugins\`
 
@@ -714,7 +727,8 @@ Prompt for AI:
 实现 `ccps init`。
 
 要求：
-- 只支持 Windows
+
+- 支持 Windows、macOS 和 Linux
 - 默认根目录是 `%USERPROFILE%\.cc-profile-switch`
 - 创建 config.json
 - 创建 profiles/coding、profiles/study、profiles/work、profiles/research、profiles/general
@@ -724,8 +738,8 @@ Prompt for AI:
   - claude-home/settings.json
   - claude-home/skills/
   - claude-home/agents/
-  - mcp.json
-  - plugins/
+  - claude-home/rules/ccps-profile.md
+  - claude-home/plugins/
 - 重复执行不得覆盖用户已有文件
 - 输出清晰的 next steps
 ```
@@ -769,6 +783,7 @@ Prompt for AI:
 实现 `ccps list`。
 
 要求：
+
 - 读取 `%USERPROFILE%\.cc-profile-switch\profiles`
 - 列出 profile name、description、status
 - 如果未初始化，提示用户运行 `ccps init`
@@ -804,7 +819,8 @@ Prompt for AI:
 实现 `ccps create <name> --template <template>`。
 
 要求：
-- profile name 只允许 a-z A-Z 0-9 - _
+
+- profile name 只允许 a-z A-Z 0-9 - \_
 - 不允许覆盖已有 profile
 - 默认 template 是 blank
 - 支持 coding/study/work/research/general/blank
@@ -834,7 +850,7 @@ CLAUDE.md exists?
 settings.json valid?
 skills dir exists?
 agents dir exists?
-mcp.json valid?
+ccps profile boundary rule exists?
 plugins dir exists?
 ```
 
@@ -858,7 +874,7 @@ Medium
 profile.json
 CLAUDE.md
 settings.json
-mcp.json
+rules
 claude-home
 memory
 memory\auto
@@ -871,16 +887,17 @@ plugins
 
 ### File mapping
 
-| 用户输入 | 实际路径 |
-|---|---|
-| `CLAUDE.md` | `profiles\<name>\claude-home\CLAUDE.md` |
-| `settings.json` | `profiles\<name>\claude-home\settings.json` |
-| `mcp.json` | `profiles\<name>\mcp.json` |
-| `profile.json` | `profiles\<name>\profile.json` |
-| `claude-home` | `profiles\<name>\claude-home` |
-| `skills` | `profiles\<name>\claude-home\skills` |
-| 未指定 | `profiles\<name>` |
-| profile 内已有相对路径 | 对应文件或文件夹 |
+| 用户输入               | 实际路径                                    |
+| ---------------------- | ------------------------------------------- |
+| `CLAUDE.md`            | `profiles\<name>\claude-home\CLAUDE.md`     |
+| `settings.json`        | `profiles\<name>\claude-home\settings.json` |
+| `mcp.json`             | `profiles\<name>\mcp.json`（仅 legacy）     |
+| `rules`                | `profiles\<name>\claude-home\rules`         |
+| `profile.json`         | `profiles\<name>\profile.json`              |
+| `claude-home`          | `profiles\<name>\claude-home`               |
+| `skills`               | `profiles\<name>\claude-home\skills`        |
+| 未指定                 | `profiles\<name>`                           |
+| profile 内已有相对路径 | 对应文件或文件夹                            |
 
 ---
 
@@ -911,7 +928,7 @@ settings.json autoMemoryDirectory points to claude-home/memory/auto
 claude-home/skills exists
 claude-home/agents exists
 claude-home/plugins exists
-mcp.json is valid JSON object
+legacy mcp.json is valid JSON when present
 no path traversal
 ```
 
@@ -947,7 +964,7 @@ transcript
 missing profile
 invalid profile.json
 invalid settings.json
-invalid mcp.json
+invalid legacy mcp.json when present
 missing CLAUDE.md
 path traversal
 ```
@@ -977,8 +994,9 @@ Easy-Medium
 ```text
 profile.json
 claude-home\
-mcp.json
-plugins\
+  rules\
+    ccps-profile.md
+  plugins\
 ```
 
 ---
@@ -1015,27 +1033,27 @@ spawn claude from cwd
 
 ```ts
 async function launchProfile(name: string, options: LaunchOptions) {
-  const cwd = options.cwd ? resolveAbsolute(options.cwd) : process.cwd()
-  const profile = await getProfile(name)
+  const cwd = options.cwd ? resolveAbsolute(options.cwd) : process.cwd();
+  const profile = await getProfile(name);
 
-  const validation = await validateProfile(name)
+  const validation = await validateProfile(name);
   if (validation.level === 'error') {
-    throw new CcpsError('PROFILE_INVALID', 'Fix validation errors before launch')
+    throw new CcpsError('PROFILE_INVALID', 'Fix validation errors before launch');
   }
 
   const plan = buildLaunchPlan({
     profile,
     cwd,
     dryRun: options.dryRun,
-    debug: options.debug
-  })
+    debug: options.debug,
+  });
 
   if (options.dryRun) {
-    printLaunchPlan(plan)
-    return
+    printLaunchPlan(plan);
+    return;
   }
 
-  await executeLaunchPlan(plan)
+  await executeLaunchPlan(plan);
 }
 ```
 
@@ -1058,16 +1076,16 @@ Global User Config Switch Mode =
 
 ```ts
 type LaunchPlan = {
-  profileName: string
-  profilePath: string
-  claudeHomePath: string
-  cwd: string
-  command: 'claude'
-  args: string[]
-  env: Record<string, string>
-  warnings: string[]
-  mcpMode: 'merge' | 'strict' | 'off'
-}
+  profileName: string;
+  profilePath: string;
+  claudeHomePath: string;
+  cwd: string;
+  command: 'claude';
+  args: string[];
+  env: Record<string, string>;
+  warnings: string[];
+  mcpMode: 'merge' | 'strict' | 'none';
+};
 ```
 
 ### Default env
@@ -1085,7 +1103,7 @@ env: {
 ### Default cwd
 
 ```ts
-cwd: options.cwd ?? process.cwd()
+cwd: options.cwd ?? process.cwd();
 ```
 
 ### Important
@@ -1108,90 +1126,27 @@ MVP 默认应该从用户当前项目目录启动 Claude Code。
 
 ## 8.2 MCP Strategy
 
-### Problem
-
-用户的目标是：
-
-```text
-只切换全局配置
-不动项目配置
-```
-
-所以 MCP 策略不能默认使用：
-
-```text
---strict-mcp-config
-```
-
-因为 strict 可能让项目 `.mcp.json` 不再生效。
-
-### Recommended MVP default
-
-默认：
-
-```text
-mcpMode = merge
-```
-
-启动参数：
+### Current default
 
 ```bash
-claude --mcp-config "<profile>\mcp.json"
+CLAUDE_CONFIG_DIR="<profile>\claude-home" claude mcp add --scope user <name> ...
 ```
 
-不加：
+Claude Code 管理 `<profile>\claude-home\.claude.json`。ccps 启动时只设置
+`CLAUDE_CONFIG_DIR` 并保持项目 cwd，因此 profile user MCP 与项目根 `.mcp.json`
+按 Claude Code 原生 scope 同时生效。新 profile 默认不传任何 MCP CLI flag。
 
-```bash
---strict-mcp-config
-```
+### Legacy compatibility
 
-### Optional strict mode
-
-用户可以在 `profile.json` 中配置：
-
-```json
-{
-  "launch": {
-    "mcpMode": "strict"
-  }
-}
-```
-
-此时启动参数：
-
-```bash
-claude --mcp-config "<profile>\mcp.json" --strict-mcp-config
-```
-
-### Off mode
-
-如果用户不想由 profile 控制 MCP：
-
-```json
-{
-  "launch": {
-    "mcpMode": "off"
-  }
-}
-```
-
-此时不传：
-
-```text
---mcp-config
---strict-mcp-config
-```
+若旧 `<profile>\mcp.json` 存在且 `mcpServers` 非空，ccps 才按已有
+`launch.mcpMode` 追加 `--mcp-config`；legacy `strict` 还会追加
+`--strict-mcp-config`。空文件、缺失文件和新 profile 都不追加这些参数。
 
 ### Verified behavior
 
-Claude Code `2.1.143` 下已验证：
-
-```text
-mcpMode=merge 时，profile mcp.json 与项目 .mcp.json 共存
-mcpMode=strict 时，仅加载 profile mcp.json
-CLAUDE_CONFIG_DIR 切换用户级配置来源
-真实 C:\Users\h\.claude 的用户级配置不会作为 profile 混入
-```
+- Claude Code `2.1.220`：隔离 `CLAUDE_CONFIG_DIR` 的 user-scope MCP 写入 `.claude.json`。
+- Claude Code `2.1.143`：legacy `--mcp-config` merge/strict 行为已验证。
+- 项目 `.mcp.json` 仍由启动 cwd 控制。
 
 ---
 
@@ -1207,10 +1162,7 @@ profile 中的 plugin 通过 `--plugin-dir` 加载。
 ```json
 {
   "launch": {
-    "pluginDirs": [
-      "plugins\\study-helper",
-      "plugins\\note-tools"
-    ]
+    "pluginDirs": ["plugins\\study-helper", "plugins\\note-tools"]
   }
 }
 ```
@@ -1323,7 +1275,6 @@ Command:
 
 Arguments:
   --dangerously-skip-permissions
-  --mcp-config C:\Users\h\.cc-profile-switch\profiles\coding\mcp.json
 
 Memory:
   user: C:\Users\h\.cc-profile-switch\profiles\coding\claude-home\CLAUDE.md
@@ -1335,7 +1286,10 @@ API config:
   env keys: key names only, never values
 
 MCP mode:
-  merge
+  native user scope
+
+Legacy MCP:
+  inactive
 
 Project config:
   Preserved. Claude Code will start in D:\Projects\my-app.
@@ -1356,9 +1310,9 @@ spawn('claude', args, {
     ...process.env,
     ...apiEnv,
     CLAUDE_CONFIG_DIR: profile.claudeHomePath,
-    ...(disableAutoMemory ? { CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' } : {})
-  }
-})
+    ...(disableAutoMemory ? { CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' } : {}),
+  },
+});
 ```
 
 Rules:
@@ -1471,7 +1425,7 @@ global-agent 可用
 准备：
 
 ```text
-profiles\coding\mcp.json
+profiles\coding\claude-home\.claude.json
 D:\Projects\demo\.mcp.json
 ```
 
@@ -1562,16 +1516,16 @@ resolveProfilePaths(name)
 
 ```ts
 type ResolvedProfilePaths = {
-  profileDir: string
-  manifestPath: string
-  claudeHomeDir: string
-  claudeMdPath: string
-  settingsPath: string
-  skillsDir: string
-  agentsDir: string
-  mcpPath: string
-  pluginsDir: string
-}
+  profileDir: string;
+  manifestPath: string;
+  claudeHomeDir: string;
+  claudeMdPath: string;
+  settingsPath: string;
+  skillsDir: string;
+  agentsDir: string;
+  mcpPath: string;
+  pluginsDir: string;
+};
 ```
 
 ## 9.4 `core/validator.ts`
@@ -1650,8 +1604,9 @@ report a clear error when the code/code.cmd command is unavailable
         settings.json
         skills\
         agents\
-      mcp.json
-      plugins\
+        rules\
+          ccps-profile.md
+        plugins\
     study\
     work\
     research\
@@ -1721,7 +1676,8 @@ Claude home:
   ✓ claude-home\agents\
 
 MCP:
-  ✓ mcp.json
+  native user scope (Claude-managed .claude.json)
+  legacy mcp.json: inactive
 
 Plugins:
   ✓ plugins\
@@ -1737,7 +1693,8 @@ Plugins:
 ccps edit coding                 → profiles\coding\
 ccps edit coding CLAUDE.md       → profiles\coding\claude-home\CLAUDE.md
 ccps edit coding settings.json   → profiles\coding\claude-home\settings.json
-ccps edit coding mcp.json        → profiles\coding\mcp.json
+ccps edit coding mcp.json        → profiles\coding\mcp.json（仅 legacy）
+ccps edit coding rules           → profiles\coding\claude-home\rules
 ccps edit coding profile.json    → profiles\coding\profile.json
 ccps edit coding claude-home     → profiles\coding\claude-home
 ccps edit coding skills          → profiles\coding\claude-home\skills
@@ -1839,7 +1796,7 @@ claude-home/memory/auto/MEMORY.md
 claude-home/skills/
 claude-home/agents/
 claude-home/plugins/
-mcp.json
+claude-home/rules/ccps-profile.md
 backups/
 ```
 
@@ -2044,25 +2001,25 @@ npm install -g cc-profile-switch
 
 ## 15.1 Development Phase
 
-| Item | Cost |
-|---|---:|
-| Node.js | Free |
-| TypeScript | Free |
-| Commander | Free |
-| Zod | Free |
-| Vitest | Free |
-| GitHub | Free |
+| Item                     |                                   Cost |
+| ------------------------ | -------------------------------------: |
+| Node.js                  |                                   Free |
+| TypeScript               |                                   Free |
+| Commander                |                                   Free |
+| Zod                      |                                   Free |
+| Vitest                   |                                   Free |
+| GitHub                   |                                   Free |
 | Claude Code / Codex 使用 | 使用用户已有订阅或工具，不作为产品成本 |
 
 ## 15.2 Production Phase
 
-| Item | Cost |
-|---|---:|
-| Server | 0 |
-| Database | 0 |
-| Cloud storage | 0 |
-| Auth service | 0 |
-| Runtime cost | 0 |
+| Item          | Cost |
+| ------------- | ---: |
+| Server        |    0 |
+| Database      |    0 |
+| Cloud storage |    0 |
+| Auth service  |    0 |
+| Runtime cost  |    0 |
 
 ---
 
@@ -2142,7 +2099,7 @@ MCP config
 [ ] PRD.md 已确认
 [ ] TECH-DESIGN.md 已确认
 [ ] AGENTS.md 已生成
-[ ] 已决定只做 Windows + Node.js CLI
+[x] 平台范围已扩展为 Windows、macOS、Linux + Node.js CLI
 [ ] 已确认默认 launch 模式是 Global User Config Switch Mode
 ```
 
@@ -2250,18 +2207,19 @@ MVP 技术成功标准：
 
 ## 22. AGENTS.md 草案
 
-```md
+````md
 # AGENTS.md
 
 ## Project
 
-CC-Profile-Switch is a Windows and macOS Node.js CLI tool for switching Claude Code user-level global configuration profiles.
+CC-Profile-Switch is a Windows, macOS, and Linux Node.js CLI tool for switching Claude Code user-level global configuration profiles.
 
 The CLI command is:
 
 ```bash
 ccps
 ```
+````
 
 ## Core Concept
 
@@ -2277,6 +2235,7 @@ ccps launch coding
 ```
 
 This should:
+
 - start Claude Code from `D:\Projects\my-app`
 - keep project `CLAUDE.md` and `.claude/` config active
 - set `CLAUDE_CONFIG_DIR` to the selected profile's `claude-home`
@@ -2298,21 +2257,22 @@ ccps backup <name>
 ```
 
 Do not implement:
+
 - TUI
 - GUI
 - cloud sync
 - multi-account switching
 - OAuth/session migration
 - plugin marketplace
-- Linux support
 - settings.local.json management
 - output-styles management
 
 ## Platform
 
-Windows and macOS only.
+Windows, macOS, and Linux.
 
 Use:
+
 - Node.js
 - TypeScript
 - Commander
@@ -2334,8 +2294,9 @@ Use:
         MEMORY.md
     skills\
     agents\
+    rules\
+      ccps-profile.md
     plugins\
-  mcp.json
 ```
 
 Do not use the old runtime-project isolation structure as the default.
@@ -2343,6 +2304,7 @@ Do not use the old runtime-project isolation structure as the default.
 ## Safety Rules
 
 Never:
+
 - Copy the entire `C:\Users\h\.claude` directory.
 - Overwrite `C:\Users\h\.claude`.
 - Modify project `.claude`.
@@ -2354,6 +2316,7 @@ Never:
 - Auto-install plugins from the network.
 
 Always:
+
 - Resolve paths to absolute paths.
 - Prevent path traversal.
 - Validate JSON before launch.
@@ -2370,6 +2333,7 @@ Global User Config Switch Mode
 ```
 
 Implementation:
+
 - cwd = current project directory
 - env.CLAUDE_CONFIG_DIR = selected profile's `claude-home`
 - args include `--dangerously-skip-permissions` by default unless `launch.skipPermissions=false`
@@ -2380,8 +2344,9 @@ Implementation:
 - do not use `--add-dir` by default
 
 MCP:
-- default mcpMode = merge
-- strict MCP is optional, not default
+
+- new profile legacy mcpMode = none
+- older non-empty legacy mcp.json may keep merge; strict remains opt-in
 
 ## Implementation Order
 
@@ -2412,13 +2377,15 @@ VERIFY-CLAUDE-CODE-BEHAVIOR.md
 ```
 
 It must verify:
+
 - profile CLAUDE.md replaces real global CLAUDE.md
 - project CLAUDE.md still loads
 - profile settings replace real global settings
 - project settings still load
 - MCP merge/strict behavior
 - auth/session behavior with CLAUDE_CONFIG_DIR
-```
+
+````
 
 ---
 
@@ -2444,7 +2411,7 @@ It must verify:
 注意：
 默认 launch 策略是 Global User Config Switch Mode，不是 Runtime Project Isolation。
 profile 结构必须使用 `claude-home`。
-```
+````
 
 ---
 
@@ -2453,7 +2420,7 @@ profile 结构必须使用 `claude-home`。
 MVP 最佳技术路线：
 
 ```text
-Windows and macOS only
+Windows, macOS, and Linux
 Node.js CLI
 TypeScript
 Commander

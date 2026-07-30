@@ -18,11 +18,11 @@ description: >
 
 **在开始之前，必须理解这三者的区别。它们不是同义词。**
 
-| 概念 | 是什么 | 管理方式 | 安装位置 |
-|---|---|---|---|
-| **Skill** | 纯技能包（指令文件），告诉 Claude Code 如何做某事 | `npx skills` CLI | `skills/` 目录 |
-| **Plugin** | 能力包，可包含 skills + agents + hooks + MCP server | `/plugin install` 内置命令 | Claude Code 插件系统 |
-| **MCP Server** | 外部工具连接，让 Claude Code 调用外部 API/工具 | `claude mcp add` | `mcp.json` 配置 |
+| 概念           | 是什么                                              | 管理方式                      | 安装位置                           |
+| -------------- | --------------------------------------------------- | ----------------------------- | ---------------------------------- |
+| **Skill**      | 纯技能包（指令文件），告诉 Claude Code 如何做某事   | `npx skills` CLI              | `skills/` 目录                     |
+| **Plugin**     | 能力包，可包含 skills + agents + hooks + MCP server | `/plugin install` 内置命令    | Claude Code 插件系统               |
+| **MCP Server** | 外部工具连接，让 Claude Code 调用外部 API/工具      | `claude mcp add --scope user` | 当前 profile 的 Claude user config |
 
 本子 Skill 只处理 **Skill** 类型。如果用户需要 plugin 或 MCP server，引导到对应的配置流程。
 
@@ -34,22 +34,22 @@ description: >
 
 这些命令有官方文档支持，行为确定。
 
-| 命令 | 用途 |
-|---|---|
-| `npx skills find [query]` | 搜索 skills |
-| `npx skills find [query] --owner <owner>` | 限定来源搜索 |
-| `npx skills add <package>` | 安装 skill |
-| `npx skills list` | 列出已安装的 skills |
-| `npx skills remove` | 移除已安装的 skill |
+| 命令                                      | 用途                |
+| ----------------------------------------- | ------------------- |
+| `npx skills find [query]`                 | 搜索 skills         |
+| `npx skills find [query] --owner <owner>` | 限定来源搜索        |
+| `npx skills add <package>`                | 安装 skill          |
+| `npx skills list`                         | 列出已安装的 skills |
+| `npx skills remove`                       | 移除已安装的 skill  |
 
 ### 生态可验证命令
 
 这些命令在生态中广泛使用和验证，但官方说明较少。
 
-| 命令 | 用途 |
-|---|---|
-| `npx skills check` | 检查已安装 skills 的可用更新 |
-| `npx skills update` | 批量更新已安装的 skills |
+| 命令                | 用途                         |
+| ------------------- | ---------------------------- |
+| `npx skills check`  | 检查已安装 skills 的可用更新 |
+| `npx skills update` | 批量更新已安装的 skills      |
 
 ### 退出遥测
 
@@ -69,12 +69,12 @@ DISABLE_TELEMETRY=1 npx skills add <package>
 
 来源：skills.sh 排行榜和搜索结果中的安装数。
 
-| 安装量 | 评级 | 说明 |
-|---|---|---|
-| 10K+ | 优秀 | 广泛使用，经过大量实战验证 |
-| 1K-10K | 良好 | 有稳定用户基础 |
-| 100-1K | 一般 | 需结合来源信誉判断 |
-| <100 | 谨慎 | 除非来源高度可信，否则不推荐 |
+| 安装量 | 评级 | 说明                         |
+| ------ | ---- | ---------------------------- |
+| 10K+   | 优秀 | 广泛使用，经过大量实战验证   |
+| 1K-10K | 良好 | 有稳定用户基础               |
+| 100-1K | 一般 | 需结合来源信誉判断           |
+| <100   | 谨慎 | 除非来源高度可信，否则不推荐 |
 
 ### 第二层：来源可信度（权重 40%）
 
@@ -86,6 +86,7 @@ DISABLE_TELEMETRY=1 npx skills add <package>
 4. **普通个人** — 需要更多验证
 
 已知高质量来源（持续更新）：
+
 - `vercel-labs/agent-skills` — React, Next.js, Web 设计
 - `vercel-labs/skills` — Vercel 生态工具链
 - `anthropics/skills` — 前端设计、文档处理
@@ -96,11 +97,11 @@ DISABLE_TELEMETRY=1 npx skills add <package>
 
 通过源仓库评估：
 
-| 指标 | 好 | 中 | 差 |
-|---|---|---|---|
-| GitHub Stars | 500+ | 100-500 | <100 |
-| 最近更新 | 30 天内 | 90 天内 | 6 个月以上 |
-| 文档质量 | README 详细、有示例 | 基本说明 | 无文档 |
+| 指标         | 好                  | 中       | 差         |
+| ------------ | ------------------- | -------- | ---------- |
+| GitHub Stars | 500+                | 100-500  | <100       |
+| 最近更新     | 30 天内             | 90 天内  | 6 个月以上 |
+| 文档质量     | README 详细、有示例 | 基本说明 | 无文档     |
 
 ### 综合评分
 
@@ -131,16 +132,16 @@ DISABLE_TELEMETRY=1 npx skills add <package>
 
 映射表：
 
-| Profile 类型 | 搜索方向 |
-|---|---|
-| 前端开发 | react, nextjs, typescript, css, tailwind, design-system |
-| 后端开发 | api, nodejs, database, prisma, graphql |
-| 测试 | testing, jest, playwright, e2e, vitest |
-| DevOps | deploy, docker, kubernetes, ci-cd, aws |
-| 文档写作 | docs, readme, changelog, technical-writing |
-| 研究分析 | research, analysis, data, visualization |
-| 代码质量 | review, lint, refactor, best-practices |
-| 设计 | ui, ux, design-system, accessibility, figma |
+| Profile 类型 | 搜索方向                                                |
+| ------------ | ------------------------------------------------------- |
+| 前端开发     | react, nextjs, typescript, css, tailwind, design-system |
+| 后端开发     | api, nodejs, database, prisma, graphql                  |
+| 测试         | testing, jest, playwright, e2e, vitest                  |
+| DevOps       | deploy, docker, kubernetes, ci-cd, aws                  |
+| 文档写作     | docs, readme, changelog, technical-writing              |
+| 研究分析     | research, analysis, data, visualization                 |
+| 代码质量     | review, lint, refactor, best-practices                  |
+| 设计         | ui, ux, design-system, accessibility, figma             |
 
 ### 第 2 步：多渠道发现
 
@@ -229,6 +230,7 @@ CLAUDE_CONFIG_DIR=<profile>/claude-home npx skills add <owner/repo@skill> -a cla
 ```
 
 参数说明：
+
 - `CLAUDE_CONFIG_DIR=<profile>/claude-home` — 尝试重定向安装目标到 profile 的 skills 目录
 - `-a claude-code` — 只安装到 Claude Code，不影响 Codex、Windsurf、Copilot
 - `-y` — 跳过确认提示
@@ -266,6 +268,7 @@ cat <profile>/claude-home/skills/<skill-name>.md | head -5
 ### 第 8 步：报告结果
 
 告诉用户：
+
 - 安装了哪些 skills
 - 每个 skill 的用途
 - 安装位置
