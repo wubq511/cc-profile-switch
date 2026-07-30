@@ -5,7 +5,9 @@ import { describe, expect, it } from 'vitest';
 
 describe('cross-platform CI workflow', () => {
   it('runs the full check on every supported OS and Node.js LTS line', async () => {
-    const workflow = await readFile(join(process.cwd(), '.github', 'workflows', 'ci.yml'), 'utf8');
+    const workflow = (
+      await readFile(join(process.cwd(), '.github', 'workflows', 'ci.yml'), 'utf8')
+    ).replace(/\r\n/g, '\n');
 
     expect(workflow).toContain('pull_request:');
     expect(workflow).toContain('push:\n    branches: [main]');
