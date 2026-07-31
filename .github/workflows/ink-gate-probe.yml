@@ -1,0 +1,55 @@
+name: Ink packaging gate probe
+
+on:
+  push:
+    branches: [codex/ink-packaging-gate]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ink-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    name: ${{ matrix.os }} / Node.js ${{ matrix.node }} ink gate probe
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+        node: [22, 24]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run the ink packaging gate probe
+        run: npm run probe:ink-gate
+
+      - name: Run the real-PTY smoke (pyte)
+        if: matrix.os == 'macos-latest'
+        run: |
+          python3 -m venv node_modules/.cache/smoke-venv
+          node_modules/.cache/smoke-venv/bin/pip install pyte
+          node_modules/.cache/smoke-venv/bin/python src/tui/prototype-ink-gate/smoke-pty.py | tee probe-output/ink-gate-pty-smoke-macos-node${{ matrix.node }}.log
+
+      - name: Upload probe evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ink-gate-proof-${{ matrix.os }}-node${{ matrix.node }}
+          path: probe-output/
+          if-no-files-found: error
