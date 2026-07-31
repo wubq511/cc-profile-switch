@@ -4,11 +4,16 @@
 // navigation model — the question: what amount & placement of first-run,
 // empty-state, error, destructive-action, shortcut, and discovery guidance
 // keeps the Workbench operable without filesystem knowledge while keeping the
-// steady-state interface compact?
+// steady-state interface compact? Issue #32: launch-flow variants J/K/L — J is
+// "launch here · resume", K is "launch sheet · exit", L is the combined flow
+// from round one (bar + directory screen + full-screen dry-run, runtime
+// exit-behavior toggle); all actually spawn a Claude Code stand-in via the
+// render loop in index.mts.
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Box, Text, useApp, useInput, useStdout } from 'ink';
 import { emptyInventory, largeInventory, smallInventory, type Profile } from './data';
+import { bridge } from './launchBridge.mts';
 import VariantA from './VariantA';
 import VariantB from './VariantB';
 import VariantC from './VariantC';
@@ -18,6 +23,9 @@ import VariantF from './VariantF';
 import VariantG from './VariantG';
 import VariantH from './VariantH';
 import VariantI from './VariantI';
+import VariantJ from './VariantJ';
+import VariantK from './VariantK';
+import VariantL from './VariantL';
 
 // Variants set this while a text field is focused so the shell stops
 // interpreting single-letter keys (q / [ / ]). Ctrl combos stay global.
@@ -55,6 +63,9 @@ const VARIANTS = [
   { key: 'G', name: 'guidance: progressive', Component: VariantG },
   { key: 'H', name: 'guidance: coached', Component: VariantH },
   { key: 'I', name: 'guidance: chosen mix', Component: VariantI },
+  { key: 'J', name: 'launch: here · resume', Component: VariantJ },
+  { key: 'K', name: 'launch: sheet · exit', Component: VariantK },
+  { key: 'L', name: 'launch: combined', Component: VariantL },
 ];
 
 const DATASETS = [
@@ -70,12 +81,25 @@ export interface VariantProps {
 export function App() {
   const { exit } = useApp();
   const { stdout } = useStdout();
-  const [vi, setVi] = useState(() => {
+  const [vi, setViRaw] = useState(() => {
     const want = (process.env.CCPS_PROTO_VARIANT ?? '').toUpperCase();
     const i = VARIANTS.findIndex((v) => v.key === want);
-    return i >= 0 ? i : 0;
+    // restored after a Workbench-resume remount (issue #32 launch variants)
+    return i >= 0 ? i : Math.min(bridge.ui.vi, VARIANTS.length - 1);
   });
-  const [di, setDi] = useState(0);
+  const [di, setDiRaw] = useState(() => Math.min(bridge.ui.di, DATASETS.length - 1));
+  const setVi = (up: (i: number) => number) =>
+    setViRaw((old) => {
+      const next = up(old);
+      bridge.ui.vi = next;
+      return next;
+    });
+  const setDi = (up: (i: number) => number) =>
+    setDiRaw((old) => {
+      const next = up(old);
+      bridge.ui.di = next;
+      return next;
+    });
   const [resetKey, setResetKey] = useState(0);
   const [capture, setCapture] = useState(false);
   const [, force] = useState(0);
