@@ -1,6 +1,6 @@
 # Linked Skill Loading Probe
 
-Status: decision evidence (macOS complete; Windows junction run pending hosted CI)
+Status: decision evidence (macOS complete; Windows junction verdict landed in `linked-skill-loading-probe-windows.md`)
 Probed: 2026-07-31
 Upstream: `claude` CLI 2.1.220 (Claude Code), macOS (darwin arm64), Node 26
 Wayfinder ticket: [#49](https://github.com/wubq511/cc-profile-switch/issues/49)
@@ -25,8 +25,10 @@ pointing at the Local Skill Source; removal = delete the symlink (the source
 is never touched, matching the Recovery Bin semantics of
 [#33](https://github.com/wubq511/cc-profile-switch/issues/33)).
 
-Windows remains open until the hosted junction run lands (see below); the
-harness is credential-free and already validated on macOS.
+Windows matches: the hosted junction run landed in
+[`linked-skill-loading-probe-windows.md`](linked-skill-loading-probe-windows.md)
+with identical findings, so Linked Skill installation is viable on both
+contracted platforms.
 
 ## Method
 
@@ -116,5 +118,9 @@ the hosted runner must not hold. Discovery already exercises the
 filesystem-level path a junction must support — directory enumeration
 through the link and `SKILL.md` frontmatter read through the link.
 
-The Windows verdict will be appended here (or in a companion
-`linked-skill-loading-probe-windows.md`) once the hosted run lands.
+**Windows verdict: landed** in
+[`linked-skill-loading-probe-windows.md`](linked-skill-loading-probe-windows.md)
+([#50](https://github.com/wubq511/cc-profile-switch/issues/50),
+[run 30641028514](https://github.com/wubq511/cc-profile-switch/actions/runs/30641028514)) —
+junctions are discovered identically, matching the macOS findings; Linked
+Skill installation is viable on both contracted platforms.
