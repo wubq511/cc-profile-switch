@@ -59,3 +59,7 @@ _Avoid_: Profile Backup, system trash
 **Recovery Bin**:
 The collection of unexpired Recovery Items managed by CC-Profile-Switch.
 _Avoid_: Backups, system trash
+
+**App State**:
+Machine-local runtime state owned by CC-Profile-Switch (such as recent project directories), kept in `state.json` under the app home and separated from user settings in `config.json` by churn class.
+_Avoid_: Settings, cache
