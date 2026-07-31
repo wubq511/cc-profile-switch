@@ -5,6 +5,10 @@
 // empty-state, error, destructive-action, shortcut, and discovery guidance
 // keeps the Workbench operable without filesystem knowledge while keeping the
 // steady-state interface compact?
+// Issue #30: local Skill install variants L/M/N — Copy vs Link interaction:
+// equal visibility with Copy the default, ownership/update semantics,
+// target-change preview, link health checks, name collisions, and the
+// fail-safe path when the platform cannot create a link.
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Box, Text, useApp, useInput, useStdout } from 'ink';
@@ -18,6 +22,9 @@ import VariantF from './VariantF';
 import VariantG from './VariantG';
 import VariantH from './VariantH';
 import VariantI from './VariantI';
+import VariantL from './VariantL';
+import VariantM from './VariantM';
+import VariantN from './VariantN';
 
 // Variants set this while a text field is focused so the shell stops
 // interpreting single-letter keys (q / [ / ]). Ctrl combos stay global.
@@ -55,6 +62,9 @@ const VARIANTS = [
   { key: 'G', name: 'guidance: progressive', Component: VariantG },
   { key: 'H', name: 'guidance: coached', Component: VariantH },
   { key: 'I', name: 'guidance: chosen mix', Component: VariantI },
+  { key: 'L', name: 'install: wizard cards', Component: VariantL },
+  { key: 'M', name: 'install: one-screen sheet', Component: VariantM },
+  { key: 'N', name: 'install: compare futures', Component: VariantN },
 ];
 
 const DATASETS = [
