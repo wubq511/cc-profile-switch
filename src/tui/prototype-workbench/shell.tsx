@@ -9,6 +9,11 @@
 // from round one (bar + directory screen + full-screen dry-run, runtime
 // exit-behavior toggle); all actually spawn a Claude Code stand-in via the
 // render loop in index.mts.
+// Issue #30: local Skill install variants O/P/Q (renamed from L/M/N on merge
+// to avoid the launch VariantL collision) — Copy vs Link interaction:
+// equal visibility with Copy the default, ownership/update semantics,
+// target-change preview, link health checks, name collisions, and the
+// fail-safe path when the platform cannot create a link.
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Box, Text, useApp, useInput, useStdout } from 'ink';
@@ -26,6 +31,9 @@ import VariantI from './VariantI';
 import VariantJ from './VariantJ';
 import VariantK from './VariantK';
 import VariantL from './VariantL';
+import VariantO from './VariantO';
+import VariantP from './VariantP';
+import VariantQ from './VariantQ';
 
 // Variants set this while a text field is focused so the shell stops
 // interpreting single-letter keys (q / [ / ]). Ctrl combos stay global.
@@ -66,6 +74,9 @@ const VARIANTS = [
   { key: 'J', name: 'launch: here · resume', Component: VariantJ },
   { key: 'K', name: 'launch: sheet · exit', Component: VariantK },
   { key: 'L', name: 'launch: combined', Component: VariantL },
+  { key: 'O', name: 'install: wizard cards', Component: VariantO },
+  { key: 'P', name: 'install: one-screen sheet', Component: VariantP },
+  { key: 'Q', name: 'install: compare futures', Component: VariantQ },
 ];
 
 const DATASETS = [
