@@ -22,6 +22,7 @@ npm run dev          # tsx src/index.ts
 npm run build        # build dist/
 npm run start        # run dist/index.js
 npm run test         # Vitest once
+npm run probe:skills # pinned Skills acquisition proof harness (issue #39)
 npm run test:watch
 npm run lint
 npm run format

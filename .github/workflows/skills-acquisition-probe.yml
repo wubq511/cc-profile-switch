@@ -1,0 +1,46 @@
+name: Skills acquisition probe
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [task/39-skills-acquisition-proof]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: skills-probe-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    name: ${{ matrix.os }} skills acquisition probe
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run the pinned Skills acquisition proof
+        run: npm run probe:skills
+
+      - name: Upload probe evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: skills-acquisition-proof-${{ matrix.os }}
+          path: probe-output/
+          if-no-files-found: error
