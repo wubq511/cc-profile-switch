@@ -2,8 +2,6 @@ name: Skills acquisition probe
 
 on:
   workflow_dispatch:
-  push:
-    branches: [task/39-skills-acquisition-proof]
 
 permissions:
   contents: read
