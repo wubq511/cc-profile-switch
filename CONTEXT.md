@@ -49,7 +49,7 @@ A durable point-in-time copy of a Profile intentionally retained for later resto
 _Avoid_: Recovery Item
 
 **Recovery Item**:
-A removed Managed Profile Resource retained temporarily so the user can undo its removal.
+A snapshot of a removed Profile (explicit no-backup removal) or removed Managed Profile Resource, plus the coordinates needed to restore it, retained temporarily so the user can undo its removal. The snapshot is either a file tree (Profile, Skill directory, Memory file) or a fragment (an MCP server entry, a Settings field) with its location.
 _Avoid_: Profile Backup, system trash
 
 **Recovery Bin**:
