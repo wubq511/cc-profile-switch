@@ -22,6 +22,7 @@
     "probe:skills": "tsx scripts/probe-skills-acquisition.ts",
     "probe:plugins-windows": "tsx scripts/probe-plugin-targeting-windows.ts",
     "probe:ink-gate": "tsx scripts/probe-ink-gate.ts",
+    "probe:linked-skill": "tsx scripts/probe-linked-skill.ts",
     "test:watch": "vitest",
     "lint": "eslint .",
     "format": "prettier --write .",
