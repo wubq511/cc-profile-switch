@@ -330,6 +330,10 @@ export const largeInventory: Profile[] = largeNames.map((name, i) =>
   ),
 );
 
+// Empty inventory — guidance-density prototype (issue #29) uses it to exercise
+// first-run and empty-state guidance.
+export const emptyInventory: Profile[] = [];
+
 // ---- cross-profile search ----
 
 export interface SearchEntry {

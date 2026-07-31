@@ -1,17 +1,23 @@
-// PROTOTYPE (throwaway) — shell for the Workbench navigation prototype (issue #25).
-// Four radically different navigation variants of the same Profile Workbench,
-// switchable at runtime. The question: which full-screen layout, Profile-first
-// hierarchy, cross-Profile search model, contextual action model, and keyboard
-// help best serve small AND large Profile inventories at realistic terminal sizes?
+// PROTOTYPE (throwaway) — shell for the Workbench prototypes.
+// Issue #25: navigation variants A–E (E was chosen: two-pane, sidebar-cards,
+// top search). Issue #29: guidance-density variants F/G/H, built on the locked
+// navigation model — the question: what amount & placement of first-run,
+// empty-state, error, destructive-action, shortcut, and discovery guidance
+// keeps the Workbench operable without filesystem knowledge while keeping the
+// steady-state interface compact?
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Box, Text, useApp, useInput, useStdout } from 'ink';
-import { largeInventory, smallInventory, type Profile } from './data';
+import { emptyInventory, largeInventory, smallInventory, type Profile } from './data';
 import VariantA from './VariantA';
 import VariantB from './VariantB';
 import VariantC from './VariantC';
 import VariantD from './VariantD';
 import VariantE from './VariantE';
+import VariantF from './VariantF';
+import VariantG from './VariantG';
+import VariantH from './VariantH';
+import VariantI from './VariantI';
 
 // Variants set this while a text field is focused so the shell stops
 // interpreting single-letter keys (q / [ / ]). Ctrl combos stay global.
@@ -45,6 +51,16 @@ const VARIANTS = [
   { key: 'C', name: 'Search-first palette', Component: VariantC },
   { key: 'D', name: 'Guided hub drill-down', Component: VariantD },
   { key: 'E', name: 'Hybrid tree + cards', Component: VariantE },
+  { key: 'F', name: 'guidance: on-demand', Component: VariantF },
+  { key: 'G', name: 'guidance: progressive', Component: VariantG },
+  { key: 'H', name: 'guidance: coached', Component: VariantH },
+  { key: 'I', name: 'guidance: chosen mix', Component: VariantI },
+];
+
+const DATASETS = [
+  { label: 'small(3)', profiles: smallInventory },
+  { label: 'large(42)', profiles: largeInventory },
+  { label: 'empty(0)', profiles: emptyInventory },
 ];
 
 export interface VariantProps {
@@ -54,8 +70,13 @@ export interface VariantProps {
 export function App() {
   const { exit } = useApp();
   const { stdout } = useStdout();
-  const [vi, setVi] = useState(0);
-  const [big, setBig] = useState(false);
+  const [vi, setVi] = useState(() => {
+    const want = (process.env.CCPS_PROTO_VARIANT ?? '').toUpperCase();
+    const i = VARIANTS.findIndex((v) => v.key === want);
+    return i >= 0 ? i : 0;
+  });
+  const [di, setDi] = useState(0);
+  const [resetKey, setResetKey] = useState(0);
   const [capture, setCapture] = useState(false);
   const [, force] = useState(0);
 
@@ -77,7 +98,12 @@ export function App() {
       return;
     }
     if (key.ctrl && input === 'd') {
-      setBig((b) => !b);
+      setDi((i) => (i + 1) % DATASETS.length);
+      return;
+    }
+    if (key.ctrl && input === 'r') {
+      // remount the variant: resets first-run overlays, hint retirement, tours
+      setResetKey((n) => n + 1);
       return;
     }
     if (capture) return;
@@ -86,7 +112,7 @@ export function App() {
     if (input === 'q') exit();
   });
 
-  const profiles = big ? largeInventory : smallInventory;
+  const { label, profiles } = DATASETS[di];
   const v = VARIANTS[vi];
   const w = stdout.columns ?? 80;
   const h = stdout.rows ?? 24;
@@ -95,13 +121,11 @@ export function App() {
     <CaptureContext.Provider value={setCapture}>
       <Box flexDirection="column" width={w} height={h}>
         <Box flexDirection="column" flexGrow={1}>
-          <v.Component profiles={profiles} />
+          <v.Component key={`${v.key}-${resetKey}`} profiles={profiles} />
         </Box>
         <Box width={w} justifyContent="center">
-          <Text backgroundColor="white" color="black" bold>
-            {` [ctrl+v]/${'[ ]'} variant ${v.key} — ${v.name} (${vi + 1}/${VARIANTS.length})   [ctrl+d] data: ${
-              big ? 'large (42 profiles)' : 'small (3 profiles)'
-            }   ${w}×${h}   [ctrl+c] quit `}
+          <Text backgroundColor="white" color="black" bold wrap="truncate">
+            {` [ctrl+v] variant ${v.key} — ${v.name} (${vi + 1}/${VARIANTS.length}) · [ctrl+d] data: ${label} · [ctrl+r] reset · ${w}×${h} · [ctrl+c] quit `}
           </Text>
         </Box>
       </Box>
