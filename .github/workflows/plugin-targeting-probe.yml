@@ -1,8 +1,6 @@
 name: Plugin targeting probe (Windows)
 
 on:
-  push:
-    branches: [probe/windows-plugin-targeting]
   workflow_dispatch:
 
 permissions:

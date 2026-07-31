@@ -121,9 +121,10 @@ directory survived the directory-source removal.
   proves the `settings.json` write path is Profile-targeted, so the risk is
   limited to exactly which `settings.json` key receives `userConfig`. Verify
   when the first config-declaring plugin is adopted.
-- **Windows:** this probe ran on macOS only. The targeting contract is
-  upstream Claude Code behavior, presumably platform-independent, but a
-  Windows re-run is the honest gate before claiming parity (consistent with
-  the map's preserve-Windows note).
+- **Windows:** resolved. The hosted-Windows re-run
+  ([`plugin-lifecycle-profile-targeting-probe-windows.md`](plugin-lifecycle-profile-targeting-probe-windows.md),
+  [#45](https://github.com/wubq511/cc-profile-switch/issues/45)) reproduced
+  every persistence location with zero real-home escapes, so the targeting
+  contract holds on Windows.
 - `plugin details`, `plugin eval`, `plugin prune`, `plugin init/tag/validate`
   were out of the ticket's command list and unprobed.
