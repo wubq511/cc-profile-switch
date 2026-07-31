@@ -1,8 +1,6 @@
 name: Ink packaging gate probe
 
 on:
-  push:
-    branches: [codex/ink-packaging-gate]
   workflow_dispatch:
 
 permissions:
