@@ -25,7 +25,7 @@ in the macOS probe is closed.
 
 ## Method
 
-Reusable harness (this branch):
+Reusable harness (merged into `codex/terminal-profile-experience-wayfinding`):
 
 - `scripts/probe-plugin-targeting-windows.ts` (`npm run probe:plugins-windows`)
   drives the full lifecycle and hashes the real home before and after **every
