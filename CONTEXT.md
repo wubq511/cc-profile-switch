@@ -44,6 +44,10 @@ _Avoid_: Linked Skill
 A Profile Skill that continues to use a Local Skill Source as its source of truth, so source changes appear in the Profile.
 _Avoid_: Copied Skill
 
+**Skill Provenance Record**:
+The ccps-owned record of a Profile Skill's source, copy or link mode, content fingerprint, and cached audit state, kept per Profile outside `claude-home` and never delegated to the upstream Skills lock file.
+_Avoid_: Lock file, Skills CLI state
+
 **Profile Backup**:
 A durable point-in-time copy of a Profile intentionally retained for later restoration.
 _Avoid_: Recovery Item
