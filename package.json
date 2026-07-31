@@ -32,7 +32,8 @@
     "codegraph:sync": "codegraph sync .",
     "codegraph:status": "codegraph status .",
     "codegraph:query": "codegraph query",
-    "codegraph:explore": "codegraph explore"
+    "codegraph:explore": "codegraph explore",
+    "prototype:diff": "esbuild src/tui/prototype-diff/index.mts --bundle --format=esm --platform=node --packages=external --outfile=node_modules/.cache/ccps-proto-diff.mjs && node node_modules/.cache/ccps-proto-diff.mjs"
   },
   "keywords": [
     "claude-code",
