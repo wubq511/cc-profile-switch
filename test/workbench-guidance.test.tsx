@@ -73,6 +73,12 @@ async function renderTree(element: React.ReactElement, stdout: FakeTtyStdout) {
     stdin: dummyStdin() as unknown as NodeJS.ReadStream,
     exitOnCtrlC: false,
     patchConsole: false,
+    // These tests assert on intermediate frames (snapshots, first-focus-only
+    // hints), so Ink must stream frames live instead of deferring to unmount.
+    // Force interactive mode: Ink's auto-detection reads `is-in-ci`, and the
+    // CI runner exports CI=true, which would otherwise flip this harness to
+    // non-interactive regardless of the fake TTY.
+    interactive: true,
   });
   await instance.waitUntilRenderFlush();
   return instance;
@@ -501,6 +507,10 @@ describe('keypress guidance flows', () => {
       stdin: stdin as unknown as NodeJS.ReadStream,
       exitOnCtrlC: false,
       patchConsole: false,
+      // Keypress flows need live, interactive frames (see renderTree above);
+      // without this, CI=true forces non-interactive mode and the press-driven
+      // renders are deferred until unmount.
+      interactive: true,
     });
     await instance.waitUntilRenderFlush();
     await waitForInputListener(stdin);
