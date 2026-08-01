@@ -13,6 +13,10 @@ import type { ResourceDiffResult, DiffCategory } from '../../core/resource/diff-
 import type { EditSession } from '../../core/edit-session';
 import { ResourceMainPane } from './resource-main';
 import { WatchingBadge } from './edit-session/WatchingBadge';
+import { CATEGORIES } from './categories';
+
+// Re-export for consumers that import from main-pane.
+export { CATEGORIES, CATEGORY_COUNT, categoryKeyAt } from './categories';
 
 type MainPaneProps = {
   profile: WorkbenchProfile | undefined;
@@ -39,23 +43,6 @@ type MainPaneProps = {
   onBack: () => void;
   hintLine: string;
 };
-
-export const CATEGORIES = [
-  { key: 'userMemory' as const, labelKey: 'main.category.userMemory' as const, drillable: true as const, resourceCategory: 'user-memory' as const },
-  { key: 'autoMemory' as const, labelKey: 'main.category.autoMemory' as const, drillable: true as const },
-  { key: 'skills' as const, labelKey: 'main.category.skills' as const, drillable: true as const },
-  { key: 'agents' as const, labelKey: 'main.category.agents' as const, drillable: true as const, resourceCategory: 'agents' as const },
-  { key: 'mcp' as const, labelKey: 'main.category.mcp' as const, drillable: true as const },
-  { key: 'settings' as const, labelKey: 'main.category.settings' as const, drillable: false as const },
-  { key: 'launchConfig' as const, labelKey: 'main.category.launchConfig' as const, drillable: false as const },
-] as const;
-
-export const CATEGORY_COUNT = CATEGORIES.length;
-
-/** Category key at a given cursor index (mirrors the card grid order). */
-export function categoryKeyAt(index: number): (typeof CATEGORIES)[number]['key'] | undefined {
-  return CATEGORIES[index]?.key;
-}
 
 /** Map a category card key to its diff presentation (spec §12); Auto Memory has no diff. */
 export function diffCategoryFor(key: CategoryKey): DiffCategory | undefined {

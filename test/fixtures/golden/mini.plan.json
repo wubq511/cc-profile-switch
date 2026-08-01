@@ -7,7 +7,6 @@
       }
     },
     "config": {
-      "_fixtureSeed": 117951607,
       "createdAt": "2026-01-01T00:00:00.000Z",
       "defaultProfile": "profile-001",
       "lastUsedProfile": "profile-001",
@@ -21,7 +20,6 @@
       }
     },
     "state": {
-      "_fixtureSeed": 117951607,
       "recentProjectDirs": [
         {
           "lastUsedAt": "2026-01-01T00:00:00.000Z",
@@ -46,7 +44,7 @@
       "type": "dir"
     },
     {
-      "content": "{\n  \"_fixtureSeed\": 117951607,\n  \"createdAt\": \"2026-01-01T00:00:00.000Z\",\n  \"defaultProfile\": \"profile-001\",\n  \"lastUsedProfile\": \"profile-001\",\n  \"recovery\": {\n    \"retentionDays\": 30\n  },\n  \"updatedAt\": \"2026-01-01T00:00:00.000Z\",\n  \"version\": 2,\n  \"workbench\": {\n    \"skillsDiscoveryExperimental\": true\n  }\n}\n",
+      "content": "{\n  \"createdAt\": \"2026-01-01T00:00:00.000Z\",\n  \"defaultProfile\": \"profile-001\",\n  \"lastUsedProfile\": \"profile-001\",\n  \"recovery\": {\n    \"retentionDays\": 30\n  },\n  \"updatedAt\": \"2026-01-01T00:00:00.000Z\",\n  \"version\": 2,\n  \"workbench\": {\n    \"skillsDiscoveryExperimental\": true\n  }\n}\n",
       "path": "config.json",
       "type": "file"
     },
@@ -2132,7 +2130,7 @@
       "type": "file"
     },
     {
-      "content": "{\n  \"_fixtureSeed\": 117951607,\n  \"recentProjectDirs\": [\n    {\n      \"lastUsedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"path\": \"<userhome>/fixture/project-a\"\n    },\n    {\n      \"lastUsedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"path\": \"<userhome>/fixture/project-b\"\n    }\n  ],\n  \"version\": 1\n}\n",
+      "content": "{\n  \"recentProjectDirs\": [\n    {\n      \"lastUsedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"path\": \"<userhome>/fixture/project-a\"\n    },\n    {\n      \"lastUsedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"path\": \"<userhome>/fixture/project-b\"\n    }\n  ],\n  \"version\": 1\n}\n",
       "path": "state.json",
       "type": "file"
     }

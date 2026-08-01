@@ -25,6 +25,7 @@
     "probe:linked-skill": "tsx scripts/probe-linked-skill.ts",
     "fixtures:generate": "tsx test/fixtures/generate.ts",
     "fixtures:golden": "tsx test/fixtures/generate.ts --golden",
+    "perf:harness": "tsx test/perf/harness.ts",
     "test:watch": "vitest",
     "lint": "eslint .",
     "format": "prettier --write .",
