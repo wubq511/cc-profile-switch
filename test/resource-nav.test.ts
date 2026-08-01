@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  effectiveDiffCategory,
   initialResourceNavState,
   resourceNavReducer,
 } from '../src/tui/workbench/resource-nav';
@@ -76,6 +77,49 @@ describe('resourceNavReducer', () => {
 
     state = resourceNavReducer(state, { type: 'BACK' });
     expect(state.phase).toBe('list');
+  });
+
+  it('opens a grid-level diff category and returns to idle via BACK', () => {
+    let state = resourceNavReducer(initialResourceNavState(), {
+      type: 'OPEN_DIFF_CATEGORY',
+      category: 'settings',
+    });
+    expect(state.phase).toBe('diff');
+    expect(state.diffCategory).toBe('settings');
+    expect(state.category).toBeNull();
+
+    state = resourceNavReducer(state, { type: 'BACK' });
+    expect(state.phase).toBe('idle');
+    expect(state.diffCategory).toBeNull();
+  });
+
+  it('sets the diff counterpart only in the diff phase', () => {
+    let state = resourceNavReducer(initialResourceNavState(), {
+      type: 'OPEN_DIFF_CATEGORY',
+      category: 'mcp',
+    });
+    state = resourceNavReducer(state, { type: 'SET_DIFF_PROFILE', profile: 'study' });
+    expect(state.diffProfile).toBe('study');
+
+    const idle = resourceNavReducer(initialResourceNavState(), {
+      type: 'SET_DIFF_PROFILE',
+      profile: 'study',
+    });
+    expect(idle.diffProfile).toBeNull();
+  });
+
+  it('resolves the effective diff category for list-level and grid-level entries', () => {
+    const list = resourceNavReducer(initialResourceNavState(), {
+      type: 'OPEN_CATEGORY',
+      category: 'agents',
+    });
+    expect(effectiveDiffCategory(list)).toBe('agents');
+
+    const grid = resourceNavReducer(initialResourceNavState(), {
+      type: 'OPEN_DIFF_CATEGORY',
+      category: 'launch-config',
+    });
+    expect(effectiveDiffCategory(grid)).toBe('launch-config');
   });
 
   it('allows only agents to open the frontmatter editor', () => {

@@ -51,16 +51,14 @@ import {
   copyUserMemoryToProfile,
   copyAgentToProfile,
   updateAgentFrontmatter,
-  diffUserMemory,
-  diffAgents,
   searchAllResources,
-  type UserMemoryDiff,
-  type AgentsDiff,
   type AgentFrontmatter,
   type SearchResult,
   type ResourceCategory,
 } from '../../core/resource';
+import { diffResources, type ResourceDiffResult, type DiffCategory } from '../../core/resource/diff-all';
 import {
+  effectiveDiffCategory,
   initialResourceNavState,
   resourceNavReducer,
   type ResourceNavAction,
@@ -82,7 +80,7 @@ import {
   type RecentDir,
 } from './lifecycle';
 import { KeymapOverlay } from './keymap';
-import { MainPane, CATEGORY_COUNT, categoryKeyAt } from './main-pane';
+import { MainPane, CATEGORY_COUNT, categoryKeyAt, diffCategoryFor } from './main-pane';
 import type { WorkbenchProfile, WorkbenchData } from './profile-data';
 import { loadWorkbenchData } from './profile-data';
 import { ResizeGuard } from './resize-guard';
@@ -195,7 +193,7 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
   // User Memory / Agents resource rows (issue #60)
   const [resourceNav, setResourceNav] = useState<ResourceNavState>(initialResourceNavState);
   const [resourceContent, setResourceContent] = useState<string | null>(null);
-  const [diffResult, setDiffResult] = useState<UserMemoryDiff | AgentsDiff | null>(null);
+  const [diffResult, setDiffResult] = useState<ResourceDiffResult | null>(null);
   const [drilledAgent, setDrilledAgent] = useState<string | null>(null);
   const [agentFrontmatter, setAgentFrontmatter] = useState<AgentFrontmatter | null>(null);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
@@ -385,6 +383,19 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
           setCapture(true);
         } else if (catKey === 'skills') {
           void openDiscover();
+        }
+        return;
+      }
+      if (input === 'd') {
+        // Single Diff entry point (spec §12): diff the focused category vs the
+        // first other Profile, switchable in place. Auto Memory has no diff.
+        const catKey = categoryKeyAt(selectedCategoryIndex);
+        const diffCat = catKey ? diffCategoryFor(catKey) : undefined;
+        if (diffCat) {
+          markUsed('d');
+          void openDiff(diffCat);
+        } else {
+          flash(t('resource.diff.noAutoMemory'));
         }
         return;
       }
@@ -620,10 +631,9 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
     }
   }, [resourceNav, selectedIndex, workbenchData, refreshData, flash, t]);
 
-  const openDiff = useCallback(async (profileOverride?: string) => {
+  const openDiff = useCallback(async (category: DiffCategory, profileOverride?: string) => {
     const profile = currentProfile();
-    if (!profile || !resourceNav.category) return;
-    const category = resourceNav.category;
+    if (!profile) return;
     const appHome = getAppHomePaths().appHomePath;
 
     const others = workbenchData.profiles.map((p) => p.name).filter((n) => n !== profile.name);
@@ -634,15 +644,18 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
     const counterpart = profileOverride ?? resourceNav.diffProfile ?? others[0];
 
     try {
-      let result: UserMemoryDiff | AgentsDiff;
-      if (category === 'agents') {
-        result = await diffAgents(appHome, profile.name, counterpart);
-      } else {
-        result = await diffUserMemory(appHome, profile.name, counterpart);
-      }
+      const result = await diffResources(appHome, profile.name, counterpart, category);
       setDiffResult(result);
       setDrilledAgent(null);
-      setResourceNav((prev) => resourceNavReducer(prev, { type: 'OPEN_DIFF' }));
+      // Enter the diff phase: from the category grid use OPEN_DIFF_CATEGORY
+      // (Esc → grid), from a resource list/preview keep OPEN_DIFF (Esc → list).
+      // An in-diff counterpart switch only reloads the result (phase unchanged).
+      if (resourceNav.phase === 'idle') {
+        setResourceNav((prev) => resourceNavReducer(prev, { type: 'OPEN_DIFF_CATEGORY', category }));
+      } else if (resourceNav.phase === 'list' || resourceNav.phase === 'preview') {
+        setResourceNav((prev) => resourceNavReducer(prev, { type: 'OPEN_DIFF' }));
+      }
+      setResourceNav((prev) => resourceNavReducer(prev, { type: 'SET_DIFF_PROFILE', profile: counterpart }));
     } catch (error) {
       flash(error instanceof Error ? error.message : String(error));
     }
@@ -960,8 +973,8 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
         dispatchNav({ type: 'OPEN_COPY' });
         return;
       }
-      if (input === 'd' && itemCount > 0) {
-        openDiff();
+      if (input === 'd' && itemCount > 0 && category) {
+        openDiff(category);
         return;
       }
       if (category === 'agents' && input === 'a') {
@@ -1005,15 +1018,17 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
         dispatchNav({ type: 'OPEN_COPY' });
         return;
       }
-      if (input === 'd') {
-        openDiff();
+      if (input === 'd' && category) {
+        openDiff(category);
         return;
       }
       return;
     }
 
     // Diff phase
-    if (nav.phase === 'diff' && category) {
+    if (nav.phase === 'diff') {
+      const diffCategory = effectiveDiffCategory(nav);
+      if (!diffCategory) return;
       const others = workbenchData.profiles.map((p) => p.name).filter((n) => n !== profile.name);
       if (others.length === 0) return;
 
@@ -1027,18 +1042,32 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
         const idx = others.indexOf(nav.diffProfile ?? others[0]);
         const next = others[(idx - 1 + others.length) % others.length];
         dispatchNav({ type: 'SET_DIFF_PROFILE', profile: next });
-        openDiff(next);
+        openDiff(diffCategory, next);
         return;
       }
       if (key.downArrow) {
         const idx = others.indexOf(nav.diffProfile ?? others[0]);
         const next = others[(idx + 1) % others.length];
         dispatchNav({ type: 'SET_DIFF_PROFILE', profile: next });
-        openDiff(next);
+        openDiff(diffCategory, next);
         return;
       }
-      if (key.return && category === 'agents' && diffResult && 'files' in diffResult) {
-        const changed = diffResult.files.filter((f) => f.verdict === 'changed');
+      // ↑/↓ switch the counterpart; PgUp/PgDn scroll long diff bodies (spec §4.3).
+      if (key.pageUp) {
+        dispatchNav({ type: 'SCROLL_UP' });
+        return;
+      }
+      if (key.pageDown) {
+        dispatchNav({ type: 'SCROLL_DOWN' });
+        return;
+      }
+      if (
+        key.return &&
+        diffCategory === 'agents' &&
+        diffResult &&
+        diffResult.category === 'agents'
+      ) {
+        const changed = diffResult.diff.files.filter((f) => f.verdict === 'changed');
         if (changed.length === 0) return;
         // Enter cycles through the changed files; wrapping around closes drill-in.
         if (drilledAgent === null) {
@@ -1579,9 +1608,11 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
       : resourceNav.category === 'user-memory' && selectedProfile && !selectedProfile.resourceDetails.userMemory.exists
         ? t('resource.userMemory.missing')
         : t('resource.list.hint')
-    : resourceNav.phase === 'preview' || resourceNav.phase === 'diff' || resourceNav.phase === 'copy'
-      ? t('resource.list.hint')
-      : '';
+    : resourceNav.phase === 'diff'
+      ? t('resource.diff.switchHint')
+      : resourceNav.phase === 'preview' || resourceNav.phase === 'copy'
+        ? t('resource.list.hint')
+        : '';
 
   const mcpFailed = selectedProfile ? (mcpFailedByProfile[selectedProfile.name] ?? []) : [];
 

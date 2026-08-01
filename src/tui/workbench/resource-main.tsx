@@ -5,10 +5,9 @@ import type { ResourceNavState } from './resource-nav';
 import type {
   ResourceCategory,
   AgentFrontmatter,
-  UserMemoryDiff,
-  AgentsDiff,
   SearchResult,
 } from '../../core/resource';
+import type { ResourceDiffResult } from '../../core/resource/diff-all';
 import type { EditSession } from '../../core/edit-session';
 import { ResourceList } from './resource-list';
 import { ResourcePreview } from './resource-preview';
@@ -24,7 +23,7 @@ type ResourceMainPaneProps = {
   sessionFor: (resourceName: string) => EditSession | undefined;
   /** Loaded preview content for the currently selected resource. */
   content: string | null;
-  diff: UserMemoryDiff | AgentsDiff | null;
+  diff: ResourceDiffResult | null;
   drilledAgent: string | null;
   agentFrontmatter: AgentFrontmatter | null;
   searchResults: SearchResult[];
@@ -53,8 +52,14 @@ export function ResourceMainPane({
 }: ResourceMainPaneProps): React.ReactElement {
   const { phase, category } = nav;
 
-  if (phase === 'idle' || category === null) {
+  if (phase === 'idle') {
     // The parent MainPane renders the category grid in this phase.
+    return React.createElement(React.Fragment, null);
+  }
+
+  if (category === null && phase !== 'diff') {
+    // List/preview/copy/search need a resource category; the diff phase carries
+    // its category in `diffCategory` (grid-level entry), so it is not blank.
     return React.createElement(React.Fragment, null);
   }
 
@@ -102,12 +107,13 @@ export function ResourceMainPane({
   if (phase === 'diff') {
     return React.createElement(ResourceDiffView, {
       profile,
-      category,
       diff,
+      counterpart: nav.diffProfile,
       drilledAgent,
       profiles,
       width,
       height,
+      scrollOffset: nav.scrollOffset,
     });
   }
 

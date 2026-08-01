@@ -1,4 +1,5 @@
 import type { ResourceCategory } from '../../core/resource';
+import type { DiffCategory } from '../../core/resource/diff-all';
 
 export type ResourceNavPhase =
   | 'idle'          // category card grid
@@ -16,6 +17,9 @@ export type ResourceNavState = {
   selectedIndex: number;
   scrollOffset: number;
   diffProfile: string | null;
+  /** Diff category when the diff was opened from the category grid (any diffable
+   *  resource); null for the list-level user-memory/agents diff path. */
+  diffCategory: DiffCategory | null;
   targetProfile: string | null;
   searchQuery: string;
   searchSelectedIndex: number;
@@ -28,6 +32,7 @@ export type ResourceNavAction =
   | { type: 'SET_SELECTED_INDEX'; index: number }
   | { type: 'OPEN_PREVIEW' }
   | { type: 'OPEN_DIFF' }
+  | { type: 'OPEN_DIFF_CATEGORY'; category: DiffCategory }
   | { type: 'OPEN_AGENT_EDIT' }
   | { type: 'OPEN_COPY' }
   | { type: 'OPEN_SEARCH' }
@@ -50,10 +55,16 @@ export function initialResourceNavState(): ResourceNavState {
     selectedIndex: 0,
     scrollOffset: 0,
     diffProfile: null,
+    diffCategory: null,
     targetProfile: null,
     searchQuery: '',
     searchSelectedIndex: 0,
   };
+}
+
+/** The effective diff category: a grid-level diffCategory wins, else the list category. */
+export function effectiveDiffCategory(state: ResourceNavState): DiffCategory | null {
+  return state.diffCategory ?? state.category;
 }
 
 export function resourceNavReducer(
@@ -87,6 +98,10 @@ export function resourceNavReducer(
     case 'OPEN_DIFF':
       if (state.phase !== 'list' && state.phase !== 'preview') return state;
       return { ...state, phase: 'diff', scrollOffset: 0 };
+
+    case 'OPEN_DIFF_CATEGORY':
+      if (state.phase !== 'idle' && state.phase !== 'list' && state.phase !== 'preview') return state;
+      return { ...state, phase: 'diff', diffCategory: action.category, scrollOffset: 0 };
 
     case 'OPEN_AGENT_EDIT':
       if (state.phase !== 'list' || state.category !== 'agents') return state;
@@ -141,6 +156,10 @@ export function resourceNavReducer(
         return { ...state, phase: 'list', scrollOffset: 0 };
       }
       if (state.phase === 'diff') {
+        if (state.diffCategory) {
+          // Grid-level diff: back to the category grid (idle).
+          return { ...state, phase: 'idle', diffCategory: null, diffProfile: null, scrollOffset: 0 };
+        }
         return { ...state, phase: 'list', diffProfile: null, scrollOffset: 0 };
       }
       if (state.phase === 'agent-edit') {
