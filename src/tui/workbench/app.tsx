@@ -287,6 +287,17 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe }: { d
       return;
     }
 
+    // Top-level `e`: open the selected Profile's User Memory (CLAUDE.md) in
+    // VS Code (§4.3 `e`, §8 watching). Lives with the grid's other idle action
+    // keys, before the category-focus block, so it stays live while the grid
+    // is focused — matching how `u`/`a` keep working there. Resource views and
+    // the wizard return earlier and own their own `e`.
+    if (input === 'e' && lifecycle.phase === 'idle') {
+      markUsed('e');
+      void handleTopLevelEdit();
+      return;
+    }
+
     // Tab toggles main-pane category focus (only at lifecycle idle)
     if (key.tab && lifecycle.phase === 'idle') {
       if (!mainPaneFocus && workbenchData.profiles.length > 0) {
@@ -493,6 +504,25 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe }: { d
       flash(error instanceof Error ? error.message : String(error));
     }
   }, [resourceNav, selectedIndex, workbenchData, flash]);
+
+  // Top-level `e` (main-pane grid, a Profile selected): open the selected
+  // Profile's User Memory (CLAUDE.md) in VS Code — the same file the
+  // resource-level User Memory edit opens (§4.3 `e`, §8 watching). Reuses the
+  // edit-session infrastructure rather than a parallel editor path.
+  const handleTopLevelEdit = useCallback(async () => {
+    const profile = currentProfile();
+    if (!profile) return;
+    if (!profile.resourceDetails.userMemory.exists) {
+      flash(t('main.edit.missing'));
+      return;
+    }
+    const filePath = getProfileTemplatePaths(appHomePath, profile.name).claudeMdPath;
+    try {
+      await sessionManagerRef.current.open(filePath);
+    } catch (error) {
+      flash(error instanceof Error ? error.message : String(error));
+    }
+  }, [selectedIndex, workbenchData, appHomePath, flash, t]);
 
   const removeSelectedResource = useCallback(async () => {
     const profile = currentProfile();
@@ -1268,6 +1298,15 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe }: { d
   const mainWidth = width - sidebarWidth - 2;
   const selectedProfile: WorkbenchProfile | undefined = workbenchData.profiles[selectedIndex] ?? undefined;
 
+  // Active edit session for the selected Profile's CLAUDE.md, so the top-level
+  // grid can render the §8 watching banner with its change counter.
+  const topLevelClaudeMdPath = selectedProfile
+    ? getProfileTemplatePaths(appHomePath, selectedProfile.name).claudeMdPath
+    : null;
+  const topLevelEditSession = topLevelClaudeMdPath
+    ? sessionManagerRef.current.getSession(topLevelClaudeMdPath)
+    : undefined;
+
   // Dispose edit sessions on unmount (after launch remount or app quit).
   useEffect(() => {
     const sessionManager = sessionManagerRef.current;
@@ -1361,6 +1400,7 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe }: { d
                         height: height - 1,
                         focused: mainPaneFocus,
                         selectedCategoryIndex,
+                        editSession: topLevelEditSession,
                         sessionFor,
                         content: resourceContent,
                         diff: diffResult,

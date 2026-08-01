@@ -13,6 +13,7 @@ import type {
 } from '../../core/resource';
 import type { EditSession } from '../../core/edit-session';
 import { ResourceMainPane } from './resource-main';
+import { WatchingBadge } from './edit-session/WatchingBadge';
 
 type MainPaneProps = {
   profile: WorkbenchProfile | undefined;
@@ -26,6 +27,9 @@ type MainPaneProps = {
   focused?: boolean;
   /** Index of the highlighted category card when focused. */
   selectedCategoryIndex?: number;
+  /** Active edit session for the selected Profile's User Memory (CLAUDE.md)
+   *  when edited from the top-level grid `e` (§4.3/§8). */
+  editSession?: EditSession;
   sessionFor: (resourceName: string) => EditSession | undefined;
   content: string | null;
   diff: UserMemoryDiff | AgentsDiff | null;
@@ -60,6 +64,7 @@ type CategoryKey = CategoryDef['key'];
 // Focused-element contextual hints (retire after HINT_RETIRE_AFTER uses).
 const PROFILE_HINTS = [
   { key: 'l' as const, labelKey: 'lifecycle.launch' as const },
+  { key: 'e' as const, labelKey: 'keymap.edit' as const },
   { key: 'b' as const, labelKey: 'lifecycle.backup' as const },
   { key: 'x' as const, labelKey: 'lifecycle.remove' as const },
   { key: 'n' as const, labelKey: 'lifecycle.create' as const },
@@ -74,6 +79,7 @@ export function MainPane({
   height,
   focused,
   selectedCategoryIndex,
+  editSession,
   sessionFor,
   content,
   diff,
@@ -142,6 +148,18 @@ export function MainPane({
         { color: 'yellow', wrap: 'wrap' },
         `⚠ ${t('mcp.failed').replace('{name}', mcpFailed.join(', '))}`,
       ),
+    ),
+    // §8 watching banner: the selected Profile's CLAUDE.md is being edited in
+    // VS Code (top-level `e`). The badge re-renders on every external save,
+    // carrying the per-session change counter and refresh timestamp.
+    editSession && editSession.phase !== 'idle' && React.createElement(
+      Box,
+      { marginBottom: 1 },
+      React.createElement(WatchingBadge, {
+        phase: editSession.phase,
+        changeCount: editSession.changeCount,
+        lastUpdated: editSession.lastUpdated,
+      }),
     ),
     React.createElement(
       Box,
