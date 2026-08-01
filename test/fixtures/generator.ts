@@ -405,6 +405,39 @@ function provenanceRecord(input: {
   return record;
 }
 
+// Materialize skill trees and emit the provenance manifest for a set of skill
+// descriptors. Shared by the healthy profile builder and the pathology profile
+// builder so the skill→entry→manifest shape stays in one place.
+function emitSkillsAndManifest(
+  entries: FixtureEntry[],
+  descriptors: SkillDescriptor[],
+  claudeHome: string,
+  root: string,
+): void {
+  const provenanceSkills: Record<string, unknown> = {};
+  for (const descriptor of descriptors) {
+    if (descriptor.materializeTree) {
+      writeSkillFiles(entries, `${claudeHome}/skills/${descriptor.name}`, descriptor.files);
+    }
+    if (descriptor.inManifest) {
+      provenanceSkills[descriptor.name] = provenanceRecord({
+        mode: 'copy',
+        source: {
+          kind: 'git-remote',
+          url: `https://example.invalid/skills/${descriptor.name}.git`,
+          ref: 'main',
+        },
+        contentHash: descriptor.contentHash,
+      });
+    }
+  }
+  entries.push({
+    type: 'file',
+    path: `${root}/skills-provenance.json`,
+    content: stableStringify({ version: 1, skills: provenanceSkills }),
+  });
+}
+
 // Full-tree sha256 matching src/core/skills-provenance.ts computeContentHash:
 // regular files sorted by posix rel path, per-file sha256 of utf8 bytes,
 // concat `${relPath}\n${hash}\n`, sha256 of the concatenation. Parity is pinned
@@ -431,11 +464,25 @@ function autoMemoryEntry(profileName: string): string {
 
 function buildClaudeJson(profileName: string, malformed: boolean): unknown {
   if (malformed) {
-    // P12: a non-object mcpServers value. Consumers must treat .claude.json MCP
-    // entries as untrusted.
+    // P12: malformed MCP entries. The mcpServers container is a valid object,
+    // but individual server entries are malformed — one is a string instead of
+    // an object, one is missing the required `command` field. Consumers must
+    // treat each entry as untrusted, not just the top-level value.
     return {
-      mcpServers: 'not-an-object',
-      _fixtureNote: `malformed mcpServers for ${profileName}`,
+      mcpServers: {
+        [`fixture-server-${profileName}`]: {
+          type: 'stdio',
+          command: 'npx',
+          args: ['-y', '@fixture/server'],
+          env: { FIXTURE_MODE: 'demo' },
+        },
+        'malformed-string-entry': 'not-a-server-object',
+        'missing-command-entry': {
+          type: 'stdio',
+          args: ['-y', '@fixture/missing-command'],
+        },
+      },
+      _fixtureNote: `malformed MCP entries for ${profileName}`,
     };
   }
   return {
@@ -477,33 +524,13 @@ function buildHealthyProfile(options: BuildHealthyProfileOptions): FixtureProfil
 
   // Skills (all copy-mode with full provenance and matching contentHash).
   const skillWidth = widthFor(skillsPerProfile);
-  const skills: FixtureSkillSummary[] = [];
-  const provenanceSkills: Record<string, unknown> = {};
+  const descriptors: SkillDescriptor[] = [];
   for (let i = 0; i < skillsPerProfile; i++) {
     const skillName = `skill-${padIndex(i + 1, skillWidth)}`;
-    const descriptor = buildCopySkill(seedBasis, skillName, name, i);
-    if (descriptor.materializeTree) {
-      writeSkillFiles(entries, `${claudeHome}/skills/${skillName}`, descriptor.files);
-    }
-    if (descriptor.inManifest) {
-      provenanceSkills[skillName] = provenanceRecord({
-        mode: 'copy',
-        source: {
-          kind: 'git-remote',
-          url: `https://example.invalid/skills/${skillName}.git`,
-          ref: 'main',
-        },
-        contentHash: descriptor.contentHash,
-      });
-    }
-    skills.push({ name: skillName, kind: descriptor.kind });
+    descriptors.push(buildCopySkill(seedBasis, skillName, name, i));
   }
-
-  entries.push({
-    type: 'file',
-    path: `${root}/skills-provenance.json`,
-    content: stableStringify({ version: 1, skills: provenanceSkills }),
-  });
+  emitSkillsAndManifest(entries, descriptors, claudeHome, root);
+  const skills: FixtureSkillSummary[] = descriptors.map((d) => ({ name: d.name, kind: d.kind }));
 
   // Agents.
   const agentCount = 2;
@@ -839,28 +866,7 @@ function buildPathologyProfile(options: BuildPathologyProfileOptions): FixturePr
   });
 
   // Materialize skill trees + build provenance manifest.
-  const provenanceSkills: Record<string, unknown> = {};
-  for (const skill of skills) {
-    if (skill.materializeTree) {
-      writeSkillFiles(entries, `${claudeHome}/skills/${skill.name}`, skill.files);
-    }
-    if (skill.inManifest) {
-      provenanceSkills[skill.name] = provenanceRecord({
-        mode: 'copy',
-        source: {
-          kind: 'git-remote',
-          url: `https://example.invalid/skills/${skill.name}.git`,
-          ref: 'main',
-        },
-        contentHash: skill.contentHash,
-      });
-    }
-  }
-  entries.push({
-    type: 'file',
-    path: `${root}/skills-provenance.json`,
-    content: stableStringify({ version: 1, skills: provenanceSkills }),
-  });
+  emitSkillsAndManifest(entries, skills, claudeHome, root);
 
   // Agents + auto memory + .claude.json.
   entries.push(
@@ -1050,6 +1056,12 @@ function resolveEntryPath(rootPath: string, posixPath: string): string {
   // relative to the fixture root. Absolute-looking tokens (<apphome>,
   // <userhome>) never appear as entry paths — only inside JSON content strings.
   const parts = posixPath.split('/').filter((p) => p.length > 0);
+  // Block traversal: every entry path must stay inside the fixture root, even
+  // though all inputs are generator-controlled today (AGENTS.md: "resolve
+  // absolute paths and block traversal").
+  if (parts.includes('..')) {
+    throw new Error(`fixture entry path escapes the fixture root: ${posixPath}`);
+  }
   return path.resolve(rootPath, ...parts);
 }
 

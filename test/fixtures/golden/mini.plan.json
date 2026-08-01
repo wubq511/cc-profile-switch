@@ -405,7 +405,7 @@
       "type": "dir"
     },
     {
-      "content": "{\n  \"_fixtureNote\": \"malformed mcpServers for pathology-p12\",\n  \"mcpServers\": \"not-an-object\"\n}\n",
+      "content": "{\n  \"_fixtureNote\": \"malformed MCP entries for pathology-p12\",\n  \"mcpServers\": {\n    \"fixture-server-pathology-p12\": {\n      \"args\": [\n        \"-y\",\n        \"@fixture/server\"\n      ],\n      \"command\": \"npx\",\n      \"env\": {\n        \"FIXTURE_MODE\": \"demo\"\n      },\n      \"type\": \"stdio\"\n    },\n    \"malformed-string-entry\": \"not-a-server-object\",\n    \"missing-command-entry\": {\n      \"args\": [\n        \"-y\",\n        \"@fixture/missing-command\"\n      ],\n      \"type\": \"stdio\"\n    }\n  }\n}\n",
       "path": "profiles/pathology-p12/claude-home/.claude.json",
       "type": "file"
     },

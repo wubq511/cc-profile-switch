@@ -242,6 +242,8 @@ describe('fixture generator: Pathology Library P1-P13', () => {
           const parsed = JSON.parse(content!);
           expect(parsed).not.toHaveProperty('autoMemoryDirectory');
           expect(parsed).not.toHaveProperty('claudeMdExcludes');
+          // Managed attribution env must also be absent.
+          expect(parsed.env?.CLAUDE_CODE_ATTRIBUTION_HEADER).toBeUndefined();
           break;
         }
         case 'P4': {
@@ -315,7 +317,11 @@ describe('fixture generator: Pathology Library P1-P13', () => {
             e.path.endsWith('pathology-p12/claude-home/.claude.json'),
           );
           const parsed = JSON.parse(content!);
-          expect(typeof parsed.mcpServers).not.toBe('object');
+          // The container is a valid object; individual entries are malformed.
+          expect(typeof parsed.mcpServers).toBe('object');
+          expect(parsed.mcpServers['malformed-string-entry']).toBe('not-a-server-object');
+          const missingCommand = parsed.mcpServers['missing-command-entry'];
+          expect(missingCommand).not.toHaveProperty('command');
           break;
         }
         case 'P13': {
