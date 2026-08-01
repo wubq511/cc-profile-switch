@@ -8,6 +8,7 @@ import {
   hasUnrepairableCcpsProfileRuleMarkers,
   type ProfileTemplatePaths,
 } from './profile-template';
+import { isLegacyMcpConfigured } from './mcp-servers';
 
 export type ValidationSeverity = 'warning' | 'error';
 export type ValidationStatus = 'valid' | 'warning' | 'error';
@@ -120,6 +121,24 @@ export async function validateProfile(
   const settingsJson = parsedJson.get(paths.settingsPath);
   if (settingsJson !== undefined) {
     validateProfileMemorySettings(paths, settingsJson, findings);
+  }
+
+  // Surface the legacy root `mcp.json` launch-flag path (spec §7.5, AC #6).
+  // Non-blocking: the legacy `--mcp-config` flag still launches successfully;
+  // the warning nudges toward the native user scope. Only fires when the legacy
+  // flag is actually active (mcpMode !== 'none' AND configured servers present).
+  if (config) {
+    const legacyMcpJson = parsedJson.get(paths.mcpConfigPath);
+    if (config.launch.mcpMode !== 'none' && isLegacyMcpConfigured(legacyMcpJson)) {
+      findings.push({
+        severity: 'warning',
+        code: 'LEGACY_MCP_CONFIG_ACTIVE',
+        message: 'This profile uses the legacy root mcp.json MCP configuration path.',
+        path: paths.mcpConfigPath,
+        suggestion:
+          'Migrate servers to the native user scope with `claude mcp add --scope user` (CLAUDE_CONFIG_DIR set to this profile) and set launch.mcpMode to none.',
+      });
+    }
   }
 
   return {
