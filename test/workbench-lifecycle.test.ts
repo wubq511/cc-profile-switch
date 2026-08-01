@@ -190,4 +190,89 @@ describe('lifecycle reducer', () => {
     state = lifecycleReducer(state, { type: 'CANCEL' });
     expect(state.phase).toBe('idle');
   });
+
+  it('transitions idle → confirm on START_CONFIRM (destructive panel)', () => {
+    const state = lifecycleReducer(initialLifecycleState(), {
+      type: 'START_CONFIRM',
+      kind: 'remove',
+      profileName: 'coding',
+    });
+    expect(state.phase).toBe('confirm');
+    expect(state.kind).toBe('remove');
+    expect(state.profileName).toBe('coding');
+  });
+
+  it('transitions confirm → executing on CONFIRM_CHOICE', () => {
+    let state = lifecycleReducer(initialLifecycleState(), {
+      type: 'START_CONFIRM',
+      kind: 'remove',
+      profileName: 'coding',
+    });
+    state = lifecycleReducer(state, { type: 'CONFIRM_CHOICE', choice: 'backup' });
+    expect(state.phase).toBe('executing');
+    expect(state.kind).toBe('remove');
+  });
+
+  it('transitions confirm → idle on CANCEL', () => {
+    let state = lifecycleReducer(initialLifecycleState(), {
+      type: 'START_CONFIRM',
+      kind: 'remove',
+      profileName: 'coding',
+    });
+    state = lifecycleReducer(state, { type: 'CANCEL' });
+    expect(state.phase).toBe('idle');
+  });
+
+  it('CONFIRM_CHOICE outside confirm is a no-op', () => {
+    const state = lifecycleReducer(initialLifecycleState(), {
+      type: 'CONFIRM_CHOICE',
+      choice: 'backup',
+    });
+    expect(state.phase).toBe('idle');
+  });
+
+  it('flashes carry a generation counter (messageId)', () => {
+    let state = lifecycleReducer(initialLifecycleState(), {
+      type: 'START_IMMEDIATE',
+      kind: 'backup',
+      profileName: 'coding',
+    });
+    state = lifecycleReducer(state, { type: 'EXECUTE_SUCCESS', message: 'Done!' });
+    expect(state.messageId).toBe(1);
+    // A duplicate success while already showing one is a no-op — the flash
+    // stays at generation 1 (no double render, no stale-timer window).
+    const duplicate = lifecycleReducer(state, { type: 'EXECUTE_SUCCESS', message: 'Done!' });
+    expect(duplicate.messageId).toBe(1);
+    // Error flashes bump the same counter.
+    let errorState = lifecycleReducer(initialLifecycleState(), {
+      type: 'START_IMMEDIATE',
+      kind: 'validate',
+      profileName: 'coding',
+    });
+    errorState = lifecycleReducer(errorState, {
+      type: 'EXECUTE_ERROR',
+      message: 'Fail',
+      code: 'X',
+      guidance: 'Fix it',
+    });
+    expect(errorState.messageId).toBe(1);
+    expect(errorState.phase).toBe('error');
+  });
+
+  it('carries error code and guidance into the error state', () => {
+    let state = lifecycleReducer(initialLifecycleState(), {
+      type: 'START_IMMEDIATE',
+      kind: 'validate',
+      profileName: 'coding',
+    });
+    state = lifecycleReducer(state, {
+      type: 'EXECUTE_ERROR',
+      message: 'Profile removal confirmation did not match.',
+      code: 'PROFILE_DELETE_CONFIRMATION_MISMATCH',
+      guidance: 'Type the exact profile name to remove it: coding',
+    });
+    expect(state.phase).toBe('error');
+    expect(state.errorCode).toBe('PROFILE_DELETE_CONFIRMATION_MISMATCH');
+    expect(state.guidance).toContain('Type the exact profile name');
+  });
 });

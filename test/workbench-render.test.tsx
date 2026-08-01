@@ -42,6 +42,7 @@ const sampleData: WorkbenchData = {
       isLastUsed: true,
       status: 'valid',
       resourceCounts: { userMemory: 1, autoMemory: 5, skills: 3, agents: 2, mcp: 1, settings: 1, launchConfig: 1 },
+      mcpServers: ['filesystem'],
       validation: null,
     },
     {
@@ -51,6 +52,7 @@ const sampleData: WorkbenchData = {
       isLastUsed: false,
       status: 'valid',
       resourceCounts: { userMemory: 1, autoMemory: 2, skills: 1, agents: 0, mcp: 0, settings: 1, launchConfig: 1 },
+      mcpServers: [],
       validation: null,
     },
   ],
