@@ -26,7 +26,7 @@ import {
   type RecentDir,
 } from './lifecycle';
 import { KeymapOverlay } from './keymap';
-import { MainPane } from './main-pane';
+import { MainPane, CATEGORY_COUNT, categoryKeyAt } from './main-pane';
 import type { WorkbenchProfile, WorkbenchData } from './profile-data';
 import { loadWorkbenchData } from './profile-data';
 import { ResizeGuard } from './resize-guard';
@@ -34,7 +34,11 @@ import { Sidebar } from './sidebar';
 import { PreLaunchBar } from './launch/pre-launch-bar';
 import { DirectoryScreen } from './launch/directory-screen';
 import { DryRunPage } from './launch/dry-run-page';
+import { AutoMemoryView } from './resources/auto-memory-view';
+import { EditSessionManager } from '../../core/edit-session';
 import { type ProfileTemplateName } from '../../core/profile-template';
+
+type DrillDown = { kind: 'none' } | { kind: 'autoMemory' };
 
 type CaptureSetter = (on: boolean) => void;
 const CaptureContext = createContext<CaptureSetter>(() => {});
@@ -74,8 +78,22 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch }: { data: Workb
   const [, forceRerender] = useState(0);
   const [workbenchData, setWorkbenchData] = useState(data);
   const [lifecycle, setLifecycle] = useState(initialLifecycleState);
+  // Main-pane category focus + resource-row drill-down (issue #69)
+  const [mainPaneFocus, setMainPaneFocus] = useState(false);
+  const [selectedCategoryIndex, setSelectedCategoryIndex] = useState(0);
+  const [drillDown, setDrillDown] = useState<DrillDown>({ kind: 'none' });
   // Persisted selection across launch remount
   const persistedSelection = useRef(selectedIndex);
+
+  // Edit-session manager — one instance for the Workbench lifetime. Its onChange
+  // bumps a counter so watching banners re-render on external saves.
+  const editSessionManagerRef = useRef<EditSessionManager | null>(null);
+  if (editSessionManagerRef.current === null) {
+    editSessionManagerRef.current = new EditSessionManager({
+      onChange: () => forceRerender((n: number) => n + 1),
+    });
+  }
+  const editSessionManager = editSessionManagerRef.current;
 
   const width = stdout.columns ?? 80;
   const height = stdout.rows ?? 24;
@@ -87,6 +105,14 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch }: { data: Workb
       stdout.off('resize', onResize);
     };
   }, [stdout]);
+
+  // Release file watchers and debounce timers when the Workbench unmounts
+  // (e.g. on launch remount or exit) so the manager never leaks OS handles.
+  useEffect(() => {
+    return () => {
+      editSessionManager.dispose();
+    };
+  }, [editSessionManager]);
 
   const canUseInput = !headless && inkStdin.isTTY;
 
@@ -113,12 +139,6 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch }: { data: Workb
 
     if (capture) return;
 
-    // Launch flow input handling (highest priority when active)
-    if (launchActive) {
-      handleLaunchInput(input, key);
-      return;
-    }
-
     if (input === 'q') {
       exit();
       return;
@@ -127,7 +147,55 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch }: { data: Workb
       setHelpVisible(true);
       return;
     }
+
+    // Launch flow input handling (highest priority when active)
+    if (launchActive) {
+      handleLaunchInput(input, key);
+      return;
+    }
+
+    // Tab toggles main-pane category focus (only at lifecycle idle)
+    if (key.tab && lifecycle.phase === 'idle') {
+      if (!mainPaneFocus && workbenchData.profiles.length > 0) {
+        setMainPaneFocus(true);
+      } else if (mainPaneFocus) {
+        setMainPaneFocus(false);
+      }
+      return;
+    }
+
+    // Main-pane category navigation (issue #69 drill-down entry)
+    if (mainPaneFocus && lifecycle.phase === 'idle') {
+      if (key.escape || key.leftArrow) {
+        setMainPaneFocus(false);
+        return;
+      }
+      if (key.upArrow) {
+        setSelectedCategoryIndex((prev) => (prev > 0 ? prev - 1 : CATEGORY_COUNT - 1));
+        return;
+      }
+      if (key.downArrow) {
+        setSelectedCategoryIndex((prev) => (prev < CATEGORY_COUNT - 1 ? prev + 1 : 0));
+        return;
+      }
+      if (key.return) {
+        const catKey = categoryKeyAt(selectedCategoryIndex);
+        if (catKey === 'autoMemory') {
+          setDrillDown({ kind: 'autoMemory' });
+          setCapture(true);
+        }
+        return;
+      }
+      return;
+    }
   }, { isActive: canUseInput });
+
+  const handleExitDrillDown = useCallback(() => {
+    setDrillDown({ kind: 'none' });
+    setCapture(false);
+    // Return focus to the category grid so the user can keep navigating.
+    setMainPaneFocus(true);
+  }, []);
 
   const handleLaunchInput = useCallback((input: string, key: Record<string, boolean>) => {
     const launch = lifecycle.launch;
@@ -462,7 +530,7 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch }: { data: Workb
                 onSelect: setSelectedIndex,
                 width: sidebarWidth,
                 height: height - 1,
-                capture,
+                capture: capture || mainPaneFocus,
                 headless,
                 lifecycle,
                 onLifecycleAction,
@@ -470,11 +538,23 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch }: { data: Workb
                 onLaunchBar: handleLaunchBar,
                 onLaunchDirScreen: handleLaunchDirScreen,
               }),
-              React.createElement(MainPane, {
-                profile: selectedProfile,
-                width: mainWidth,
-                height: height - 1,
-              }),
+              drillDown.kind === 'autoMemory' && selectedProfile
+                ? React.createElement(AutoMemoryView, {
+                    profile: selectedProfile,
+                    appHomePath: getAppHomePaths().appHomePath,
+                    profileNames: workbenchData.profiles.map((p) => p.name),
+                    width: mainWidth,
+                    height: height - 1,
+                    editSessionManager,
+                    onBack: handleExitDrillDown,
+                  })
+                : React.createElement(MainPane, {
+                    profile: selectedProfile,
+                    width: mainWidth,
+                    height: height - 1,
+                    focused: mainPaneFocus,
+                    selectedCategoryIndex,
+                  }),
             ),
       React.createElement(
         Box,
@@ -482,7 +562,8 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch }: { data: Workb
         React.createElement(
           Text,
           { dimColor: true },
-          ` ${locale === 'zh' ? 'zh' : 'en'} │ ? ${t('keymap.help')} │ q ${t('app.quit')}`,
+          ` ${locale === 'zh' ? 'zh' : 'en'} │ ? ${t('keymap.help')} │ q ${t('app.quit')}` +
+            (mainPaneFocus ? ` │ ${t('main.backToList')}` : (drillDown.kind === 'none' && workbenchData.profiles.length > 0 ? ` │ ${t('main.focusHint')}` : '')),
         ),
         React.createElement(Text, { dimColor: true }, `${width}×${height} `),
       ),

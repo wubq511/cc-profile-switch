@@ -102,6 +102,33 @@ export const en = {
   'launch.exited.zero': 'Claude exited successfully',
   'launch.finding.error': 'Error',
   'launch.finding.warning': 'Warning',
+  // Main-pane focus + category drill-down
+  'main.focusHint': 'Tab to focus categories',
+  'main.drillIn': 'Enter to drill in',
+  'main.backToList': 'Esc to return to categories',
+  // Auto Memory resource row
+  'autoMemory.title': 'Auto Memory',
+  'autoMemory.empty': 'No Auto Memory entries yet. Claude creates them during sessions.',
+  'autoMemory.noCreate': 'Create is intentionally unavailable — Auto Memory is Claude-authored.',
+  'autoMemory.noDiff': 'Diff is intentionally unavailable — Auto Memory is session-derived.',
+  'autoMemory.preview': 'Preview',
+  'autoMemory.preview.empty': 'Select an entry to preview its content.',
+  'autoMemory.search.placeholder': 'Search entries…',
+  'autoMemory.search.noMatch': 'No entries match your search.',
+  'autoMemory.actions': '[e] edit  [c] copy  [x] remove  [u] undo  [/] search  [esc] back',
+  'autoMemory.copy.prompt': 'Copy to profile:',
+  'autoMemory.copy.badName': 'Pick an existing profile name.',
+  'autoMemory.copy.success': 'Copied "{entry}" to "{profile}"',
+  'autoMemory.copy.sameProfile': 'Copy target must be a different profile.',
+  'autoMemory.remove.done': 'Removed "{entry}" — restorable from the Recovery Bin.',
+  'autoMemory.restore.title': 'Undo remove — pick an entry',
+  'autoMemory.restore.empty': 'Nothing to restore for this profile.',
+  'autoMemory.restore.success': 'Restored "{entry}"',
+  'autoMemory.restore.collision': 'Restore blocked — an entry with that name exists. Rename or remove it first.',
+  'autoMemory.restore.failed': 'Restore failed: {message}',
+  'autoMemory.edit.opening': 'Opening "{entry}" in VS Code…',
+  'autoMemory.edit.failed': 'Could not open VS Code: {message}',
+  'autoMemory.edit.banner': 'Editing in VS Code — Workbench is watching',
 } as const;
 
 export type LocaleKey = keyof typeof en;

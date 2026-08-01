@@ -122,6 +122,10 @@ describe('Workbench render', () => {
       },
     );
     await instance.waitUntilRenderFlush();
+    instance.unmount();
+    await instance.waitUntilExit();
+    // Read after unmount so the final frame is flushed to the fake stdout
+    // (matches the other render tests in this file).
     const output = stripAnsi(stdout.output);
     expect(output).toContain('[n]');
     expect(output).toContain('[c]');
@@ -130,8 +134,6 @@ describe('Workbench render', () => {
     expect(output).toContain('[v]');
     expect(output).toContain('[b]');
     expect(output).toContain('[x]');
-    instance.unmount();
-    await instance.waitUntilExit();
   });
 });
 
