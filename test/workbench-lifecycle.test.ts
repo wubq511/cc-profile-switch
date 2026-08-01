@@ -2,8 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   initialLifecycleState,
   lifecycleReducer,
-  type LifecycleState,
-  type LifecycleAction,
 } from '../src/tui/workbench/lifecycle';
 
 describe('lifecycle reducer', () => {
@@ -149,7 +147,7 @@ describe('lifecycle reducer', () => {
   });
 
   it('handles immediate actions (validate, backup, default)', () => {
-    let state = lifecycleReducer(initialLifecycleState(), {
+    const state = lifecycleReducer(initialLifecycleState(), {
       type: 'START_IMMEDIATE',
       kind: 'validate',
       profileName: 'coding',
