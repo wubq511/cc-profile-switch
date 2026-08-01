@@ -19,6 +19,7 @@ import {
 import { loadSkillsProvenance } from '../src/core/skills-provenance';
 import { listRecoveryBinItems, restoreRecoveryItem } from '../src/core/recovery-bin';
 import { createSkillLink } from '../src/platform/link';
+import { type CaptureProcess } from '../src/platform/process';
 import { CcpsError } from '../src/utils/errors';
 
 // Probe symlink capability at module load so link tests can skip on platforms
@@ -71,6 +72,29 @@ async function makeSourceSkill(root: string, name: string, body = '# Test\n'): P
 }
 
 const fixedClock = () => new Date('2026-07-31T16:13:29.000Z');
+
+// Git mock helpers for repo-discovery tests (mirror skills-provenance.test.ts).
+function mockCapture(
+  responses: { match: (args: string[]) => boolean; stdout?: string; exitCode?: number }[],
+): CaptureProcess {
+  return async (_command, args) => {
+    for (const response of responses) {
+      if (response.match(args)) {
+        return {
+          exitCode: response.exitCode ?? 0,
+          stdout: response.stdout ?? '',
+          stderr: '',
+          timedOut: false,
+        };
+      }
+    }
+    return { exitCode: 1, stdout: '', stderr: 'no mock matched', timedOut: false };
+  };
+}
+
+const gitArgs = (subcommand: string[]): ((args: string[]) => boolean) => {
+  return (args) => subcommand.every((token) => args.includes(token));
+};
 
 afterEach(async () => {
   await Promise.all(tempRoots.map((root) => rm(root, { recursive: true, force: true })));
@@ -388,6 +412,65 @@ describe.skipIf(!canCreateSymlink)('installLocalSkill — Link', () => {
     });
     const selfRef = checks.find((c) => c.code === 'target-not-self-referential');
     expect(selfRef?.ok).toBe(false);
+  });
+
+  it('records the enclosing git repo in provenance when the source is inside one', async () => {
+    const root = await makeTempRoot('ccps-install-gitrepo-');
+    const appHome = await makeAppHome();
+    const profileDir = await makeProfile(appHome, 'coding');
+    const source = await makeSourceSkill(root, 'commit-helper', '# Helper\n');
+
+    const gitCapture = mockCapture([
+      { match: gitArgs(['rev-parse', '--show-toplevel']), stdout: root },
+      { match: gitArgs(['remote', 'get-url', 'origin']), stdout: 'https://example.com/repo.git' },
+      { match: gitArgs(['rev-parse', '--abbrev-ref', 'HEAD']), stdout: 'main' },
+    ]);
+
+    await installLocalSkill({
+      appHomePath: appHome,
+      profileName: 'coding',
+      profileRootPath: profileDir,
+      sourcePath: source,
+      mode: 'copy',
+      name: 'commit-helper',
+      clock: fixedClock,
+      gitCaptureProcess: gitCapture,
+    });
+
+    const manifest = await loadSkillsProvenance(profileDir);
+    const record = manifest.skills['commit-helper'];
+    expect(record.source.repo).toEqual({
+      root,
+      remoteUrl: 'https://example.com/repo.git',
+      skillPathInRepo: 'commit-helper',
+      ref: 'main',
+    });
+  });
+
+  it('omits repo when the source is not inside a git repo', async () => {
+    const root = await makeTempRoot('ccps-install-nogit-');
+    const appHome = await makeAppHome();
+    const profileDir = await makeProfile(appHome, 'coding');
+    const source = await makeSourceSkill(root, 'commit-helper', '# Helper\n');
+
+    const gitCapture = mockCapture([
+      { match: gitArgs(['rev-parse', '--show-toplevel']), exitCode: 1 },
+    ]);
+
+    await installLocalSkill({
+      appHomePath: appHome,
+      profileName: 'coding',
+      profileRootPath: profileDir,
+      sourcePath: source,
+      mode: 'copy',
+      name: 'commit-helper',
+      clock: fixedClock,
+      gitCaptureProcess: gitCapture,
+    });
+
+    const manifest = await loadSkillsProvenance(profileDir);
+    const record = manifest.skills['commit-helper'];
+    expect(record.source.repo).toBeUndefined();
   });
 });
 
