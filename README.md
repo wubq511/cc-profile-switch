@@ -84,6 +84,19 @@ ccps launch --dry-run
 ccps launch
 ccps create-profile
 ccps tui
+ccps plugin list <profile> [--available]
+ccps plugin details <profile> <plugin>
+ccps plugin install <profile> <plugin> [--config key=value]
+ccps plugin enable <profile> <plugin>
+ccps plugin disable <profile> <plugin>
+ccps plugin update <profile> <plugin>
+ccps plugin uninstall <profile> <plugin> [--config-key name]
+ccps plugin marketplace list <profile>
+ccps plugin marketplace add <profile> <owner/repo|https://…|local-path>
+ccps plugin marketplace update <profile> <name>
+ccps plugin marketplace remove <profile> <name>
+ccps bin list
+ccps bin restore <item-id> [--resolve refuse|restore-as-new-name|delete-and-restore]
 ```
 
 在执行真正的启动前，建议使用 `ccps launch <profile> --dry-run` 或 `ccps launch --dry-run` 检查计划。
@@ -101,6 +114,8 @@ ccps tui
 `ccps create-profile` 会启动一个内置的 profile-creator profile，其中预装了 ccps-create-profile skill。进入 Claude Code 后，直接描述你要创建什么样的 profile，skill 会引导你完成完整的 8 阶段配置流程（CLAUDE.md 生成、Skills 安装、Agents 创建、MCP 配置、Settings 设置等）。首次运行会自动创建 profile-creator profile，后续运行会更新 skill 文件到最新版本。
 
 `ccps tui` 是覆盖同一套核心行为的轻量交互入口，适合在终端里选择 profile、执行 copy / rename / remove / default / validate / launch dry-run。它不是 GUI，也不是单独的产品模式；真正的启动、校验、删除备份和配置安全边界仍由相同的 core service 执行。
+
+`ccps plugin ...` 通过 `claude plugin` 命令委托管理所选 profile 的插件，始终设置 `CLAUDE_CONFIG_DIR` 指向该 profile 的 `claude-home`，真实用户目录不被读写。安装、启用/禁用、更新、卸载、marketplace 增删改都由 Claude Code 自己落盘；卸载会创建一个 Recovery Bin item（记录 `plugin@marketplace`、启用状态和 config key 名），`ccps bin restore` 会重新安装当前 marketplace 版本并重放启用状态。`plugin update` 需要重启时会在输出中提示。`plugin marketplace add` 接受 `owner/repo`、`https://…` 或本地目录路径；`file://` 会被明确拒绝。ccps 不读取插件的内部状态文件，也不接触插件凭据值。
 
 ## 配置布局
 
