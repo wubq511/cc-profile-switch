@@ -10,6 +10,7 @@ import {
 } from './recovery-bin';
 import {
   createRecordForInstall,
+  discoverLocalSkillRepo,
   getSkillsDirectoryPath,
   loadSkillsProvenance,
   saveSkillsProvenance,
@@ -28,6 +29,7 @@ import {
   readLinkTarget,
 } from '../platform/link';
 import { CcpsError } from '../utils/errors';
+import { type CaptureProcess } from '../platform/process';
 import { type Clock } from './types';
 
 export type { Clock } from './types';
@@ -95,6 +97,11 @@ export type InstallOptions = {
    */
   collisionResolution?: CollisionResolution;
   clock?: Clock;
+  /**
+   * Injectable git capture for tests; production omits it and uses the real
+   * git CLI via discoverLocalSkillRepo's default. See spec §7.1.
+   */
+  gitCaptureProcess?: CaptureProcess;
 };
 
 export type InstallResult = {
@@ -378,7 +385,7 @@ export async function installLocalSkill(options: InstallOptions): Promise<Instal
 
   // Compute the provenance record against the installed tree (hash follows
   // links for link-mode, so the source fingerprint is recorded).
-  const source = buildSkillSource(options);
+  const source = await buildSkillSource(options);
   const record = await createRecordForInstall({
     skillDirPath: targetPath,
     mode: options.mode,
@@ -394,11 +401,22 @@ export async function installLocalSkill(options: InstallOptions): Promise<Instal
   return { name: options.name, mode: options.mode, targetPath, record };
 }
 
-function buildSkillSource(options: InstallOptions): SkillSource {
-  return {
+async function buildSkillSource(options: InstallOptions): Promise<SkillSource> {
+  const source: SkillSource = {
     kind: 'local',
     path: resolveFilesystemPath(options.sourcePath),
   };
+  // Spec §7.1: local installs discover the enclosing git repository at
+  // install time and record repo { root, remoteUrl, skillPathInRepo, ref }.
+  // When none is found the field is omitted and Update is disabled with
+  // reason 'no-git-repo' (checked in skills-provenance.ts).
+  const repo = await discoverLocalSkillRepo(source.path, {
+    captureProcess: options.gitCaptureProcess,
+  });
+  if (repo) {
+    source.repo = repo;
+  }
+  return source;
 }
 
 async function installCopy(options: InstallOptions, targetPath: string): Promise<void> {
