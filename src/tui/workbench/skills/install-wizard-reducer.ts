@@ -1,3 +1,6 @@
+import { getSkillsDirectoryPath } from '../../../core/skills-provenance';
+import { resolveInside } from '../../../platform/path';
+import type { RemoteInstallPreview } from '../../../core/skills-remote-install';
 import type {
   CollisionResolution,
   InstallMode,
@@ -6,22 +9,27 @@ import type {
 } from '../../../core/skills-install';
 import { suggestCollisionName } from '../../../core/skills-install';
 
-// Local Skill installation wizard state machine (spec §7.2).
+// Skill installation wizard state machine (spec §7.2 local, §7.3 remote).
 //
 // One decision per screen, `esc` walks back. Phases that need async work
-// ('validating', 'confirming', 'installing') are entered synchronously by this
-// reducer; the React component watches phase transitions and runs the
-// matching core-service call, dispatching the result action back. This keeps
-// the reducer pure and unit-testable without touching the filesystem.
+// ('validating', 'confirming', 'installing', 'staging') are entered
+// synchronously by this reducer; the React component watches phase transitions
+// and runs the matching core-service call, dispatching the result action back.
+// This keeps the reducer pure and unit-testable without touching the filesystem.
+
+export type InstallWizardKind = 'local' | 'remote';
 
 export type InstallWizardPhase =
+  | 'kind' // pick Local (§7.2) or Remote (§7.3)
   | 'source' // typing the Local Skill Source path
   | 'validating' // async: validateLocalSkillSource
   | 'mode' // choosing Copy (default) or Link
-  | 'confirming' // async: previewInstall
-  | 'confirm' // target-change preview + health checks
+  | 'confirming' // async: previewInstall (local)
+  | 'source-remote' // typing the remote source (GitHub shorthand/URL, .git URL, tree URL, SKILL.md URL)
+  | 'staging' // async: acquireAndPreviewRemoteInstall (pinned adapter → staging → identity)
+  | 'confirm' // target-change preview + health checks / identity
   | 'collision' // resolve name collision (rename / replace / back)
-  | 'installing' // async: installLocalSkill
+  | 'installing' // async: installLocalSkill | installRemoteSkill
   | 'success'
   | 'error';
 
@@ -29,12 +37,22 @@ export type InstallWizardState = {
   open: boolean;
   phase: InstallWizardPhase;
   profileName: string;
+  profileRootPath: string | null;
+  kind: InstallWizardKind; // 'local' is the default per spec §7.2
+  // Local flow
   sourceInput: string;
   sourceInfo: LocalSkillSourceInfo | null;
   sourceError: string;
   mode: InstallMode; // 'copy' is the default per spec
-  name: string;
   preview: InstallPreview | null;
+  // Remote flow
+  remoteSourceInput: string;
+  remoteSourceError: string;
+  stagingRoot: string | null; // set after a successful staging phase; cleaned up on abandon
+  stagedName: string | null;
+  remotePreview: RemoteInstallPreview | null;
+  // Shared
+  name: string;
   collisionInput: string;
   collisionError: string;
   collisionResolution: CollisionResolution | null;
@@ -42,7 +60,9 @@ export type InstallWizardState = {
 };
 
 export type InstallWizardAction =
-  | { type: 'START'; profileName: string }
+  | { type: 'START'; profileName: string; profileRootPath?: string }
+  | { type: 'KIND_SELECT_LOCAL' } // → source
+  | { type: 'KIND_SELECT_REMOTE' } // → source-remote
   | { type: 'SOURCE_CHAR'; char: string }
   | { type: 'SOURCE_BACKSPACE' }
   | { type: 'SOURCE_SUBMIT' } // → validating
@@ -52,10 +72,15 @@ export type InstallWizardAction =
   | { type: 'MODE_CONFIRM' } // → confirming
   | { type: 'PREVIEW_READY'; preview: InstallPreview } // → confirm or collision
   | { type: 'PREVIEW_FAILED'; message: string } // → mode + error
+  | { type: 'REMOTE_SOURCE_CHAR'; char: string }
+  | { type: 'REMOTE_SOURCE_BACKSPACE' }
+  | { type: 'REMOTE_SOURCE_SUBMIT' } // → staging
+  | { type: 'REMOTE_STAGED'; preview: RemoteInstallPreview } // → confirm or collision
+  | { type: 'REMOTE_STAGING_FAILED'; message: string } // → source-remote + error
   | { type: 'CONFIRM_INSTALL' } // → installing (no collision) or collision
   | { type: 'COLLISION_CHAR'; char: string }
   | { type: 'COLLISION_BACKSPACE' }
-  | { type: 'COLLISION_RENAME' } // accept collisionInput → confirming
+  | { type: 'COLLISION_RENAME' } // accept collisionInput → confirm (remote) or confirming (local)
   | { type: 'COLLISION_REPLACE' } // → installing with replace
   | { type: 'FALLBACK_TO_COPY' } // link-incapable: re-preview as copy
   | { type: 'INSTALL_SUCCESS'; message: string }
@@ -66,14 +91,21 @@ export type InstallWizardAction =
 export function initialInstallWizardState(): InstallWizardState {
   return {
     open: false,
-    phase: 'source',
+    phase: 'kind',
     profileName: '',
+    profileRootPath: null,
+    kind: 'local',
     sourceInput: '',
     sourceInfo: null,
     sourceError: '',
     mode: 'copy',
-    name: '',
     preview: null,
+    remoteSourceInput: '',
+    remoteSourceError: '',
+    stagingRoot: null,
+    stagedName: null,
+    remotePreview: null,
+    name: '',
     collisionInput: '',
     collisionError: '',
     collisionResolution: null,
@@ -90,10 +122,21 @@ export function installWizardReducer(
       return {
         ...initialInstallWizardState(),
         open: true,
-        phase: 'source',
+        phase: 'kind',
         profileName: action.profileName,
+        profileRootPath: action.profileRootPath ?? null,
         mode: 'copy', // Copy pre-selected (spec §7.2)
       };
+    }
+
+    case 'KIND_SELECT_LOCAL': {
+      if (state.phase !== 'kind') return state;
+      return { ...state, kind: 'local', phase: 'source' };
+    }
+
+    case 'KIND_SELECT_REMOTE': {
+      if (state.phase !== 'kind') return state;
+      return { ...state, kind: 'remote', phase: 'source-remote' };
     }
 
     case 'SOURCE_CHAR': {
@@ -148,8 +191,73 @@ export function installWizardReducer(
       return { ...state, phase: 'mode', sourceError: action.message };
     }
 
+    case 'REMOTE_SOURCE_CHAR': {
+      if (state.phase !== 'source-remote') return state;
+      return { ...state, remoteSourceInput: state.remoteSourceInput + action.char, remoteSourceError: '' };
+    }
+
+    case 'REMOTE_SOURCE_BACKSPACE': {
+      if (state.phase !== 'source-remote') return state;
+      return { ...state, remoteSourceInput: state.remoteSourceInput.slice(0, -1), remoteSourceError: '' };
+    }
+
+    case 'REMOTE_SOURCE_SUBMIT': {
+      if (state.phase !== 'source-remote') return state;
+      if (state.remoteSourceInput.trim().length === 0) return state;
+      return { ...state, phase: 'staging', remoteSourceError: '' };
+    }
+
+    case 'REMOTE_STAGED': {
+      if (state.phase !== 'staging') return state;
+      const preview = action.preview;
+      const name = preview.name;
+      if (preview.collides) {
+        const suggestion = suggestCollisionName(name, new Set(preview.existingNames));
+        return {
+          ...state,
+          phase: 'collision',
+          name,
+          stagingRoot: preview.stagingRoot,
+          stagedName: preview.stagedName,
+          remotePreview: preview,
+          collisionInput: suggestion,
+          collisionError: '',
+          collisionResolution: null,
+        };
+      }
+      return {
+        ...state,
+        phase: 'confirm',
+        name,
+        stagingRoot: preview.stagingRoot,
+        stagedName: preview.stagedName,
+        remotePreview: preview,
+        collisionResolution: null,
+      };
+    }
+
+    case 'REMOTE_STAGING_FAILED': {
+      if (state.phase !== 'staging') return state;
+      return { ...state, phase: 'source-remote', remoteSourceError: action.message };
+    }
+
     case 'CONFIRM_INSTALL': {
       if (state.phase !== 'confirm') return state;
+      if (state.kind === 'remote') {
+        const preview = state.remotePreview;
+        if (!preview) return state;
+        if (preview.collides) {
+          const suggestion = suggestCollisionName(preview.name, new Set(preview.existingNames));
+          return {
+            ...state,
+            phase: 'collision',
+            collisionInput: suggestion,
+            collisionError: '',
+            collisionResolution: null,
+          };
+        }
+        return { ...state, phase: 'installing', collisionResolution: null };
+      }
       const preview = state.preview;
       if (!preview) return state;
       // Health blocker: refuse to install when pre-install checks fail. The
@@ -194,7 +302,29 @@ export function installWizardReducer(
       if (trimmed.length === 0) {
         return { ...state, collisionError: 'Name cannot be empty.' };
       }
-      // Apply the chosen name and re-preview to confirm it no longer collides.
+      if (state.kind === 'remote' && state.remotePreview && state.profileRootPath) {
+        // The staged tree is unchanged; recompute the preview purely with the new
+        // name (no re-acquire). Collision is re-checked against existingNames.
+        const newTarget = resolveInside(getSkillsDirectoryPath(state.profileRootPath), trimmed);
+        const collides = state.remotePreview.existingNames.includes(trimmed);
+        const previewLines = rebuildRemotePreviewLines(state.remotePreview, newTarget);
+        const remotePreview: RemoteInstallPreview = {
+          ...state.remotePreview,
+          name: trimmed,
+          targetPath: newTarget,
+          previewLines,
+          collides,
+        };
+        return {
+          ...state,
+          name: trimmed,
+          phase: collides ? 'collision' : 'confirm',
+          collisionResolution: 'rename',
+          collisionError: collides ? 'Name already in use.' : '',
+          remotePreview,
+        };
+      }
+      // Local: re-preview with the chosen name to confirm it no longer collides.
       return {
         ...state,
         name: trimmed,
@@ -222,11 +352,13 @@ export function installWizardReducer(
 
     case 'INSTALL_SUCCESS': {
       if (state.phase !== 'installing') return state;
-      return { ...state, phase: 'success', message: action.message };
+      return { ...state, phase: 'success', message: action.message, stagingRoot: null };
     }
 
     case 'INSTALL_ERROR': {
       if (state.phase !== 'installing') return state;
+      // A failed install leaves the staging root orphaned; the component cleans
+      // it up on close. Drop the reference here so the reducer stays pure.
       return { ...state, phase: 'error', message: action.message };
     }
 
@@ -240,16 +372,26 @@ export function installWizardReducer(
     case 'CANCEL': {
       // esc walks back one decision per screen (spec §7.2).
       switch (state.phase) {
-        case 'source':
+        case 'kind':
           return { ...initialInstallWizardState() };
+        case 'source':
+          return { ...state, phase: 'kind' };
         case 'validating':
           return { ...state, phase: 'source' };
         case 'mode':
           return { ...state, phase: 'source' };
         case 'confirming':
-          return { ...state, phase: 'mode' };
+          return state.kind === 'remote'
+            ? { ...state, phase: 'source-remote' }
+            : { ...state, phase: 'mode' };
+        case 'source-remote':
+          return { ...state, phase: 'kind' };
+        case 'staging':
+          return { ...state, phase: 'source-remote' };
         case 'confirm':
-          return { ...state, phase: 'mode' };
+          return state.kind === 'remote'
+            ? { ...state, phase: 'source-remote' }
+            : { ...state, phase: 'mode' };
         case 'collision':
           return { ...state, phase: 'confirm', collisionResolution: null, collisionError: '' };
         case 'success':
@@ -266,4 +408,18 @@ export function installWizardReducer(
     default:
       return state;
   }
+}
+
+// Rebuild the remote preview's display lines with a new target path (used when
+// the user renames on the collision step — the staged tree is unchanged).
+function rebuildRemotePreviewLines(
+  preview: RemoteInstallPreview,
+  targetPath: string,
+): string[] {
+  return [
+    `acquire  ${preview.provenanceSource.url ?? ''}  →  staging`,
+    `stage    ${preview.stagedName}/  (frontmatter name: ${preview.identity.name})`,
+    `create   ${targetPath}/   (snapshot — Profile-owned)`,
+    `record   skills-provenance.json  ← copy · source ${preview.provenanceSource.kind} · sha256 fingerprint`,
+  ];
 }
