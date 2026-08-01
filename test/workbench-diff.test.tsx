@@ -126,6 +126,7 @@ async function renderInteractive(
 describe('grid-level cross-Profile diff entry (issue #71, spec §12)', () => {
   const tempRoots: string[] = [];
   let previousHome: string | undefined;
+  let previousUserProfile: string | undefined;
 
   afterEach(async () => {
     if (previousHome === undefined) {
@@ -134,6 +135,12 @@ describe('grid-level cross-Profile diff entry (issue #71, spec §12)', () => {
       process.env.HOME = previousHome;
     }
     previousHome = undefined;
+    if (previousUserProfile === undefined) {
+      delete process.env.USERPROFILE;
+    } else {
+      process.env.USERPROFILE = previousUserProfile;
+    }
+    previousUserProfile = undefined;
     await Promise.all(tempRoots.map((root) => rm(root, { recursive: true, force: true })));
     tempRoots.length = 0;
     vi.clearAllMocks();
@@ -147,6 +154,8 @@ describe('grid-level cross-Profile diff entry (issue #71, spec §12)', () => {
     await fs.ensureDir(home);
     previousHome = process.env.HOME;
     process.env.HOME = home;
+    previousUserProfile = process.env.USERPROFILE;
+    process.env.USERPROFILE = home;
     return home;
   }
 

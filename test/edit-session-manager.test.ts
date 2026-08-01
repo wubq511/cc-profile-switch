@@ -1,8 +1,10 @@
 import { EventEmitter } from 'node:events';
+import { dirname, resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { EditSessionManager } from '../src/core/edit-session/session-manager';
 import type { EditSession } from '../src/core/edit-session/types';
+import { resolveInside } from '../src/platform/path';
 
 vi.mock('node:child_process', () => ({
   spawn: vi.fn(),
@@ -18,6 +20,13 @@ vi.mock('fs-extra', () => ({
 
 import { spawn } from 'node:child_process';
 import fs from 'fs-extra';
+
+/** The manager keys sessions by the fully resolved path; on Windows a POSIX
+ *  input like '/tmp/a.md' resolves onto the current drive ('D:\tmp\a.md').
+ *  Mirror the manager's own resolution so assertions hold on every platform. */
+function resolvedPath(filePath: string): string {
+  return resolveInside(resolve(filePath));
+}
 
 function setupSpawnSuccess() {
   vi.mocked(spawn).mockImplementation((() => {
@@ -63,9 +72,9 @@ describe('EditSessionManager', () => {
 
       await manager.open('/tmp/test.md');
 
-      const session = manager.getSession('/tmp/test.md');
+      const session = manager.getSession(resolvedPath('/tmp/test.md'));
       expect(session?.phase).toBe('watching');
-      expect(session?.filePath).toBe('/tmp/test.md');
+      expect(session?.filePath).toBe(resolvedPath('/tmp/test.md'));
     });
 
     it('transitions to idle on editor spawn failure', async () => {
@@ -75,7 +84,7 @@ describe('EditSessionManager', () => {
       const manager = new EditSessionManager();
       await manager.open('/tmp/test.md');
 
-      const session = manager.getSession('/tmp/test.md');
+      const session = manager.getSession(resolvedPath('/tmp/test.md'));
       expect(session?.phase).toBe('idle');
       expect(session?.openFailedReason).toBeTruthy();
     });
@@ -87,7 +96,7 @@ describe('EditSessionManager', () => {
       const manager = new EditSessionManager();
       await manager.open('/tmp/test.md');
 
-      const session = manager.getSession('/tmp/test.md');
+      const session = manager.getSession(resolvedPath('/tmp/test.md'));
       expect(session?.phase).toBe('idle');
       expect(session?.openFailedReason).toBeTruthy();
     });
@@ -99,7 +108,7 @@ describe('EditSessionManager', () => {
       const manager = new EditSessionManager();
       await manager.open('/tmp/test.md');
 
-      expect(fs.watch).toHaveBeenCalledWith('/tmp', expect.any(Function));
+      expect(fs.watch).toHaveBeenCalledWith(dirname(resolvedPath('/tmp/test.md')), expect.any(Function));
     });
 
     it('fires onChange callback for each state transition', async () => {
@@ -126,12 +135,12 @@ describe('EditSessionManager', () => {
 
       const manager = new EditSessionManager();
       await manager.open('/tmp/test.md');
-      expect(manager.isFileUnderSession('/tmp/test.md')).toBe(true);
+      expect(manager.isFileUnderSession(resolvedPath('/tmp/test.md'))).toBe(true);
 
-      manager.endSession('/tmp/test.md');
-      expect(manager.isFileUnderSession('/tmp/test.md')).toBe(false);
+      manager.endSession(resolvedPath('/tmp/test.md'));
+      expect(manager.isFileUnderSession(resolvedPath('/tmp/test.md'))).toBe(false);
       expect(watcherClose).toHaveBeenCalled();
-      expect(manager.getSession('/tmp/test.md')).toBeUndefined();
+      expect(manager.getSession(resolvedPath('/tmp/test.md'))).toBeUndefined();
     });
   });
 
@@ -144,9 +153,9 @@ describe('EditSessionManager', () => {
       await manager.open('/tmp/a.md');
       await manager.open('/tmp/b.md');
 
-      expect(manager.isFileUnderSession('/tmp/a.md')).toBe(true);
-      expect(manager.isFileUnderSession('/tmp/b.md')).toBe(true);
-      expect(manager.isFileUnderSession('/tmp/c.md')).toBe(false);
+      expect(manager.isFileUnderSession(resolvedPath('/tmp/a.md'))).toBe(true);
+      expect(manager.isFileUnderSession(resolvedPath('/tmp/b.md'))).toBe(true);
+      expect(manager.isFileUnderSession(resolvedPath('/tmp/c.md'))).toBe(false);
     });
   });
 
@@ -160,8 +169,8 @@ describe('EditSessionManager', () => {
       await manager.open('/tmp/b.md');
 
       const active = manager.getActiveSessionPaths();
-      expect(active).toContain('/tmp/a.md');
-      expect(active).toContain('/tmp/b.md');
+      expect(active).toContain(resolvedPath('/tmp/a.md'));
+      expect(active).toContain(resolvedPath('/tmp/b.md'));
       expect(active).toHaveLength(2);
     });
   });
@@ -188,8 +197,8 @@ describe('EditSessionManager', () => {
       const manager = new EditSessionManager();
       await manager.open('/tmp/test.md');
 
-      expect(manager.isFileUnderSession('/tmp/test.md')).toBe(true);
-      expect(manager.isFileUnderSession('/tmp/other.md')).toBe(false);
+      expect(manager.isFileUnderSession(resolvedPath('/tmp/test.md'))).toBe(true);
+      expect(manager.isFileUnderSession(resolvedPath('/tmp/other.md'))).toBe(false);
     });
   });
 
@@ -201,7 +210,7 @@ describe('EditSessionManager', () => {
       const manager = new EditSessionManager({ editorOverride: 'vim' });
       await manager.open('/tmp/test.md');
 
-      expect(spawn).toHaveBeenCalledWith('vim', ['/tmp/test.md'], expect.objectContaining({ stdio: 'ignore' }));
+      expect(spawn).toHaveBeenCalledWith('vim', [resolvedPath('/tmp/test.md')], expect.objectContaining({ stdio: 'ignore' }));
     });
   });
 });

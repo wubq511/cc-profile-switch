@@ -729,14 +729,27 @@ describe('keypress guidance flows', () => {
       return { userHome, appHome };
     }
 
-    /** Run `fn` with HOME pointed at the tmp user home, then restore. */
+    /** Run `fn` with the user home pointed at the tmp dir, then restore. On
+     * win32 the app resolves home from USERPROFILE (src/platform/path.ts), so
+     * both vars must be pinned or the flows leak into the real runner home. */
     async function withHome<T>(userHome: string, fn: () => Promise<T>): Promise<T> {
       const originalHome = process.env.HOME;
+      const originalUserProfile = process.env.USERPROFILE;
       process.env.HOME = userHome;
+      process.env.USERPROFILE = userHome;
       try {
         return await fn();
       } finally {
-        process.env.HOME = originalHome;
+        if (originalHome === undefined) {
+          delete process.env.HOME;
+        } else {
+          process.env.HOME = originalHome;
+        }
+        if (originalUserProfile === undefined) {
+          delete process.env.USERPROFILE;
+        } else {
+          process.env.USERPROFILE = originalUserProfile;
+        }
       }
     }
 

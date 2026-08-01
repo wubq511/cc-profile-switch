@@ -15,6 +15,7 @@ import {
 import { getSkillsDirectoryPath, loadSkillsProvenance } from '../src/core/skills-provenance';
 import { listRecoveryBinItems } from '../src/core/recovery-bin';
 import { type CaptureProcess } from '../src/platform/process';
+import { resolveFilesystemPath } from '../src/platform/path';
 import { CcpsError } from '../src/utils/errors';
 
 // Remote Skill install transaction (spec §7.3).
@@ -91,9 +92,11 @@ describe('buildRemoteInstallPlan', () => {
       stagingId: 'abc123',
     });
 
-    expect(plan.stagingRoot).toBe(path.join(profileRoot, '.ccps-remote-stage-abc123'));
+    // Build expectations through the same resolver the src uses: the
+    // posix-absolute fake profile root keeps posix separators on every platform.
+    expect(plan.stagingRoot).toBe(resolveFilesystemPath(profileRoot, '.ccps-remote-stage-abc123'));
     expect(plan.targetPath).toBe(
-      path.join(profileRoot, 'claude-home', 'skills', 'find-skills'),
+      resolveFilesystemPath(profileRoot, 'claude-home', 'skills', 'find-skills'),
     );
     // The acquisition sub-plan is exactly what acquireSkillIntoStaging runs.
     expect(plan.acquisition.command).toBe(process.execPath);

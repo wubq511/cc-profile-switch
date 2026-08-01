@@ -6,6 +6,7 @@ import path, { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { createAppConfig } from '../src/core/app-config';
+import { resolveFilesystemPath, resolveUserHome } from '../src/platform/path';
 import {
   backfillSettings,
   diffProfileSettings,
@@ -438,9 +439,11 @@ describe('settings resource service', () => {
       expect(saved.model).toBe('claude-sonnet-4-5'); // untouched
       expect(saved.autoMemoryDirectory).toBe(paths.autoMemoryPath);
       // claudeMdExcludes points at the real user CLAUDE.md path (backfill uses real home).
-      expect(saved.claudeMdExcludes).toEqual(
-        expect.arrayContaining([expect.stringContaining('.claude/CLAUDE.md')]),
-      );
+      // Build the expectation through the same home/path resolution the code uses so
+      // separators match on win32 (C:\Users\... vs posix-style joins).
+      expect(saved.claudeMdExcludes).toEqual([
+        resolveFilesystemPath(resolveUserHome(), '.claude', 'CLAUDE.md'),
+      ]);
       expect(saved.env.CLAUDE_CODE_ATTRIBUTION_HEADER).toBe('0');
     });
 

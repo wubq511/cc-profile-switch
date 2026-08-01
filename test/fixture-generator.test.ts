@@ -25,7 +25,13 @@ async function makeTempRoot(prefix: string): Promise<string> {
 }
 
 afterEach(async () => {
-  await Promise.all(tempRoots.map((root) => rm(root, { recursive: true, force: true })));
+  await Promise.all(
+    // Windows: transient ENOTEMPTY/EBUSY when antivirus scanning or a timed-out
+    // test's still-running materialization races the cleanup; rm retries absorb it.
+    tempRoots.map((root) =>
+      rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }),
+    ),
+  );
   tempRoots.length = 0;
 });
 
@@ -185,27 +191,35 @@ describe('fixture generator: materialization', () => {
     expect(createHash('sha256').update('hello\n', 'utf8').digest('hex')).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  it('materializes the baseline tier (both size tiers generate on disk)', async () => {
-    const root = await makeTempRoot('ccps-fixture-baseline-');
-    const plan = buildFixturePlan({ tier: 'baseline', pathologies: [] });
-    const report = await materializeFixture(plan, root);
-    // Clean baseline has no platform-gated entries -> every entry materializes.
-    expect(report.skipped).toHaveLength(0);
-    expect(report.created).toBe(plan.summary.entryCount);
-    expect(
-      await fs.pathExists(
-        path.join(
-          root,
-          'profiles',
-          'profile-020',
-          'claude-home',
-          'skills',
-          'skill-050',
-          'SKILL.md',
+  // ~4.3k sequential small-file writes blow past the 5s default timeout on
+  // Windows CI (NTFS + Defender scanning; 5153ms observed). Give it headroom —
+  // the timeout also prevents a still-running materialization from racing the
+  // temp-root cleanup when the test is aborted.
+  it(
+    'materializes the baseline tier (both size tiers generate on disk)',
+    { timeout: 60_000 },
+    async () => {
+      const root = await makeTempRoot('ccps-fixture-baseline-');
+      const plan = buildFixturePlan({ tier: 'baseline', pathologies: [] });
+      const report = await materializeFixture(plan, root);
+      // Clean baseline has no platform-gated entries -> every entry materializes.
+      expect(report.skipped).toHaveLength(0);
+      expect(report.created).toBe(plan.summary.entryCount);
+      expect(
+        await fs.pathExists(
+          path.join(
+            root,
+            'profiles',
+            'profile-020',
+            'claude-home',
+            'skills',
+            'skill-050',
+            'SKILL.md',
+          ),
         ),
-      ),
-    ).toBe(true);
-  });
+      ).toBe(true);
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------
