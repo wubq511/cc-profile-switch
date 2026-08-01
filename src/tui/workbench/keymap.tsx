@@ -10,7 +10,7 @@ type KeymapOverlayProps = {
 
 type Binding = {
   key: string;
-  group: 'nav' | 'actions' | 'resource' | 'discover';
+  group: 'nav' | 'actions' | 'resource' | 'discover' | 'bulk';
   labelKey: LocaleKey;
 };
 
@@ -54,6 +54,13 @@ const KEYBINDINGS: Binding[] = [
   { key: 's', group: 'discover', labelKey: 'keymap.discover.source' },
   { key: 'b', group: 'discover', labelKey: 'keymap.discover.browser' },
   { key: 'r', group: 'discover', labelKey: 'keymap.discover.refresh' },
+  // Bulk ops surface (spec §11.1)
+  { key: 'space', group: 'bulk', labelKey: 'keymap.bulk.select' },
+  { key: 'a', group: 'bulk', labelKey: 'keymap.bulk.selectAll' },
+  { key: 'x', group: 'bulk', labelKey: 'keymap.bulk.remove' },
+  { key: 'c', group: 'bulk', labelKey: 'keymap.bulk.copy' },
+  { key: 'u', group: 'bulk', labelKey: 'keymap.bulk.update' },
+  { key: 'd', group: 'bulk', labelKey: 'keymap.bulk.discover' },
 ];
 
 const CONCEPTS: Array<{ term: LocaleKey; definition: LocaleKey }> = [
@@ -74,6 +81,7 @@ export function KeymapOverlay({ visible }: KeymapOverlayProps): React.ReactEleme
   const actionBindings = KEYBINDINGS.filter((b) => b.group === 'actions');
   const resourceBindings = KEYBINDINGS.filter((b) => b.group === 'resource');
   const discoverBindings = KEYBINDINGS.filter((b) => b.group === 'discover');
+  const bulkBindings = KEYBINDINGS.filter((b) => b.group === 'bulk');
 
   const renderRow = (bindings: Binding[]): React.ReactElement =>
     React.createElement(
@@ -105,6 +113,17 @@ export function KeymapOverlay({ visible }: KeymapOverlayProps): React.ReactEleme
       React.createElement(Text, { bold: true }, t('keymap.resources')),
     ),
     ...resourceBindings.map((b) =>
+      React.createElement(
+        Box,
+        { key: b.key },
+        React.createElement(Text, { color: 'cyan' }, `  ${b.key.padEnd(10)}`),
+        React.createElement(Text, null, t(b.labelKey)),
+      ),
+    ),
+    React.createElement(Box, { marginTop: 1 },
+      React.createElement(Text, { bold: true }, t('keymap.bulk')),
+    ),
+    ...bulkBindings.map((b) =>
       React.createElement(
         Box,
         { key: b.key },

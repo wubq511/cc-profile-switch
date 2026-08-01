@@ -165,7 +165,9 @@ function stripAnsi(text: string): string {
 }
 
 /** Press keys one at a time, settling the render between each, so the category
- * focus → Skills card → Enter drill-in sequence commits (issue #68). */
+ * focus → Skills card → Enter (BulkOpsView, §11.1) → `d` (Discover) sequence
+ * commits. Discover moved behind `d` when the Skills card became the bulk-ops
+ * entry (issue #72). */
 async function openDiscoverFromSkillsCard(stdin: FakeTtyStdin, stdout: FakeTtyStdout): Promise<void> {
   stdin.press('\t');
   await waitForOutputSettled(stdout, stdout.output);
@@ -174,6 +176,8 @@ async function openDiscoverFromSkillsCard(stdin: FakeTtyStdin, stdout: FakeTtySt
   stdin.press('\x1b[B');
   await waitForOutputSettled(stdout, stdout.output);
   stdin.press('\r');
+  await waitForOutputSettled(stdout, stdout.output);
+  stdin.press('d');
   await waitForOutputSettled(stdout, stdout.output);
 }
 

@@ -43,10 +43,10 @@ type MainPaneProps = {
 
 export const CATEGORIES = [
   { key: 'userMemory' as const, labelKey: 'main.category.userMemory' as const, drillable: true as const, resourceCategory: 'user-memory' as const },
-  { key: 'autoMemory' as const, labelKey: 'main.category.autoMemory' as const, drillable: false as const },
+  { key: 'autoMemory' as const, labelKey: 'main.category.autoMemory' as const, drillable: true as const },
   { key: 'skills' as const, labelKey: 'main.category.skills' as const, drillable: true as const },
   { key: 'agents' as const, labelKey: 'main.category.agents' as const, drillable: true as const, resourceCategory: 'agents' as const },
-  { key: 'mcp' as const, labelKey: 'main.category.mcp' as const, drillable: false as const },
+  { key: 'mcp' as const, labelKey: 'main.category.mcp' as const, drillable: true as const },
   { key: 'settings' as const, labelKey: 'main.category.settings' as const, drillable: false as const },
   { key: 'launchConfig' as const, labelKey: 'main.category.launchConfig' as const, drillable: false as const },
 ] as const;
@@ -210,11 +210,11 @@ export function MainPane({
 
   function renderCategoryCard(def: CategoryDef, count: number, colW: number, highlighted: boolean): React.ReactElement {
     const drillHint = def.drillable
-      ? def.key === 'skills'
-        ? t('main.category.skills.discover')
-        : def.resourceCategory === 'user-memory'
-          ? ' [u]'
-          : ' [a]'
+      ? def.key === 'userMemory'
+        ? ' [u]'
+        : def.key === 'agents'
+          ? ' [a] · [enter]'
+          : ` ${t('main.drillBulk')}`
       : '';
     // Empty-category offer: `[a] add` (Skills also name the Copy/Link choice).
     const emptyLabel =

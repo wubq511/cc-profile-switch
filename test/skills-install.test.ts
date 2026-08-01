@@ -8,6 +8,7 @@ import { createAppConfig, getAppHomePaths } from '../src/core/app-config';
 import { createProfileFromTemplate } from '../src/core/profile-template';
 import {
   checkInstallHealth,
+  copySkillToProfile,
   installLocalSkill,
   previewInstall,
   removeLinkedSkill,
@@ -16,7 +17,7 @@ import {
   validateLocalSkillSource,
   validateSkillDirectoryName,
 } from '../src/core/skills-install';
-import { loadSkillsProvenance } from '../src/core/skills-provenance';
+import { loadSkillsProvenance, saveSkillsProvenance } from '../src/core/skills-provenance';
 import { listRecoveryBinItems, restoreRecoveryItem } from '../src/core/recovery-bin';
 import { createSkillLink } from '../src/platform/link';
 import { type CaptureProcess } from '../src/platform/process';
@@ -686,5 +687,245 @@ describe.skipIf(!canCreateSymlink)('recovery-bin generic restore guard', () => {
     await expect(
       restoreRecoveryItem({ appHomePath: appHome, itemId: binItems[0].id }),
     ).rejects.toMatchObject({ code: 'RECOVERY_ITEM_RESTORE_ROUTE' });
+  });
+});
+
+// ─── copySkillToProfile (spec §11.1 fan-out) ────────────────────────────
+
+describe('copySkillToProfile', () => {
+  it('copies a copied Skill as a snapshot carrying the local source identity', async () => {
+    const root = await makeTempRoot('ccps-skill-copy-');
+    const appHome = await makeAppHome();
+    const sourceDir = await makeProfile(appHome, 'coding');
+    const targetDir = await makeProfile(appHome, 'study');
+    const source = await makeSourceSkill(root, 'commit-helper', '# Helper\n');
+
+    await installLocalSkill({
+      appHomePath: appHome,
+      profileName: 'coding',
+      profileRootPath: sourceDir,
+      sourcePath: source,
+      mode: 'copy',
+      name: 'commit-helper',
+      clock: fixedClock,
+    });
+
+    const result = await copySkillToProfile({
+      appHomePath: appHome,
+      fromProfile: 'coding',
+      toProfile: 'study',
+      skillName: 'commit-helper',
+      clock: fixedClock,
+    });
+
+    const landed = path.join(targetDir, 'claude-home', 'skills', 'commit-helper', 'SKILL.md');
+    expect(await fs.pathExists(landed)).toBe(true);
+    expect(await fs.readFile(landed, 'utf8')).toContain('# Helper');
+
+    const manifest = await loadSkillsProvenance(targetDir);
+    const record = manifest.skills['commit-helper'];
+    expect(record).toBeDefined();
+    expect(record.mode).toBe('copy');
+    // Source identity carried over — local source path preserved.
+    expect(record.source.kind).toBe('local');
+    expect(record.source.path).toBe(source);
+    expect(record.contentHash.length).toBe(64);
+    expect(result.targetPath).toBe(path.join(targetDir, 'claude-home', 'skills', 'commit-helper'));
+
+    // Source profile untouched.
+    const sourceManifest = await loadSkillsProvenance(sourceDir);
+    expect(sourceManifest.skills['commit-helper']).toBeDefined();
+  });
+
+  it('carries a git-remote source identity so updates keep working in the target', async () => {
+    const root = await makeTempRoot('ccps-skill-copy-remote-');
+    const appHome = await makeAppHome();
+    const sourceDir = await makeProfile(appHome, 'coding');
+    const targetDir = await makeProfile(appHome, 'study');
+    const source = await makeSourceSkill(root, 'remote-skill');
+
+    // Install as a plain copy, then rewrite the record's source to model a
+    // remote-sourced Skill (as the remote install path would record it).
+    await installLocalSkill({
+      appHomePath: appHome,
+      profileName: 'coding',
+      profileRootPath: sourceDir,
+      sourcePath: source,
+      mode: 'copy',
+      name: 'remote-skill',
+      clock: fixedClock,
+    });
+    const manifest = await loadSkillsProvenance(sourceDir);
+    manifest.skills['remote-skill'].source = {
+      kind: 'git-remote',
+      url: 'https://github.com/acme/remote-skill.git',
+      ref: 'main',
+    };
+    await saveSkillsProvenance(sourceDir, manifest);
+
+    await copySkillToProfile({
+      appHomePath: appHome,
+      fromProfile: 'coding',
+      toProfile: 'study',
+      skillName: 'remote-skill',
+      clock: fixedClock,
+    });
+
+    const record = (await loadSkillsProvenance(targetDir)).skills['remote-skill'];
+    expect(record.source.kind).toBe('git-remote');
+    expect(record.source.url).toBe('https://github.com/acme/remote-skill.git');
+    expect(record.source.ref).toBe('main');
+  });
+
+  it('snapshots a linked Skill into a real directory in the target', async () => {
+    const root = await makeTempRoot('ccps-skill-copy-link-');
+    const appHome = await makeAppHome();
+    const sourceDir = await makeProfile(appHome, 'coding');
+    const targetDir = await makeProfile(appHome, 'study');
+    const source = await makeSourceSkill(root, 'linked-skill');
+
+    await installLocalSkill({
+      appHomePath: appHome,
+      profileName: 'coding',
+      profileRootPath: sourceDir,
+      sourcePath: source,
+      mode: 'link',
+      name: 'linked-skill',
+      clock: fixedClock,
+    });
+
+    await copySkillToProfile({
+      appHomePath: appHome,
+      fromProfile: 'coding',
+      toProfile: 'study',
+      skillName: 'linked-skill',
+      clock: fixedClock,
+    });
+
+    const landedDir = path.join(targetDir, 'claude-home', 'skills', 'linked-skill');
+    const stats = await fs.lstat(landedDir);
+    expect(stats.isSymbolicLink()).toBe(false);
+    expect(await fs.pathExists(path.join(landedDir, 'SKILL.md'))).toBe(true);
+    const record = (await loadSkillsProvenance(targetDir)).skills['linked-skill'];
+    expect(record.mode).toBe('copy');
+    // The source link must not be touched.
+    expect(await fs.pathExists(source)).toBe(true);
+  });
+
+  it('keeps an unknown backfilled source identity (update stays disabled)', async () => {
+    const root = await makeTempRoot('ccps-skill-copy-unknown-');
+    const appHome = await makeAppHome();
+    const sourceDir = await makeProfile(appHome, 'coding');
+    const targetDir = await makeProfile(appHome, 'study');
+    const source = await makeSourceSkill(root, 'legacy-skill');
+
+    await installLocalSkill({
+      appHomePath: appHome,
+      profileName: 'coding',
+      profileRootPath: sourceDir,
+      sourcePath: source,
+      mode: 'copy',
+      name: 'legacy-skill',
+      clock: fixedClock,
+    });
+    const manifest = await loadSkillsProvenance(sourceDir);
+    manifest.skills['legacy-skill'].source = { kind: 'unknown' };
+    await saveSkillsProvenance(sourceDir, manifest);
+
+    await copySkillToProfile({
+      appHomePath: appHome,
+      fromProfile: 'coding',
+      toProfile: 'study',
+      skillName: 'legacy-skill',
+      clock: fixedClock,
+    });
+
+    const record = (await loadSkillsProvenance(targetDir)).skills['legacy-skill'];
+    expect(record.source.kind).toBe('unknown');
+  });
+
+  it('refuses when a same-named Skill already exists in the target', async () => {
+    const root = await makeTempRoot('ccps-skill-copy-collision-');
+    const appHome = await makeAppHome();
+    const sourceDir = await makeProfile(appHome, 'coding');
+    const targetDir = await makeProfile(appHome, 'study');
+    const source = await makeSourceSkill(root, 'shared-skill');
+
+    await installLocalSkill({
+      appHomePath: appHome,
+      profileName: 'coding',
+      profileRootPath: sourceDir,
+      sourcePath: source,
+      mode: 'copy',
+      name: 'shared-skill',
+      clock: fixedClock,
+    });
+    await installLocalSkill({
+      appHomePath: appHome,
+      profileName: 'study',
+      profileRootPath: targetDir,
+      sourcePath: source,
+      mode: 'copy',
+      name: 'shared-skill',
+      clock: fixedClock,
+    });
+
+    await expect(
+      copySkillToProfile({
+        appHomePath: appHome,
+        fromProfile: 'coding',
+        toProfile: 'study',
+        skillName: 'shared-skill',
+        clock: fixedClock,
+      }),
+    ).rejects.toMatchObject({ code: 'SKILL_INSTALL_COLLISION' });
+
+    // Target entry untouched.
+    const record = (await loadSkillsProvenance(targetDir)).skills['shared-skill'];
+    expect(record).toBeDefined();
+    expect(await fs.readFile(path.join(targetDir, 'claude-home', 'skills', 'shared-skill', 'SKILL.md'), 'utf8')).toContain('name: shared-skill');
+  });
+
+  it('rejects a Skill that is not installed in the source profile', async () => {
+    const appHome = await makeAppHome();
+    await makeProfile(appHome, 'coding');
+    await makeProfile(appHome, 'study');
+
+    await expect(
+      copySkillToProfile({
+        appHomePath: appHome,
+        fromProfile: 'coding',
+        toProfile: 'study',
+        skillName: 'not-there',
+        clock: fixedClock,
+      }),
+    ).rejects.toMatchObject({ code: 'SKILL_NOT_FOUND' });
+  });
+
+  it('rejects when the target profile does not exist', async () => {
+    const root = await makeTempRoot('ccps-skill-copy-noprof-');
+    const appHome = await makeAppHome();
+    const sourceDir = await makeProfile(appHome, 'coding');
+    const source = await makeSourceSkill(root, 'orphan-skill');
+
+    await installLocalSkill({
+      appHomePath: appHome,
+      profileName: 'coding',
+      profileRootPath: sourceDir,
+      sourcePath: source,
+      mode: 'copy',
+      name: 'orphan-skill',
+      clock: fixedClock,
+    });
+
+    await expect(
+      copySkillToProfile({
+        appHomePath: appHome,
+        fromProfile: 'coding',
+        toProfile: 'missing',
+        skillName: 'orphan-skill',
+        clock: fixedClock,
+      }),
+    ).rejects.toMatchObject({ code: 'PROFILE_NOT_FOUND' });
   });
 });

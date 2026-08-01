@@ -95,9 +95,11 @@ import { InstallWizard } from './skills/install-wizard';
 import { DiscoverView } from './skills/discover';
 import type { InstallSourceRef } from './skills/install-wizard-reducer';
 import { AutoMemoryView } from './resources/auto-memory-view';
+import { BulkOpsView, type BulkCategory } from './resources/bulk-ops-view';
 import { ErrorPanel, HintsProvider, RemoveProfilePanel, SaveTemplatePanel, useHints } from './guidance';
+import { type CaptureProcess } from '../../platform/process';
 
-type DrillDown = { kind: 'none' } | { kind: 'autoMemory' };
+type DrillDown = { kind: 'none' } | { kind: 'autoMemory' } | { kind: 'bulk'; category: BulkCategory };
 
 /** Result caps for the Discover catalog (bounded interactive search). */
 const DISCOVER_REPO_SKILL_LIMIT = 50;
@@ -146,10 +148,12 @@ type WorkbenchAppProps = {
   ) => SkillsDiscoverySession;
   /** Override the app-config read (tests avoid touching the real app home). */
   configLoader?: (appHomePath: string) => Promise<ReturnType<typeof loadAppConfig>>;
+  /** Injected process capture for MCP remove / Skill update (hermetic tests). */
+  captureProcess?: CaptureProcess;
 };
 
-export function WorkbenchApp({ data, onLocaleChange, initialLocale, headless, skipWelcome, onLaunch, mcpProbe, searchContent, discoverySessionFactory, configLoader }: WorkbenchAppProps): React.ReactElement {
-  const inner = React.createElement(WorkbenchInner, { data, headless, skipWelcome, onLaunch, mcpProbe, searchContent, discoverySessionFactory, configLoader });
+export function WorkbenchApp({ data, onLocaleChange, initialLocale, headless, skipWelcome, onLaunch, mcpProbe, searchContent, discoverySessionFactory, configLoader, captureProcess }: WorkbenchAppProps): React.ReactElement {
+  const inner = React.createElement(WorkbenchInner, { data, headless, skipWelcome, onLaunch, mcpProbe, searchContent, discoverySessionFactory, configLoader, captureProcess });
   return React.createElement(
     I18nProvider,
     { initialLocale, onLocaleChange },
@@ -157,7 +161,7 @@ export function WorkbenchApp({ data, onLocaleChange, initialLocale, headless, sk
   );
 }
 
-function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searchContent, discoverySessionFactory, configLoader }: { data: WorkbenchData; headless?: boolean; skipWelcome?: boolean; onLaunch?: (plan: LaunchPlan, appHomePath: string) => number | null; mcpProbe?: (appHomePath: string, profileName: string) => Promise<McpServerState[]>; searchContent?: (query: string) => Promise<SearchResult[]>; discoverySessionFactory?: (appHomePath: string, experimentalEnabled: boolean) => SkillsDiscoverySession; configLoader?: (appHomePath: string) => Promise<ReturnType<typeof loadAppConfig>> }): React.ReactElement {
+function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searchContent, discoverySessionFactory, configLoader, captureProcess }: { data: WorkbenchData; headless?: boolean; skipWelcome?: boolean; onLaunch?: (plan: LaunchPlan, appHomePath: string) => number | null; mcpProbe?: (appHomePath: string, profileName: string) => Promise<McpServerState[]>; searchContent?: (query: string) => Promise<SearchResult[]>; discoverySessionFactory?: (appHomePath: string, experimentalEnabled: boolean) => SkillsDiscoverySession; configLoader?: (appHomePath: string) => Promise<ReturnType<typeof loadAppConfig>>; captureProcess?: CaptureProcess }): React.ReactElement {
   const { t, locale } = useI18n();
   const { exit } = useApp();
   const { stdout } = useStdout();
@@ -380,11 +384,9 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
       }
       if (key.return) {
         const catKey = categoryKeyAt(selectedCategoryIndex);
-        if (catKey === 'autoMemory') {
-          setDrillDown({ kind: 'autoMemory' });
+        if (catKey === 'autoMemory' || catKey === 'skills' || catKey === 'mcp' || catKey === 'agents') {
+          setDrillDown({ kind: 'bulk', category: catKey });
           setCapture(true);
-        } else if (catKey === 'skills') {
-          void openDiscover();
         }
         return;
       }
@@ -834,8 +836,14 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
       return;
     }
 
-    // skills / mcp / settings / launchConfig have no dedicated drill surface:
-    // focus the matching card in the main-pane category grid instead.
+    // Skills / MCP drill into the bulk-ops surface (spec §11.1); Settings and
+    // launchConfig have no dedicated drill surface — focus the card instead.
+    if (categoryKey === 'skills' || categoryKey === 'mcp') {
+      setDrillDown({ kind: 'bulk', category: categoryKey });
+      setCapture(true);
+      return;
+    }
+
     const categoryIndex = SIDEBAR_CATEGORY_KEYS.indexOf(categoryKey);
     if (categoryIndex >= 0) {
       setSelectedCategoryIndex(categoryIndex);
@@ -1671,7 +1679,22 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
                         editSessionManager,
                         onBack: handleExitDrillDown,
                       })
-                    : React.createElement(MainPane, {
+                    : drillDown.kind === 'bulk' && selectedProfile
+                      ? React.createElement(BulkOpsView, {
+                          profile: selectedProfile,
+                          appHomePath: getAppHomePaths().appHomePath,
+                          profileRootPath: getProfileTemplatePaths(getAppHomePaths().appHomePath, selectedProfile.name).profileRootPath,
+                          profileNames: workbenchData.profiles.map((p) => p.name),
+                          category: drillDown.category,
+                          width: mainWidth,
+                          height: height - 1,
+                          onBack: handleExitDrillDown,
+                          onDataChanged: () => { void refreshData(); },
+                          onDiscover: () => { void openDiscover(); },
+                          captureProcess,
+                          headless,
+                        })
+                      : React.createElement(MainPane, {
                         profile: selectedProfile,
                         profiles: workbenchData.profiles,
                         nav: resourceNav,
