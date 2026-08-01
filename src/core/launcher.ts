@@ -240,13 +240,14 @@ export async function launchProfile(options: LaunchProfileOptions): Promise<Laun
     },
     { clock: options.clock },
   );
-  await recordRecentProjectDir(options.appHomePath, plan.cwd, { clock: options.clock });
 
   if (result.exitCode !== null && result.exitCode !== 0) {
     throw new CcpsError('CLAUDE_EXITED_WITH_ERROR', 'Claude Code exited with a non-zero status.', {
       guidance: `Claude Code exited with status ${result.exitCode}. Review the Claude Code output above.`,
     });
   }
+
+  await recordRecentProjectDir(options.appHomePath, plan.cwd, { clock: options.clock });
 
   return { plan, exitCode: result.exitCode };
 }

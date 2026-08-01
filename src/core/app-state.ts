@@ -7,8 +7,9 @@ import {
   type VersionedJsonSpec,
 } from './versioned-json';
 import { getAppHomePaths } from './app-config';
+import { type Clock } from './types';
 
-export type Clock = () => Date;
+export type { Clock } from './types';
 
 export type AppStateWriteOptions = {
   clock?: Clock;

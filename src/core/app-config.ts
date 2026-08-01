@@ -10,8 +10,9 @@ import {
   cleanupTmpResidue,
   type VersionedJsonSpec,
 } from './versioned-json';
+import { type Clock } from './types';
 
-export type Clock = () => Date;
+export type { Clock } from './types';
 
 export type AppHomePaths = {
   appHomePath: string;
@@ -134,14 +135,26 @@ export async function writeJsonFile(
   value: unknown,
   options: { overwrite: boolean },
 ): Promise<void> {
-  if (!options.overwrite) {
-    const exists = await fs.pathExists(filePath);
-    if (exists) {
-      throw new CcpsError('FILE_ALREADY_EXISTS', 'Refusing to overwrite an existing file.', {
-        guidance: `Choose a new name or remove the existing file intentionally: ${filePath}`,
-      });
+  const content = `${JSON.stringify(value, null, 2)}\n`;
+
+  if (options.overwrite) {
+    await atomicWriteJson(filePath, value);
+  } else {
+    // Create-only: use wx flag for race-free exclusive creation
+    try {
+      await fs.writeFile(filePath, content, { encoding: 'utf8', flag: 'wx' });
+    } catch (error) {
+      if (isNodeError(error) && error.code === 'EEXIST') {
+        throw new CcpsError('FILE_ALREADY_EXISTS', 'Refusing to overwrite an existing file.', {
+          guidance: `Choose a new name or remove the existing file intentionally: ${filePath}`,
+          cause: error,
+        });
+      }
+      throw error;
     }
   }
+}
 
-  await atomicWriteJson(filePath, value);
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && 'code' in error;
 }
