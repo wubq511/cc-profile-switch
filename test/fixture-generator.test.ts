@@ -7,6 +7,7 @@ import fs from 'fs-extra';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { computeContentHash } from '../src/core/skills-provenance';
+import { assertNoRealCredentials } from './fixtures/credentials';
 import {
   buildFixturePlan,
   materializeFixture,
@@ -27,27 +28,6 @@ afterEach(async () => {
   await Promise.all(tempRoots.map((root) => rm(root, { recursive: true, force: true })));
   tempRoots.length = 0;
 });
-
-// Real credential shapes are assembled from fragments so this test file does
-// not itself contain a real-shape literal (which the repo credential-insulation
-// test would then flag). Each pattern requires a high-entropy tail so synthetic
-// placeholders (fixture-placeholder-..., sk-ant-REDACTED-a) never match.
-const CREDENTIAL_PATTERNS = [
-  new RegExp('sk-ant-' + 'api03-' + '[A-Za-z0-9_-]{20,}'),
-  new RegExp('sk-ant-' + '[A-Za-z0-9_-]{30,}'),
-  new RegExp('ghp_' + '[A-Za-z0-9]{36}'),
-  new RegExp('github_pat_' + '[A-Za-z0-9_]{20,}'),
-  new RegExp('AKIA' + '[0-9A-Z]{16}'),
-  new RegExp('xox' + '[bpoa]-' + '[A-Za-z0-9-]{10,}'),
-];
-
-function assertNoRealCredentials(content: string, where: string): void {
-  for (const pattern of CREDENTIAL_PATTERNS) {
-    expect(pattern.test(content), `real credential shape matched by ${pattern} in ${where}`).toBe(
-      false,
-    );
-  }
-}
 
 function findProfile(plan: ReturnType<typeof buildFixturePlan>, tag: string) {
   return plan.profiles.find((p) => p.pathologyTags.includes(tag));

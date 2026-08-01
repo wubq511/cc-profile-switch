@@ -4,23 +4,17 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { CREDENTIAL_PATTERNS } from './fixtures/credentials';
+
 // Issue #77 acceptance: "No real Profile data exists anywhere in the repo
 // (credential-insulation check in CI)". This test scans every tracked file for
 // real credential shapes and for real Profile data paths. It runs in CI on
 // every PR/push as part of `npm run check`.
-
-// Real credential shapes are assembled from fragments so this test file does
-// not itself contain a real-shape literal. Each pattern requires a high-entropy
-// tail so synthetic placeholders (fixture-placeholder-..., sk-ant-REDACTED-a,
-// <apphome>, etc.) never match.
-const CREDENTIAL_PATTERNS = [
-  new RegExp('sk-ant-' + 'api03-' + '[A-Za-z0-9_-]{20,}'),
-  new RegExp('sk-ant-' + '[A-Za-z0-9_-]{30,}'),
-  new RegExp('ghp_' + '[A-Za-z0-9]{36}'),
-  new RegExp('github_pat_' + '[A-Za-z0-9_]{20,}'),
-  new RegExp('AKIA' + '[0-9A-Z]{16}'),
-  new RegExp('xox' + '[bpoa]-' + '[A-Za-z0-9-]{10,}'),
-];
+//
+// Credential patterns live in the shared module (test/fixtures/credentials.ts)
+// so the generator test and this insulation test enforce the same shapes. The
+// shared module assembles patterns from fragments so it does not itself contain
+// a real-shape literal that this scan would flag.
 
 const REPO_ROOT = process.cwd();
 
