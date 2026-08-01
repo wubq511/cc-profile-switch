@@ -26,13 +26,84 @@ export type ResolvedSpawnCommand = {
   args: string[];
 };
 
+export type ProcessCaptureOptions = {
+  cwd: string;
+  shell: false;
+  env: NodeJS.ProcessEnv;
+  timeoutMs?: number;
+};
+
+export type ProcessCaptureResult = {
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+  timedOut: boolean;
+};
+
+export type CaptureProcess = (
+  command: string,
+  args: string[],
+  options: ProcessCaptureOptions,
+) => Promise<ProcessCaptureResult>;
+
+export const captureProcess: CaptureProcess = async (command, args, options) => {
+  const resolved = await resolveSpawnCommand(command, args, options.env);
+
+  return new Promise((resolve, reject) => {
+    let child;
+    try {
+      child = spawn(resolved.command, resolved.args, {
+        cwd: options.cwd,
+        shell: options.shell,
+        env: options.env,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } catch (error) {
+      reject(error);
+      return;
+    }
+
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
+    let timedOut = false;
+    const timeout =
+      options.timeoutMs === undefined
+        ? undefined
+        : setTimeout(() => {
+            timedOut = true;
+            child.kill();
+          }, options.timeoutMs);
+
+    child.stdout?.on('data', (chunk: Buffer) => stdoutChunks.push(chunk));
+    child.stderr?.on('data', (chunk: Buffer) => stderrChunks.push(chunk));
+    child.once('error', (error) => {
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+      reject(error);
+    });
+    child.once('close', (exitCode) => {
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+      resolve({
+        exitCode,
+        stdout: Buffer.concat(stdoutChunks).toString('utf8'),
+        stderr: Buffer.concat(stderrChunks).toString('utf8'),
+        timedOut,
+      });
+    });
+  });
+};
+
 export async function resolveSpawnCommand(
   command: string,
   args: string[],
   env: NodeJS.ProcessEnv = process.env,
   platform: NodeJS.Platform = process.platform,
 ): Promise<ResolvedSpawnCommand> {
-  const resolvedCommand = platform === 'win32' ? await resolveWindowsCommand(command, env) : undefined;
+  const resolvedCommand =
+    platform === 'win32' ? await resolveWindowsCommand(command, env) : undefined;
 
   return {
     command: resolvedCommand ?? command,

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { resolveSpawnCommand } from '../src/platform/process';
+import { captureProcess, resolveSpawnCommand } from '../src/platform/process';
 
 describe('process spawning', () => {
   const tempRoots: string[] = [];
@@ -98,5 +98,26 @@ describe('process spawning', () => {
       command: 'claude',
       args: ['--print', 'hello world'],
     });
+  });
+
+  it('captures stdout, stderr, and the exit code of a child process', async () => {
+    const result = await captureProcess(
+      process.execPath,
+      ['-e', 'process.stdout.write("out"); process.stderr.write("err"); process.exit(3);'],
+      { cwd: process.cwd(), shell: false, env: { ...process.env } },
+    );
+
+    expect(result).toEqual({ exitCode: 3, stdout: 'out', stderr: 'err', timedOut: false });
+  });
+
+  it('kills a child process that exceeds the capture timeout', async () => {
+    const result = await captureProcess(process.execPath, ['-e', 'setTimeout(() => {}, 60_000);'], {
+      cwd: process.cwd(),
+      shell: false,
+      env: { ...process.env },
+      timeoutMs: 250,
+    });
+
+    expect(result.timedOut).toBe(true);
   });
 });

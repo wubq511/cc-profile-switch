@@ -1,0 +1,48 @@
+name: Plugin targeting probe (Windows)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: plugin-probe-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    name: windows-latest plugin targeting probe
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install the current claude CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Resolve the claude CLI binary
+        shell: bash
+        run: echo "CLAUDE_CLI_BIN=$(npm root -g)/@anthropic-ai/claude-code/bin/claude.exe" >> "$GITHUB_ENV"
+
+      - name: Run the plugin targeting probe
+        run: npm run probe:plugins-windows
+
+      - name: Upload probe evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin-targeting-proof-windows
+          path: probe-output/
+          if-no-files-found: error

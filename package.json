@@ -14,9 +14,15 @@
   },
   "scripts": {
     "dev": "tsx src/index.ts",
-    "build": "tsup src/index.ts --format cjs --clean && node scripts/copy-templates.js",
+    "prototype": "esbuild src/tui/prototype-workbench/index.mts --bundle --format=esm --platform=node --packages=external --outfile=node_modules/.cache/ccps-proto-workbench.mjs && node node_modules/.cache/ccps-proto-workbench.mjs",
+    "prototype:edit": "esbuild src/tui/prototype-edit-session/index.mts --bundle --format=esm --platform=node --packages=external --outfile=node_modules/.cache/ccps-proto-edit-session.mjs && node node_modules/.cache/ccps-proto-edit-session.mjs",
+    "build": "tsup src/index.ts --format cjs --clean && node scripts/build-ink-gate.mjs && node scripts/copy-templates.js",
     "start": "node dist/index.js",
     "test": "vitest run",
+    "probe:skills": "tsx scripts/probe-skills-acquisition.ts",
+    "probe:plugins-windows": "tsx scripts/probe-plugin-targeting-windows.ts",
+    "probe:ink-gate": "tsx scripts/probe-ink-gate.ts",
+    "probe:linked-skill": "tsx scripts/probe-linked-skill.ts",
     "test:watch": "vitest",
     "lint": "eslint .",
     "format": "prettier --write .",
@@ -26,7 +32,8 @@
     "codegraph:sync": "codegraph sync .",
     "codegraph:status": "codegraph status .",
     "codegraph:query": "codegraph query",
-    "codegraph:explore": "codegraph explore"
+    "codegraph:explore": "codegraph explore",
+    "prototype:diff": "esbuild src/tui/prototype-diff/index.mts --bundle --format=esm --platform=node --packages=external --outfile=node_modules/.cache/ccps-proto-diff.mjs && node node_modules/.cache/ccps-proto-diff.mjs"
   },
   "keywords": [
     "claude-code",
@@ -42,6 +49,7 @@
     "commander": "^14.0.2",
     "fs-extra": "^11.3.2",
     "picocolors": "^1.1.1",
+    "skills": "1.5.21",
     "zod": "^4.1.12"
   },
   "devDependencies": {
@@ -49,8 +57,11 @@
     "@eslint/js": "^9.39.1",
     "@types/fs-extra": "^11.0.4",
     "@types/node": "^24.10.1",
+    "@types/react": "^19.2.18",
     "eslint": "^9.39.1",
+    "ink": "^7.1.1",
     "prettier": "^3.6.2",
+    "react": "^19.2.8",
     "tsup": "^8.5.0",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3",
