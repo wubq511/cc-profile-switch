@@ -134,15 +134,35 @@ async function computeDirectorySize(dirPath: string): Promise<number> {
 // ─── Startup sweep ──────────────────────────────────────────────────────
 
 let lastSweepResult: SweepResult | null = null;
+let lastCrashReconcileCount = 0;
 
 export async function performStartupSweep(appHomePath?: string, clock?: Clock): Promise<SweepResult> {
   const result = await sweepExpiredItems(appHomePath, clock);
   lastSweepResult = result;
+
+  // Spec §9.4: the lazy startup sweep also reconciles §7.1 transaction crash
+  // states (`.ccps-tmp-*` / `.ccps-old-*` residue). Reconciliation is loaded
+  // lazily to avoid a static circular import — skills-transaction imports
+  // createFileTreeItem from this module.
+  const resolved = appHomePath ?? getAppHomePaths().appHomePath;
+  try {
+    const { reconcileAllProfilesTransactionCrashStates } = await import('./skills-transaction');
+    const reconcile = await reconcileAllProfilesTransactionCrashStates(resolved);
+    lastCrashReconcileCount = reconcile.entries.length;
+  } catch {
+    // Reconciliation must never break the sweep; it runs best-effort.
+    lastCrashReconcileCount = 0;
+  }
+
   return result;
 }
 
 export function getLastSweepResult(): SweepResult | null {
   return lastSweepResult;
+}
+
+export function getLastCrashReconcileCount(): number {
+  return lastCrashReconcileCount;
 }
 
 export function formatSweepSummary(result: SweepResult): string | null {
