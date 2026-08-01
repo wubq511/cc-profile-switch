@@ -87,13 +87,13 @@ export async function validateProfile(
   await validateManagedProfileRule(paths.ccpsProfileRulePath, findings);
 
   const parsedJson = new Map<string, unknown>();
-  for (const [, key] of jsonFiles) {
+  for (const [label, key] of jsonFiles) {
     const filePath = paths[key];
     if (!(await fs.pathExists(filePath))) {
       continue;
     }
 
-    const parsed = await readJsonForValidation(filePath, findings);
+    const parsed = await readJsonForValidation(filePath, label, findings);
     if (parsed.ok) {
       parsedJson.set(filePath, parsed.value);
     }
@@ -119,7 +119,19 @@ export async function validateProfile(
 
   const settingsJson = parsedJson.get(paths.settingsPath);
   if (settingsJson !== undefined) {
-    validateProfileMemorySettings(paths, settingsJson, findings);
+    if (!isRecord(settingsJson)) {
+      // A settings.json that parses to a non-object (e.g. `[]`) is still
+      // malformed for our purposes (spec §15.1 P4 / S48).
+      findings.push({
+        severity: 'error',
+        code: 'SETTINGS_INVALID',
+        message: 'settings.json is not a valid JSON object.',
+        path: paths.settingsPath,
+        suggestion: 'Replace settings.json with a valid JSON object.',
+      });
+    } else {
+      validateProfileMemorySettings(paths, settingsJson, findings);
+    }
   }
 
   return {
@@ -256,14 +268,20 @@ async function requirePath(
 
 async function readJsonForValidation(
   filePath: string,
+  label: string,
   findings: ValidationFinding[],
 ): Promise<{ ok: true; value: unknown } | { ok: false }> {
   try {
     return { ok: true, value: await fs.readJson(filePath) };
-  } catch {
+  } catch (error) {
+    // A malformed settings.json is a distinct, well-known launch blocker
+    // (spec §15.1 P4 / S48); other parse/read errors keep the generic code.
+    const isSettings = label === 'settings.json';
+    const isSyntaxError = error instanceof SyntaxError;
+    const code = isSettings && isSyntaxError ? 'SETTINGS_MALFORMED' : 'JSON_INVALID';
     findings.push({
       severity: 'error',
-      code: 'JSON_INVALID',
+      code,
       message: 'JSON file cannot be parsed.',
       path: filePath,
       suggestion: 'Fix the JSON syntax before launching with this profile.',
@@ -298,7 +316,7 @@ function validateLaunchPaths(
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
