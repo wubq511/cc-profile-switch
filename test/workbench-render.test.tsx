@@ -41,7 +41,7 @@ const sampleData: WorkbenchData = {
       isDefault: true,
       isLastUsed: true,
       status: 'valid',
-      resourceCounts: { userMemory: 1, autoMemory: 5, skills: 3, agents: 2, mcp: 1, settings: 1, plugins: 0 },
+      resourceCounts: { userMemory: 1, autoMemory: 5, skills: 3, agents: 2, mcp: 1, settings: 1, launchConfig: 1 },
       validation: null,
     },
     {
@@ -50,7 +50,7 @@ const sampleData: WorkbenchData = {
       isDefault: false,
       isLastUsed: false,
       status: 'valid',
-      resourceCounts: { userMemory: 1, autoMemory: 2, skills: 1, agents: 0, mcp: 0, settings: 1, plugins: 0 },
+      resourceCounts: { userMemory: 1, autoMemory: 2, skills: 1, agents: 0, mcp: 0, settings: 1, launchConfig: 1 },
       validation: null,
     },
   ],

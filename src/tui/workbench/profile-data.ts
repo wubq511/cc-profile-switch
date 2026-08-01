@@ -1,4 +1,5 @@
 import fs from 'fs-extra';
+import { join } from 'node:path';
 
 import { getAppHomePaths } from '../../core/app-config';
 import {
@@ -24,7 +25,7 @@ export type ResourceCounts = {
   agents: number;
   mcp: number;
   settings: number;
-  plugins: number;
+  launchConfig: number;
 };
 
 export type WorkbenchData = {
@@ -70,41 +71,32 @@ export async function loadWorkbenchData(appHomePath?: string): Promise<Workbench
 
 async function countResources(appHomePath: string, profileName: string): Promise<ResourceCounts> {
   const { profilesPath } = getAppHomePaths(appHomePath);
-  const profileRoot = `${profilesPath}/${profileName}`;
-  const claudeHome = `${profileRoot}/claude-home`;
+  const profileRoot = join(profilesPath, profileName);
+  const claudeHome = join(profileRoot, 'claude-home');
 
-  const countDir = async (dir: string): Promise<number> => {
+  const countEntries = async (dir: string, predicate: (e: fs.Dirent) => boolean): Promise<number> => {
     try {
       const entries = await fs.readdir(dir, { withFileTypes: true });
-      return entries.filter((e) => e.isFile() || e.isDirectory()).length;
+      return entries.filter(predicate).length;
     } catch {
       return 0;
     }
   };
 
-  const countFiles = async (dir: string): Promise<number> => {
-    try {
-      const entries = await fs.readdir(dir, { withFileTypes: true });
-      return entries.filter((e) => e.isFile()).length;
-    } catch {
-      return 0;
-    }
-  };
-
-  const userMemory = (await fs.pathExists(`${claudeHome}/CLAUDE.md`)) ? 1 : 0;
-  const autoMemory = await countFiles(`${claudeHome}/memory/auto`);
-  const skills = await countDir(`${claudeHome}/skills`);
-  const agents = await countFiles(`${claudeHome}/agents`);
+  const userMemory = (await fs.pathExists(join(claudeHome, 'CLAUDE.md'))) ? 1 : 0;
+  const autoMemory = await countEntries(join(claudeHome, 'memory', 'auto'), (e) => e.isFile());
+  const skills = await countEntries(join(claudeHome, 'skills'), (e) => e.isFile() || e.isDirectory());
+  const agents = await countEntries(join(claudeHome, 'agents'), (e) => e.isFile());
   const mcp = await countMcpServers(claudeHome);
-  const settings = (await fs.pathExists(`${claudeHome}/settings.json`)) ? 1 : 0;
-  const plugins = await countDir(`${claudeHome}/plugins`);
+  const settings = (await fs.pathExists(join(claudeHome, 'settings.json'))) ? 1 : 0;
+  const launchConfig = 1; // profile.json always counts as 1
 
-  return { userMemory, autoMemory, skills, agents, mcp, settings, plugins };
+  return { userMemory, autoMemory, skills, agents, mcp, settings, launchConfig };
 }
 
 async function countMcpServers(claudeHome: string): Promise<number> {
   try {
-    const claudeJson = await fs.readJson(`${claudeHome}/.claude.json`);
+    const claudeJson = await fs.readJson(join(claudeHome, '.claude.json'));
     const mcpServers = (claudeJson as Record<string, unknown>)?.mcpServers;
     if (typeof mcpServers === 'object' && mcpServers !== null) {
       return Object.keys(mcpServers).length;

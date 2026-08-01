@@ -17,7 +17,7 @@ const CATEGORIES = [
   { key: 'agents' as const, labelKey: 'main.category.agents' as const },
   { key: 'mcp' as const, labelKey: 'main.category.mcp' as const },
   { key: 'settings' as const, labelKey: 'main.category.settings' as const },
-  { key: 'plugins' as const, labelKey: 'main.category.plugins' as const },
+  { key: 'launchConfig' as const, labelKey: 'main.category.launchConfig' as const },
 ] as const;
 
 type CategoryKey = (typeof CATEGORIES)[number]['key'];

@@ -55,7 +55,7 @@ export function KeymapOverlay({ visible }: KeymapOverlayProps): React.ReactEleme
       ),
     ),
     React.createElement(Box, { marginTop: 1 },
-      React.createElement(Text, { dimColor: true }, 'Esc to close'),
+      React.createElement(Text, { dimColor: true }, `${t('keymap.esc')} ${t('keymap.help')}`),
     ),
   );
 }
