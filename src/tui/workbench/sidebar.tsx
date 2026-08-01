@@ -22,6 +22,7 @@ type SidebarProps = {
   capture: boolean;
   headless?: boolean;
   lifecycle: LifecycleState;
+  wizardOpen?: boolean;
   onLifecycleAction: (action: LifecycleAction) => void;
   onAction: (
     action: LifecycleAction,
@@ -31,6 +32,7 @@ type SidebarProps = {
   ) => void;
   onLaunchBar: (profileName: string) => void;
   onLaunchDirScreen: (profileName: string) => void;
+  onAddSkill?: (profileName: string) => void;
 };
 
 export function Sidebar({
@@ -42,10 +44,12 @@ export function Sidebar({
   capture,
   headless,
   lifecycle,
+  wizardOpen,
   onLifecycleAction,
   onAction,
   onLaunchBar,
   onLaunchDirScreen,
+  onAddSkill,
 }: SidebarProps): React.ReactElement {
   const { t } = useI18n();
   const { stdin: inkStdin } = useStdin();
@@ -67,7 +71,7 @@ export function Sidebar({
   const launchActive = lifecycle.launch.phase !== 'idle';
 
   useInput((input: string, key: Record<string, boolean>) => {
-    if (capture) return;
+    if (capture || wizardOpen) return;
 
     // Lifecycle prompt input handling (highest priority)
     if (lifecycle.phase === 'prompting') {
@@ -154,6 +158,10 @@ export function Sidebar({
           onLaunchDirScreen(profile.name);
           return;
         }
+        if (input === 'a' && onAddSkill) {
+          onAddSkill(profile.name);
+          return;
+        }
         // Note: 'd' is already used for 'default' in LIFECYCLE_ACTIONS.
         // The dry-run key will be triggered from the pre-launch bar.
       }
@@ -208,7 +216,7 @@ export function Sidebar({
       }
       return;
     }
-  }, { isActive: canUseInput && !capture });
+  }, { isActive: canUseInput && !capture && !wizardOpen });
 
   // Auto-dismiss success after 1.5s
   useEffect(() => {
@@ -290,7 +298,7 @@ export function Sidebar({
       React.createElement(
         Text,
         { dimColor: true },
-        LAUNCH_ACTIONS.map((a) => `[${a.key}]${t(a.labelKey)}`).join(' '),
+        `${LAUNCH_ACTIONS.map((a) => `[${a.key}]${t(a.labelKey)}`).join(' ')}[a]${t('skill.add')}`,
       ),
     ),
     lifecycle.phase === 'prompting' && React.createElement(

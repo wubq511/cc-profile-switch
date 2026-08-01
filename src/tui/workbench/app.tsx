@@ -1,5 +1,6 @@
-import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Text, useApp, useInput, useStdin, useStdout } from 'ink';
+import path from 'node:path';
 
 import { getAppHomePaths } from '../../core/app-config';
 import { backupProfile, createProfile } from '../../core/profile';
@@ -14,6 +15,11 @@ import { buildLaunchPlan, type LaunchPlan } from '../../core/launcher';
 import { validateProfile, type ValidationFinding } from '../../core/validator';
 import { loadAppState } from '../../core/app-state';
 import { ensureProfileClaudeMdExcludes, ensureCcpsProfileRule } from '../../core/profile-template';
+import {
+  installLocalSkill,
+  previewInstall,
+  validateLocalSkillSource,
+} from '../../core/skills-install';
 import { resolveInside } from '../../platform/path';
 import { I18nProvider, useI18n } from './i18n/react';
 import type { Locale } from './i18n/react';
@@ -34,6 +40,7 @@ import { Sidebar } from './sidebar';
 import { PreLaunchBar } from './launch/pre-launch-bar';
 import { DirectoryScreen } from './launch/directory-screen';
 import { DryRunPage } from './launch/dry-run-page';
+import { InstallWizard } from './skills/install-wizard';
 import { type ProfileTemplateName } from '../../core/profile-template';
 
 type CaptureSetter = (on: boolean) => void;
@@ -74,6 +81,8 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch }: { data: Workb
   const [, forceRerender] = useState(0);
   const [workbenchData, setWorkbenchData] = useState(data);
   const [lifecycle, setLifecycle] = useState(initialLifecycleState);
+  // Skill install wizard overlay (issue #64, spec §7.2)
+  const [wizardProfileName, setWizardProfileName] = useState<string | null>(null);
   // Persisted selection across launch remount
   const persistedSelection = useRef(selectedIndex);
 
@@ -92,6 +101,7 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch }: { data: Workb
 
   // Whether the launch flow is active (captures all other input)
   const launchActive = lifecycle.launch.phase !== 'idle';
+  const wizardOpen = wizardProfileName !== null;
 
   useInput((input: string, key: Record<string, boolean>) => {
     if (key.ctrl && input === 'c') {
@@ -112,6 +122,9 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch }: { data: Workb
     }
 
     if (capture) return;
+
+    // The install wizard owns its own input; let it handle everything else.
+    if (wizardOpen) return;
 
     // Launch flow input handling (highest priority when active)
     if (launchActive) {
@@ -436,12 +449,84 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch }: { data: Workb
     }
   }, [lifecycle.launch.dir]);
 
+  // Skill install wizard (issue #64, spec §7.2). The wizard overlay drives a
+  // 3-step flow: pick a Local Skill Source, choose Copy (default) or Link,
+  // then confirm over a target-change preview with health checks.
+  const handleAddSkill = useCallback((profileName: string) => {
+    setWizardProfileName(profileName);
+  }, []);
+
+  const wizardCallbacks = useMemo(
+    () => ({
+      onResolveSource: async (sourceInput: string) =>
+        validateLocalSkillSource(sourceInput),
+      onComputePreview: async (input: {
+        sourcePath: string;
+        mode: 'copy' | 'link';
+        name: string;
+      }) => {
+        const appHomePath = getAppHomePaths().appHomePath;
+        const { profilesPath } = getAppHomePaths(appHomePath);
+        const profileRootPath = path.join(profilesPath, wizardProfileName!);
+        return previewInstall({
+          profileRootPath,
+          sourcePath: input.sourcePath,
+          mode: input.mode,
+          name: input.name,
+        });
+      },
+      onInstall: async (input: {
+        sourcePath: string;
+        mode: 'copy' | 'link';
+        name: string;
+        collisionResolution?: 'rename' | 'replace';
+      }) => {
+        const appHomePath = getAppHomePaths().appHomePath;
+        const { profilesPath } = getAppHomePaths(appHomePath);
+        const profileRootPath = path.join(profilesPath, wizardProfileName!);
+        return installLocalSkill({
+          appHomePath,
+          profileName: wizardProfileName!,
+          profileRootPath,
+          sourcePath: input.sourcePath,
+          mode: input.mode,
+          name: input.name,
+          collisionResolution: input.collisionResolution,
+        });
+      },
+      onClose: () => setWizardProfileName(null),
+      onInstalled: () => {
+        // Refresh data so the Skills count updates after a successful install.
+        const appHomePath = getAppHomePaths().appHomePath;
+        loadWorkbenchData(appHomePath)
+          .then((freshData) => setWorkbenchData(freshData))
+          .catch(() => {
+            // refresh failure is non-fatal
+          });
+      },
+    }),
+    [wizardProfileName],
+  );
+
   const sidebarWidth = Math.max(26, Math.floor(width * 0.3));
   const mainWidth = width - sidebarWidth - 2;
   const selectedProfile: WorkbenchProfile | undefined = workbenchData.profiles[selectedIndex] ?? undefined;
 
   // Render launch overlays
   const launchOverlay = renderLaunchOverlay(lifecycle.launch, width, height);
+
+  // The install wizard overlay takes priority over the launch overlay and the
+  // main workbench surface.
+  const wizardOverlay =
+    wizardOpen && wizardProfileName
+      ? React.createElement(InstallWizard, {
+          profileName: wizardProfileName,
+          callbacks: wizardCallbacks,
+          width,
+          height,
+          headless,
+        })
+      : null;
 
   const inner = React.createElement(
     CaptureContext.Provider,
@@ -451,31 +536,35 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch }: { data: Workb
       { flexDirection: 'column', width, height },
       welcomeVisible
         ? React.createElement(WelcomeCard, { width, height })
-        : launchOverlay
-          ? launchOverlay
-          : React.createElement(
-              Box,
-              { flexDirection: 'row', flexGrow: 1 },
-              React.createElement(Sidebar, {
-                profiles: workbenchData.profiles,
-                selectedIndex,
-                onSelect: setSelectedIndex,
-                width: sidebarWidth,
-                height: height - 1,
-                capture,
-                headless,
-                lifecycle,
-                onLifecycleAction,
-                onAction: handleLifecycleAction,
-                onLaunchBar: handleLaunchBar,
-                onLaunchDirScreen: handleLaunchDirScreen,
-              }),
-              React.createElement(MainPane, {
-                profile: selectedProfile,
-                width: mainWidth,
-                height: height - 1,
-              }),
-            ),
+        : wizardOverlay
+          ? wizardOverlay
+          : launchOverlay
+            ? launchOverlay
+            : React.createElement(
+                Box,
+                { flexDirection: 'row', flexGrow: 1 },
+                React.createElement(Sidebar, {
+                  profiles: workbenchData.profiles,
+                  selectedIndex,
+                  onSelect: setSelectedIndex,
+                  width: sidebarWidth,
+                  height: height - 1,
+                  capture,
+                  headless,
+                  lifecycle,
+                  wizardOpen,
+                  onLifecycleAction,
+                  onAction: handleLifecycleAction,
+                  onLaunchBar: handleLaunchBar,
+                  onLaunchDirScreen: handleLaunchDirScreen,
+                  onAddSkill: handleAddSkill,
+                }),
+                React.createElement(MainPane, {
+                  profile: selectedProfile,
+                  width: mainWidth,
+                  height: height - 1,
+                }),
+              ),
       React.createElement(
         Box,
         { width, justifyContent: 'space-between' },

@@ -15,6 +15,7 @@ const KEYBINDINGS = [
   { key: '?', group: 'nav' as const, labelKey: 'keymap.help' as const },
   { key: 'q/Ctrl+C', group: 'nav' as const, labelKey: 'keymap.quit' as const },
   { key: 'l', group: 'actions' as const, labelKey: 'keymap.launch' as const },
+  { key: 'a', group: 'actions' as const, labelKey: 'skill.add' as const },
   { key: 'e', group: 'actions' as const, labelKey: 'keymap.edit' as const },
   { key: 'n', group: 'actions' as const, labelKey: 'lifecycle.create' as const },
   { key: 'c', group: 'actions' as const, labelKey: 'lifecycle.copy' as const },
