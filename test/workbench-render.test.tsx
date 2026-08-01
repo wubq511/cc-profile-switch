@@ -109,6 +109,30 @@ describe('Workbench render', () => {
     const output = stripAnsi(stdout.output);
     expect(output).toContain('配置');
   });
+
+  it('renders lifecycle action hints in sidebar', async () => {
+    const stdout = new FakeTtyStdout();
+    const instance = render(
+      React.createElement(WorkbenchApp, { data: sampleData, initialLocale: 'en', headless: true, skipWelcome: true }),
+      {
+        stdout: stdout as unknown as NodeJS.WriteStream,
+        stdin: dummyStdin() as unknown as NodeJS.ReadStream,
+        exitOnCtrlC: false,
+        patchConsole: false,
+      },
+    );
+    await instance.waitUntilRenderFlush();
+    const output = stripAnsi(stdout.output);
+    expect(output).toContain('[n]');
+    expect(output).toContain('[c]');
+    expect(output).toContain('[r]');
+    expect(output).toContain('[d]');
+    expect(output).toContain('[v]');
+    expect(output).toContain('[b]');
+    expect(output).toContain('[x]');
+    instance.unmount();
+    await instance.waitUntilExit();
+  });
 });
 
 describe('resize guard', () => {

@@ -33,17 +33,18 @@ type WorkbenchAppProps = {
   onLocaleChange?: (locale: Locale) => void;
   initialLocale?: Locale;
   headless?: boolean;
+  skipWelcome?: boolean;
 };
 
-export function WorkbenchApp({ data, onLocaleChange, initialLocale, headless }: WorkbenchAppProps): React.ReactElement {
+export function WorkbenchApp({ data, onLocaleChange, initialLocale, headless, skipWelcome }: WorkbenchAppProps): React.ReactElement {
   return React.createElement(
     I18nProvider,
     { initialLocale, onLocaleChange },
-    React.createElement(WorkbenchInner, { data, headless }),
+    React.createElement(WorkbenchInner, { data, headless, skipWelcome }),
   );
 }
 
-function WorkbenchInner({ data, headless }: { data: WorkbenchData; headless?: boolean }): React.ReactElement {
+function WorkbenchInner({ data, headless, skipWelcome }: { data: WorkbenchData; headless?: boolean; skipWelcome?: boolean }): React.ReactElement {
   const { t, locale } = useI18n();
   const { exit } = useApp();
   const { stdout } = useStdout();
@@ -52,7 +53,7 @@ function WorkbenchInner({ data, headless }: { data: WorkbenchData; headless?: bo
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [helpVisible, setHelpVisible] = useState(false);
   const [capture, setCapture] = useState(false);
-  const [welcomeVisible, setWelcomeVisible] = useState(true);
+  const [welcomeVisible, setWelcomeVisible] = useState(!skipWelcome);
   const [, forceRerender] = useState(0);
   const [workbenchData, setWorkbenchData] = useState(data);
   const [lifecycle, setLifecycle] = useState(initialLifecycleState);
