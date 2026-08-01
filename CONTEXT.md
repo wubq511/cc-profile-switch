@@ -63,3 +63,11 @@ _Avoid_: Backups, system trash
 **App State**:
 Machine-local runtime state owned by CC-Profile-Switch (such as recent project directories), kept in `state.json` under the app home and separated from user settings in `config.json` by churn class.
 _Avoid_: Settings, cache
+
+**Scenario Matrix**:
+The acceptance-evidence spine of the Profile Workbench specification: user-journey rows tagged with the verb×resource cells they cover, under a mechanical completeness rule over the capability matrix.
+_Avoid_: Test plan, test suite
+
+**Pathology Library**:
+The enumerated set of malformed or degraded Profile shapes referenced by ID from Scenario Matrix rows, produced by the deterministic fixture generator rather than captured from real Profiles.
+_Avoid_: Real Profile fixture, snapshot
