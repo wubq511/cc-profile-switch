@@ -173,7 +173,7 @@ describe('Agent resource service', () => {
       await makeProfile(appHome, 'coding');
 
       const filePath = await createAgent(appHome, 'coding', 'helper');
-      expect(filePath.endsWith('agents/helper.md')).toBe(true);
+      expect(filePath.endsWith(join('agents', 'helper.md'))).toBe(true);
 
       const agent = await loadAgent(appHome, 'coding', 'helper');
       expect(agent).not.toBeNull();

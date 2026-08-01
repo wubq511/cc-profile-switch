@@ -16,6 +16,7 @@ import {
   validateMarketplaceSource,
 } from '../src/core/plugins';
 import type { CaptureProcess } from '../src/platform/process';
+import { resolveFilesystemPath } from '../src/platform/path';
 import { CcpsError } from '../src/utils/errors';
 
 const PROBED_DETAILS_OUTPUT = `probe-plugin 0.1.0
@@ -91,11 +92,20 @@ describe('plugins delegated service', () => {
         args: ['list', '--json'],
       });
 
+      // Build the expectation through the same resolver the src uses: the
+      // posix-absolute fake app home keeps posix separators on every platform.
+      const claudeHome = resolveFilesystemPath(
+        '/tmp/app-home',
+        'profiles',
+        'coding',
+        'claude-home',
+      );
+
       expect(plan.command).toBe('claude');
       expect(plan.args).toEqual(['plugin', 'list', '--json']);
-      expect(plan.cwd).toBe(join('/tmp/app-home', 'profiles', 'coding', 'claude-home'));
+      expect(plan.cwd).toBe(claudeHome);
       expect(plan.envChanges).toEqual({
-        CLAUDE_CONFIG_DIR: join('/tmp/app-home', 'profiles', 'coding', 'claude-home'),
+        CLAUDE_CONFIG_DIR: claudeHome,
       });
     });
 

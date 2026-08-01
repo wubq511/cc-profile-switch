@@ -91,14 +91,20 @@ function setupSpawnSuccess() {
 
 /** True when any spawn call was handed the given path (works across the
  *  platform-specific editor commands — the path is a separate arg on POSIX and
- *  embedded in the PowerShell script on Windows). */
+ *  embedded in the PowerShell script on Windows). Compares raw arg strings;
+ *  JSON.stringify would escape the backslashes in Windows paths and never match. */
 function spawnTargetsPath(targetPath: string): boolean {
-  return vi.mocked(spawn).mock.calls.some((call) => JSON.stringify(call).includes(targetPath));
+  return vi.mocked(spawn).mock.calls.some((call) =>
+    call
+      .flatMap((part) => (Array.isArray(part) ? part : [part]))
+      .some((arg) => typeof arg === 'string' && arg.includes(targetPath)),
+  );
 }
 
 describe('top-level `e` edit in VS Code (§4.3/§8)', () => {
   const tempRoots: string[] = [];
   let previousHome: string | undefined;
+  let previousUserProfile: string | undefined;
 
   afterEach(async () => {
     if (previousHome === undefined) {
@@ -107,6 +113,12 @@ describe('top-level `e` edit in VS Code (§4.3/§8)', () => {
       process.env.HOME = previousHome;
     }
     previousHome = undefined;
+    if (previousUserProfile === undefined) {
+      delete process.env.USERPROFILE;
+    } else {
+      process.env.USERPROFILE = previousUserProfile;
+    }
+    previousUserProfile = undefined;
     await Promise.all(tempRoots.map((root) => rm(root, { recursive: true, force: true })));
     tempRoots.length = 0;
     vi.clearAllMocks();
@@ -116,7 +128,9 @@ describe('top-level `e` edit in VS Code (§4.3/§8)', () => {
    * Point HOME at a fresh temp dir. Every interactive WorkbenchApp render must
    * do this: with the real user home, Ink sometimes never attaches its stdin
    * listener, and the render would also touch the real app home (Safety
-   * contract). Returns the temp home path.
+   * contract). USERPROFILE is set too because Windows resolves the user home
+   * from it, not HOME (canonical pattern from cli-help.test.ts). Returns the
+   * temp home path.
    */
   async function overrideHomeToTemp(): Promise<string> {
     const root = await mkdtemp(join(tmpdir(), 'ccps-toplevel-edit-'));
@@ -124,7 +138,9 @@ describe('top-level `e` edit in VS Code (§4.3/§8)', () => {
     const home = join(root, 'home');
     await fs.ensureDir(home);
     previousHome = process.env.HOME;
+    previousUserProfile = process.env.USERPROFILE;
     process.env.HOME = home;
+    process.env.USERPROFILE = home;
     return home;
   }
 

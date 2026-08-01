@@ -12,6 +12,7 @@ import {
   loadAppConfig,
   saveAppConfig,
 } from '../src/core/app-config';
+import { resolveFilesystemPath } from '../src/platform/path';
 import { CcpsError } from '../src/utils/errors';
 
 const fixedClock = () => new Date('2026-01-02T03:04:05.000Z');
@@ -192,8 +193,10 @@ describe('app config', () => {
 
   it('exposes statePath in app home paths', () => {
     const paths = getAppHomePaths('/fake/home/.cc-profile-switch');
+    // Build the expectation through the same resolver the src uses: the
+    // posix-absolute fake root keeps posix separators on every platform.
     expect(paths.statePath).toBe(
-      join('/fake/home/.cc-profile-switch', 'state.json'),
+      resolveFilesystemPath('/fake/home/.cc-profile-switch', 'state.json'),
     );
   });
 });

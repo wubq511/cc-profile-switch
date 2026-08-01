@@ -588,13 +588,24 @@ describe('export command output', () => {
       writeErr: (value) => output.push(value),
     });
     const originalHome = process.env.HOME;
+    const originalUserProfile = process.env.USERPROFILE;
     process.env.HOME = userHome;
+    process.env.USERPROFILE = userHome;
     program.exitOverride();
     try {
       await program.parseAsync(['node', 'ccps', ...args], { from: 'node' });
       return output.join('');
     } finally {
-      process.env.HOME = originalHome;
+      if (originalHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = originalHome;
+      }
+      if (originalUserProfile === undefined) {
+        delete process.env.USERPROFILE;
+      } else {
+        process.env.USERPROFILE = originalUserProfile;
+      }
     }
   }
 
