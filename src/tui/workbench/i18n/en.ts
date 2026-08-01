@@ -42,6 +42,27 @@ export const en = {
   'welcome.dismiss': 'Press any key to dismiss',
   'error.ttyRequired': 'Workbench requires an interactive terminal (TTY).',
   'error.ttyRequired.hint': 'Run ccps tui in a terminal, or use ccps <command> for scripting.',
+  // Lifecycle actions
+  'lifecycle.create': 'New profile',
+  'lifecycle.copy': 'Copy',
+  'lifecycle.rename': 'Rename',
+  'lifecycle.default': 'Default',
+  'lifecycle.validate': 'Validate',
+  'lifecycle.backup': 'Backup',
+  'lifecycle.remove': 'Remove',
+  'lifecycle.prompt.rename': 'Rename to:',
+  'lifecycle.prompt.copy': 'Copy to:',
+  'lifecycle.prompt.remove': 'Type name to confirm:',
+  'lifecycle.prompt.createName': 'Profile name:',
+  'lifecycle.prompt.createTemplate': 'Select template:',
+  'lifecycle.executing': 'Working…',
+  'lifecycle.success': 'Done!',
+  'lifecycle.error': 'Error',
+  'lifecycle.findings.errors': 'errors',
+  'lifecycle.findings.warnings': 'warnings',
+  'lifecycle.default.set': 'Set as default',
+  'lifecycle.default.cleared': 'Default cleared',
+  'lifecycle.template.blank': 'blank',
 } as const;
 
 export type LocaleKey = keyof typeof en;
