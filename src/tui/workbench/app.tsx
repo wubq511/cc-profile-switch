@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Box, Text, useApp, useInput, useStdin, useStdout } from 'ink';
 import path from 'node:path';
 
-import { getAppHomePaths } from '../../core/app-config';
+import { getAppHomePaths, loadAppConfig } from '../../core/app-config';
 import { backupProfile, createProfile } from '../../core/profile';
 import {
   clearDefaultProfile,
@@ -29,6 +29,10 @@ import {
   acquireAndPreviewRemoteInstall,
   installRemoteSkill,
 } from '../../core/skills-remote-install';
+import {
+  SkillsDiscoverySession,
+} from '../../core/skills-discovery';
+import { openUrlInBrowser } from '../../platform/editor';
 import fs from 'fs-extra';
 import { resolveInside } from '../../platform/path';
 import { CcpsError } from '../../utils/errors';
@@ -81,10 +85,30 @@ import { PreLaunchBar } from './launch/pre-launch-bar';
 import { DirectoryScreen } from './launch/directory-screen';
 import { DryRunPage } from './launch/dry-run-page';
 import { InstallWizard } from './skills/install-wizard';
+import { DiscoverView } from './skills/discover';
+import type { InstallSourceRef } from './skills/install-wizard-reducer';
 import { AutoMemoryView } from './resources/auto-memory-view';
 import { ErrorPanel, HintsProvider, RemoveProfilePanel, useHints } from './guidance';
 
 type DrillDown = { kind: 'none' } | { kind: 'autoMemory' };
+
+/** Result caps for the Discover catalog (bounded interactive search). */
+const DISCOVER_REPO_SKILL_LIMIT = 50;
+const DISCOVER_SKILLSHUB_LIMIT = 20;
+
+/** Default Discover session factory: real network + the `gh` token borrow,
+ * bounded results. Overridable in tests. */
+function defaultDiscoverySessionFactory(
+  appHomePath: string,
+  experimentalEnabled: boolean,
+): SkillsDiscoverySession {
+  return new SkillsDiscoverySession({
+    appHomePath,
+    experimentalEnabled,
+    repoSkillLimit: DISCOVER_REPO_SKILL_LIMIT,
+    skillshubLimit: DISCOVER_SKILLSHUB_LIMIT,
+  });
+}
 
 // The welcome card is once-per-session: this module-level flag survives the
 // unmount/remount cycle of a launch resume, so the card never reappears
@@ -108,10 +132,17 @@ type WorkbenchAppProps = {
   mcpProbe?: (appHomePath: string, profileName: string) => Promise<McpServerState[]>;
   /** Override the sidebar cross-Profile content search (tests, #83). */
   searchContent?: (query: string) => Promise<SearchResult[]>;
+  /** Override the Discover session factory (tests inject a fake-session/http). */
+  discoverySessionFactory?: (
+    appHomePath: string,
+    experimentalEnabled: boolean,
+  ) => SkillsDiscoverySession;
+  /** Override the app-config read (tests avoid touching the real app home). */
+  configLoader?: (appHomePath: string) => Promise<ReturnType<typeof loadAppConfig>>;
 };
 
-export function WorkbenchApp({ data, onLocaleChange, initialLocale, headless, skipWelcome, onLaunch, mcpProbe, searchContent }: WorkbenchAppProps): React.ReactElement {
-  const inner = React.createElement(WorkbenchInner, { data, headless, skipWelcome, onLaunch, mcpProbe, searchContent });
+export function WorkbenchApp({ data, onLocaleChange, initialLocale, headless, skipWelcome, onLaunch, mcpProbe, searchContent, discoverySessionFactory, configLoader }: WorkbenchAppProps): React.ReactElement {
+  const inner = React.createElement(WorkbenchInner, { data, headless, skipWelcome, onLaunch, mcpProbe, searchContent, discoverySessionFactory, configLoader });
   return React.createElement(
     I18nProvider,
     { initialLocale, onLocaleChange },
@@ -119,7 +150,7 @@ export function WorkbenchApp({ data, onLocaleChange, initialLocale, headless, sk
   );
 }
 
-function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searchContent }: { data: WorkbenchData; headless?: boolean; skipWelcome?: boolean; onLaunch?: (plan: LaunchPlan, appHomePath: string) => number | null; mcpProbe?: (appHomePath: string, profileName: string) => Promise<McpServerState[]>; searchContent?: (query: string) => Promise<SearchResult[]> }): React.ReactElement {
+function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searchContent, discoverySessionFactory, configLoader }: { data: WorkbenchData; headless?: boolean; skipWelcome?: boolean; onLaunch?: (plan: LaunchPlan, appHomePath: string) => number | null; mcpProbe?: (appHomePath: string, profileName: string) => Promise<McpServerState[]>; searchContent?: (query: string) => Promise<SearchResult[]>; discoverySessionFactory?: (appHomePath: string, experimentalEnabled: boolean) => SkillsDiscoverySession; configLoader?: (appHomePath: string) => Promise<ReturnType<typeof loadAppConfig>> }): React.ReactElement {
   const { t, locale } = useI18n();
   const { exit } = useApp();
   const { stdout } = useStdout();
@@ -140,6 +171,16 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
   const [lifecycle, setLifecycle] = useState(initialLifecycleState);
   // Skill install wizard overlay (issue #64, spec §7.2)
   const [wizardProfileName, setWizardProfileName] = useState<string | null>(null);
+  // Discover-surface install entry (issue #68, spec §7.4): when set, the wizard
+  // opens pre-seeded in its remote staging phase for this source.
+  const [wizardInitialRemote, setWizardInitialRemote] = useState<InstallSourceRef | null>(null);
+  // Discover surface (issue #68, spec §7.4)
+  const [discoverOpen, setDiscoverOpen] = useState(false);
+  const [discoverSession, setDiscoverSession] = useState<SkillsDiscoverySession | null>(null);
+  // The Discover session survives closes so its session caches (incl. the
+  // offline stale cache, spec §7.4) persist across re-opens within the app
+  // session — and the `gh` token is borrowed once, not per open.
+  const discoverSessionRef = useRef<SkillsDiscoverySession | null>(null);
   // Main-pane category focus + resource-row drill-down (issue #69)
   const [mainPaneFocus, setMainPaneFocus] = useState(false);
   const [selectedCategoryIndex, setSelectedCategoryIndex] = useState(0);
@@ -195,6 +236,7 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
   // Whether the launch flow is active (captures all other input)
   const launchActive = lifecycle.launch.phase !== 'idle';
   const wizardOpen = wizardProfileName !== null;
+  const discoverActive = discoverOpen && discoverSession !== null;
 
   // Just-in-time MCP nudge: probe the selected Profile's MCP connection state
   // once per session (cached by profile name), fail closed on any error.
@@ -243,6 +285,9 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
 
     // The install wizard owns its own input; let it handle everything else.
     if (wizardOpen) return;
+
+    // The Discover surface owns its own input while open.
+    if (discoverActive) return;
 
     // Resource navigation input handling
     if (resourceNav.phase !== 'idle') {
@@ -331,6 +376,8 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
         if (catKey === 'autoMemory') {
           setDrillDown({ kind: 'autoMemory' });
           setCapture(true);
+        } else if (catKey === 'skills') {
+          void openDiscover();
         }
         return;
       }
@@ -1265,6 +1312,50 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
   // then confirm over a target-change preview with health checks.
   const handleAddSkill = useCallback((profileName: string) => {
     setWizardProfileName(profileName);
+    setWizardInitialRemote(null);
+  }, []);
+
+  // Discover surface (issue #68, spec §7.4). Opens the three-tier Skills
+  // discovery floor for the selected Profile.
+  const openDiscover = useCallback(async () => {
+    const profile = workbenchData.profiles[selectedIndex];
+    if (!profile) return;
+    if (!discoverSessionRef.current) {
+      let experimentalEnabled = true;
+      try {
+        const config = await (configLoader ?? loadAppConfig)(appHomePath);
+        experimentalEnabled = config.workbench?.skillsDiscoveryExperimental ?? true;
+      } catch {
+        // Unreadable config — default the experimental layer on (spec §7.4).
+      }
+      discoverSessionRef.current = (discoverySessionFactory ?? defaultDiscoverySessionFactory)(
+        appHomePath,
+        experimentalEnabled,
+      );
+    }
+    setDiscoverSession(discoverSessionRef.current);
+    setDiscoverOpen(true);
+  }, [workbenchData, selectedIndex, appHomePath, discoverySessionFactory, configLoader]);
+
+  // Install a discovered source through the §7.3 adapter: close Discover and
+  // hand the source (owner/repo + optional --skill, or a tree URL) to the
+  // install wizard's remote staging phase.
+  const handleDiscoverInstall = useCallback((source: string, skill?: string) => {
+    const profile = workbenchData.profiles[selectedIndex];
+    if (!profile) return;
+    setDiscoverOpen(false);
+    setDiscoverSession(null);
+    setWizardProfileName(profile.name);
+    setWizardInitialRemote({ source, skill });
+  }, [workbenchData, selectedIndex]);
+
+  const handleOpenBrowser = useCallback((url: string) => {
+    void openUrlInBrowser(url);
+  }, []);
+
+  const closeDiscover = useCallback(() => {
+    setDiscoverOpen(false);
+    setDiscoverSession(null);
   }, []);
 
   const wizardCallbacks = useMemo(
@@ -1305,7 +1396,7 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
           collisionResolution: input.collisionResolution,
         });
       },
-      onAcquireRemote: async (input: { rawSource: string }) => {
+      onAcquireRemote: async (input: { rawSource: string; skill?: string }) => {
         const appHomePath = getAppHomePaths().appHomePath;
         const { profilesPath } = getAppHomePaths(appHomePath);
         const profileRootPath = path.join(profilesPath, wizardProfileName!);
@@ -1314,6 +1405,7 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
           profileName: wizardProfileName!,
           profileRootPath,
           rawSource: input.rawSource,
+          skill: input.skill,
           // name omitted: derived from the staged Skill's directory name
           // (its frontmatter name) — the remote wizard has no name-input step.
         });
@@ -1344,7 +1436,10 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
           // cleanup failure is non-fatal
         });
       },
-      onClose: () => setWizardProfileName(null),
+      onClose: () => {
+        setWizardProfileName(null);
+        setWizardInitialRemote(null);
+      },
       onInstalled: () => {
         // Refresh data so the Skills count updates after a successful install.
         const appHomePath = getAppHomePaths().appHomePath;
@@ -1405,6 +1500,22 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
           width,
           height,
           headless,
+          initialRemote: wizardInitialRemote ?? undefined,
+        })
+      : null;
+
+  // The Discover surface is the Skills drilling surface (issue #68, §7.4).
+  const discoverOverlay =
+    discoverActive && discoverSession
+      ? React.createElement(DiscoverView, {
+          profileName: workbenchData.profiles[selectedIndex]?.name ?? '',
+          session: discoverSession,
+          width,
+          height,
+          headless,
+          onBack: closeDiscover,
+          onInstallSource: handleDiscoverInstall,
+          onOpenBrowser: handleOpenBrowser,
         })
       : null;
 
@@ -1420,6 +1531,8 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
           ? React.createElement(KeymapOverlay, { visible: true })
           : wizardOverlay
             ? wizardOverlay
+            : discoverOverlay
+              ? discoverOverlay
           : launchOverlay
             ? launchOverlay
             : React.createElement(
