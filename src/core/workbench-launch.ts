@@ -37,6 +37,8 @@ export function workbenchLaunchSync(options: WorkbenchLaunchOptions): WorkbenchL
 
   // macOS PTY wrapper: `script -q /dev/null` allocates a PTY so
   // Claude Code stays in interactive mode.
+  // Windows: no PTY wrapper needed — Claude Code detects ConPTY automatically.
+  // Linux: no PTY wrapper — Claude Code launches directly.
   const isMac = process.platform === 'darwin';
   const spawnCommand = isMac ? 'script' : plan.command;
   const spawnArgs = isMac ? ['-q', '/dev/null', plan.command, ...plan.args] : plan.args;
