@@ -5,6 +5,10 @@ import { profileConfigSchema, type ProfileConfig } from '../schemas/profile';
 import { CcpsError } from '../utils/errors';
 import { validateProfileName } from '../platform/path';
 import {
+  createFileTreeItem,
+  type RecoveryBinItem,
+} from './recovery-bin';
+import {
   getAppHomePaths,
   loadAppConfig,
   saveAppConfig,
@@ -68,13 +72,16 @@ export type RenameProfileResult = {
 export type RemoveProfileOptions = ProfileManagementOptions & {
   name: string;
   confirmation: string;
+  /** When true, skip backup and create a Recovery Item instead. */
+  noBackup?: boolean;
   clock?: Clock;
 };
 
 export type RemoveProfileResult = {
   profileName: string;
   removedPath: string;
-  backupPath: string;
+  backupPath: string | null;
+  recoveryItem: RecoveryBinItem | null;
 };
 
 export type DefaultProfileOptions = ProfileManagementOptions & {
@@ -215,11 +222,31 @@ export async function removeProfile(options: RemoveProfileOptions): Promise<Remo
   }
 
   const profile = await validateExistingProfile(appHomePath, profileName);
-  const backup = await backupProfile({
-    appHomePath,
-    name: profile.profileName,
-    clock: options.clock,
-  });
+  let backupPath: string | null = null;
+  let recoveryItem: RecoveryBinItem | null = null;
+
+  if (options.noBackup) {
+    // No-backup path: create a Recovery Item (temporary safety net), then delete.
+    // The profile directory becomes a file-tree item in the Recovery Bin.
+    recoveryItem = await createFileTreeItem({
+      appHomePath,
+      origin: 'remove',
+      kind: 'profile',
+      profile: profileName,
+      coordinates: { targetRelativePath: `profiles/${profileName}` },
+      sourcePath: profile.profileRootPath,
+      clock: options.clock,
+    });
+  } else {
+    // Backup-on (default): create a durable Profile Backup, then delete.
+    // No Recovery Item is created.
+    const backup = await backupProfile({
+      appHomePath,
+      name: profile.profileName,
+      clock: options.clock,
+    });
+    backupPath = backup.backupPath;
+  }
 
   await fs.remove(profile.profileRootPath);
   await updateConfig(
@@ -231,7 +258,8 @@ export async function removeProfile(options: RemoveProfileOptions): Promise<Remo
   return {
     profileName: profile.profileName,
     removedPath: profile.profileRootPath,
-    backupPath: backup.backupPath,
+    backupPath,
+    recoveryItem,
   };
 }
 

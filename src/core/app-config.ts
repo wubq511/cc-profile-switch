@@ -21,6 +21,7 @@ export type AppHomePaths = {
   statePath: string;
   profilesPath: string;
   backupsPath: string;
+  recoveryBinPath: string;
 };
 
 export type AppConfigWriteOptions = {
@@ -70,6 +71,7 @@ export function getAppHomePaths(appHomePath = getAppHomePath()): AppHomePaths {
     statePath: resolveInside(appHomePath, 'state.json'),
     profilesPath: resolveInside(appHomePath, 'profiles'),
     backupsPath: resolveInside(appHomePath, 'backups'),
+    recoveryBinPath: resolveInside(appHomePath, 'recovery-bin'),
   };
 }
 
@@ -92,6 +94,7 @@ export async function ensureAppHomeStructure(appHomePath = getAppHomePath()): Pr
   await fs.ensureDir(paths.appHomePath);
   await fs.ensureDir(paths.profilesPath);
   await fs.ensureDir(paths.backupsPath);
+  await fs.ensureDir(paths.recoveryBinPath);
   await cleanupTmpResidue(paths.appHomePath);
 
   return paths;
