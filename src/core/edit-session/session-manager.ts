@@ -100,7 +100,19 @@ export class EditSessionManager {
     const filename = basename(filePath);
 
     try {
-      const watcher = fs.watch(dir, (_event, watchedFilename) => {
+      // Canonicalize the watched directory: on Windows, handing libuv a path
+      // with an 8.3 short-form component (e.g. a short-form TEMP root like
+      // C:\Users\RUNNER~1\...) trips the fs-event assertion
+      // (!_wcsnicmp(filename, dir, dirlen), src\win\fs-event.c) which aborts
+      // the process and cannot be caught. realpath yields the long form.
+      let watchDir = dir;
+      try {
+        watchDir = fs.realpathSync.native(dir);
+      } catch {
+        // realpath failed (e.g. dir does not exist); the watch below either
+        // works with the unresolved path or throws into the outer catch.
+      }
+      const watcher = fs.watch(watchDir, (_event, watchedFilename) => {
         if (watchedFilename !== filename) return;
         this.scheduleDebounce(filePath);
       });
