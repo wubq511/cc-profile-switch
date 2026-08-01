@@ -15,8 +15,13 @@ import {
   type AutoMemoryEntry,
 } from '../../../core/auto-memory';
 import { listRecoveryBinItems, restoreRecoveryItem } from '../../../core/recovery-bin';
+import { CollisionDialog, type CollisionResolutionChoice } from './collision-dialog';
+import { suggestNewName } from './collision-dialog-reducer';
 
-type Mode = 'list' | 'copy' | 'restore';
+type Mode = 'list' | 'copy' | 'restore' | 'restore-collision';
+
+/** A Recovery Bin item scoped to this profile's Auto Memory entries. */
+type RestorePickerItem = { id: string; entryName: string };
 
 export type AutoMemoryViewProps = {
   profile: WorkbenchProfile;
@@ -53,8 +58,10 @@ export function AutoMemoryView({
   const [searchMatches, setSearchMatches] = useState<Set<string> | null>(null);
   const [mode, setMode] = useState<Mode>('list');
   const [copyInput, setCopyInput] = useState('');
-  const [restoreItems, setRestoreItems] = useState<{ id: string; entryName: string }[]>([]);
+  const [restoreItems, setRestoreItems] = useState<RestorePickerItem[]>([]);
   const [restoreIndex, setRestoreIndex] = useState(0);
+  const [collisionItem, setCollisionItem] = useState<RestorePickerItem | null>(null);
+  const [collisionSuggestedName, setCollisionSuggestedName] = useState('');
   const [status, setStatus] = useState<string | null>(null);
 
   // Content search: when a query is active, `searchAutoMemory` reads entry
@@ -142,6 +149,9 @@ export function AutoMemoryView({
 
   useInput((input: string, key: Record<string, boolean>) => {
     if (key.ctrl && input === 'c') return; // app-level exit handles this
+
+    // The collision dialog owns its own input while it is open.
+    if (mode === 'restore-collision') return;
 
     // Search mode
     if (searchFocused) {
@@ -317,6 +327,13 @@ export function AutoMemoryView({
     }
   }
 
+  /** Open the shared collision dialog, prefilled with a non-colliding name. */
+  function enterCollision(item: RestorePickerItem, baseName: string): void {
+    setCollisionItem(item);
+    setCollisionSuggestedName(suggestNewName(baseName, new Set(entries.map((e) => e.name))));
+    setMode('restore-collision');
+  }
+
   async function confirmRestore(): Promise<void> {
     const item = restoreItems[restoreIndex];
     if (!item) return;
@@ -328,9 +345,50 @@ export function AutoMemoryView({
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (/collision|already exists/i.test(message)) {
-        setStatus(t('autoMemory.restore.collision'));
+        enterCollision(item, item.entryName);
       } else {
         setStatus(t('autoMemory.restore.failed').replace('{message}', message));
+      }
+    }
+  }
+
+  async function resolveCollision(choice: CollisionResolutionChoice): Promise<void> {
+    const item = collisionItem;
+    if (!item) return;
+
+    if (choice.resolution === 'refuse') {
+      setCollisionItem(null);
+      setMode('restore');
+      return;
+    }
+
+    try {
+      await restoreRecoveryItem({
+        appHomePath,
+        itemId: item.id,
+        collisionResolution: choice.resolution,
+        newName: choice.resolution === 'restore-as-new-name' ? choice.newName : undefined,
+      });
+      setStatus(
+        choice.resolution === 'restore-as-new-name'
+          ? t('autoMemory.restore.renamed')
+              .replace('{entry}', item.entryName)
+              .replace('{newName}', choice.newName)
+          : t('autoMemory.restore.replaced').replace('{entry}', item.entryName),
+      );
+      setCollisionItem(null);
+      setMode('list');
+      await reload();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (/collision|already exists/i.test(message)) {
+        // The chosen new name also collides — re-suggest and stay in the dialog.
+        const base = choice.resolution === 'restore-as-new-name' ? choice.newName : item.entryName;
+        enterCollision(item, base);
+      } else {
+        setStatus(t('autoMemory.restore.failed').replace('{message}', message));
+        setCollisionItem(null);
+        setMode('restore');
       }
     }
   }
@@ -358,6 +416,14 @@ export function AutoMemoryView({
           </Text>
           <Text dimColor>{t('keymap.esc')}</Text>
         </Box>
+      ) : mode === 'restore-collision' && collisionItem ? (
+        <CollisionDialog
+          key={collisionSuggestedName}
+          resourceName={collisionItem.entryName}
+          suggestedName={collisionSuggestedName}
+          onResolve={(choice) => void resolveCollision(choice)}
+          headless={headless}
+        />
       ) : mode === 'restore' ? (
         <Box flexDirection="column" flexGrow={1}>
           <Text bold>{t('autoMemory.restore.title')}</Text>

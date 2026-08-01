@@ -439,7 +439,7 @@ describe('Recovery Bin service', () => {
       expect(await fs.pathExists(item.itemDirPath)).toBe(true);
     });
 
-    it('resolves collision with restore-as-new-name', async () => {
+    it('resolves collision with restore-as-new-name at entry level', async () => {
       const appHome = await makeAppHome();
       const profileDir = await makeProfile(appHome, 'coding');
       const skillDir = join(profileDir, 'claude-home', 'skills', 'pdf');
@@ -456,26 +456,138 @@ describe('Recovery Bin service', () => {
         clock: fixedClock,
       });
 
-      // Create a second profile for the new-name restore
-      await makeProfile(appHome, 'study');
-
+      // The original still exists (collision); restore as a renamed skill
+      // within the same profile (§9.3 entry-level rename).
       const result = await restoreRecoveryItem({
         appHomePath: appHome,
         itemId: item.id,
         collisionResolution: 'restore-as-new-name',
-        newName: 'study',
+        newName: 'pdf-2',
       });
 
       expect(result.consumed).toBe(true);
       expect(result.restoredProfile).toBe('coding');
 
-      // Restored under the new profile name
-      const { profilesPath } = getAppHomePaths(appHome);
-      const restoredPath = join(profilesPath, 'study', 'claude-home', 'skills', 'pdf', 'SKILL.md');
-      expect(await fs.pathExists(restoredPath)).toBe(true);
+      // Both the conflicting original and the renamed restore exist.
+      expect(await fs.pathExists(join(skillDir, 'SKILL.md'))).toBe(true);
+      const renamedPath = join(profileDir, 'claude-home', 'skills', 'pdf-2', 'SKILL.md');
+      expect(await fs.pathExists(renamedPath)).toBe(true);
     });
 
-    it('resolves collision with delete-and-restore', async () => {
+    it('restore-as-new-name refuses a renamed target that also collides', async () => {
+      const appHome = await makeAppHome();
+      const profileDir = await makeProfile(appHome, 'coding');
+      const skillDir = join(profileDir, 'claude-home', 'skills', 'pdf');
+      await fs.ensureDir(skillDir);
+      await fs.writeFile(join(skillDir, 'SKILL.md'), '# PDF', 'utf8');
+
+      const item = await createFileTreeItem({
+        appHomePath: appHome,
+        origin: 'remove',
+        kind: 'skill',
+        profile: 'coding',
+        coordinates: { targetRelativePath: 'claude-home/skills/pdf' },
+        sourcePath: skillDir,
+        clock: fixedClock,
+      });
+
+      // `pdf-2` already exists, so the rename target itself collides.
+      await fs.ensureDir(join(profileDir, 'claude-home', 'skills', 'pdf-2'));
+      await fs.writeFile(join(profileDir, 'claude-home', 'skills', 'pdf-2', 'SKILL.md'), '# PDF 2', 'utf8');
+
+      await expect(
+        restoreRecoveryItem({
+          appHomePath: appHome,
+          itemId: item.id,
+          collisionResolution: 'restore-as-new-name',
+          newName: 'pdf-2',
+        }),
+      ).rejects.toMatchObject({ code: 'RESTORE_COLLISION' });
+    });
+
+    it('restore-as-new-name requires a new name', async () => {
+      const appHome = await makeAppHome();
+      const profileDir = await makeProfile(appHome, 'coding');
+      const skillDir = join(profileDir, 'claude-home', 'skills', 'pdf');
+      await fs.ensureDir(skillDir);
+
+      const item = await createFileTreeItem({
+        appHomePath: appHome,
+        origin: 'remove',
+        kind: 'skill',
+        profile: 'coding',
+        coordinates: { targetRelativePath: 'claude-home/skills/pdf' },
+        sourcePath: skillDir,
+        clock: fixedClock,
+      });
+
+      await expect(
+        restoreRecoveryItem({
+          appHomePath: appHome,
+          itemId: item.id,
+          collisionResolution: 'restore-as-new-name',
+        }),
+      ).rejects.toMatchObject({ code: 'RESTORE_NEW_NAME_REQUIRED' });
+    });
+
+    it('restore-as-new-name rejects a name that escapes the profile', async () => {
+      const appHome = await makeAppHome();
+      const profileDir = await makeProfile(appHome, 'coding');
+      const skillDir = join(profileDir, 'claude-home', 'skills', 'pdf');
+      await fs.ensureDir(skillDir);
+
+      const item = await createFileTreeItem({
+        appHomePath: appHome,
+        origin: 'remove',
+        kind: 'skill',
+        profile: 'coding',
+        coordinates: { targetRelativePath: 'claude-home/skills/pdf' },
+        sourcePath: skillDir,
+        clock: fixedClock,
+      });
+
+      await expect(
+        restoreRecoveryItem({
+          appHomePath: appHome,
+          itemId: item.id,
+          collisionResolution: 'restore-as-new-name',
+          newName: '../escape',
+        }),
+      ).rejects.toMatchObject({ code: 'RESTORE_INVALID_NEW_NAME' });
+    });
+
+    it('resolves a file-tree collision for an auto-memory entry at entry level', async () => {
+      const appHome = await makeAppHome();
+      const profileDir = await makeProfile(appHome, 'coding');
+      const autoDir = join(profileDir, 'claude-home', 'memory', 'auto');
+      await fs.ensureDir(autoDir);
+      await fs.writeFile(join(autoDir, 'topics.md'), '# Refactoring', 'utf8');
+
+      const item = await createFileTreeItem({
+        appHomePath: appHome,
+        origin: 'remove',
+        kind: 'auto-memory',
+        profile: 'coding',
+        coordinates: { targetRelativePath: 'claude-home/memory/auto/topics.md' },
+        sourcePath: join(autoDir, 'topics.md'),
+        clock: fixedClock,
+      });
+
+      // The original entry still exists (collision); restore under a new name.
+      const result = await restoreRecoveryItem({
+        appHomePath: appHome,
+        itemId: item.id,
+        collisionResolution: 'restore-as-new-name',
+        newName: 'topics-2.md',
+      });
+
+      expect(result.consumed).toBe(true);
+      expect(await fs.pathExists(join(autoDir, 'topics.md'))).toBe(true);
+      const renamed = await fs.readFile(join(autoDir, 'topics-2.md'), 'utf8');
+      expect(renamed).toBe('# Refactoring');
+    });
+
+    it('delete-and-restore bins the conflicting entry as its own same-kind item', async () => {
       const appHome = await makeAppHome();
       const profileDir = await makeProfile(appHome, 'coding');
       const skillDir = join(profileDir, 'claude-home', 'skills', 'pdf');
@@ -508,9 +620,215 @@ describe('Recovery Bin service', () => {
       const restoredContent = await fs.readFile(join(skillDir, 'SKILL.md'), 'utf8');
       expect(restoredContent).toBe('# PDF Original');
 
-      // The conflicting version should be in the bin as a new item
+      // The conflicting version should be in the bin as a new same-kind item
       const binItems = await listRecoveryBinItems(appHome);
       expect(binItems.length).toBeGreaterThanOrEqual(1);
+      const conflicting = binItems.find((i) => i.id !== item.id);
+      expect(conflicting?.kind).toBe('skill');
+      const conflictingContent = await fs.readFile(
+        join(conflicting!.itemDirPath, 'claude-home', 'skills', 'pdf', 'SKILL.md'),
+        'utf8',
+      );
+      expect(conflictingContent).toBe('# PDF Conflict');
+    });
+
+    it('restores a profile-kind item as a new profile name', async () => {
+      const appHome = await makeAppHome();
+      const profileDir = await makeProfile(appHome, 'coding');
+      // Simulate an entry inside the profile so the payload tree is non-trivial.
+      await fs.writeFile(join(profileDir, 'profile.json'), '{"profileName":"coding"}', 'utf8');
+
+      const item = await createFileTreeItem({
+        appHomePath: appHome,
+        origin: 'remove',
+        kind: 'profile',
+        profile: 'coding',
+        coordinates: { targetRelativePath: 'profiles/coding' },
+        sourcePath: profileDir,
+        clock: fixedClock,
+      });
+
+      // The real removal deletes the profile (that is why the item exists).
+      await fs.remove(profileDir);
+
+      // Recreate `coding` (S13), then restore the item as `coding-2`.
+      await makeProfile(appHome, 'coding');
+
+      const result = await restoreRecoveryItem({
+        appHomePath: appHome,
+        itemId: item.id,
+        collisionResolution: 'restore-as-new-name',
+        newName: 'coding-2',
+        clock: fixedClock,
+      });
+
+      expect(result.consumed).toBe(true);
+      const { profilesPath } = getAppHomePaths(appHome);
+      // Both the recreated original and the new-name restore exist.
+      expect(await fs.pathExists(join(profilesPath, 'coding'))).toBe(true);
+      expect(await fs.pathExists(join(profilesPath, 'coding-2', 'profile.json'))).toBe(true);
+    });
+
+    it('restores a profile-kind item back in place (S12)', async () => {
+      const appHome = await makeAppHome();
+      const profileDir = await makeProfile(appHome, 'coding');
+      await fs.writeFile(join(profileDir, 'profile.json'), '{"profileName":"coding"}', 'utf8');
+
+      const item = await createFileTreeItem({
+        appHomePath: appHome,
+        origin: 'remove',
+        kind: 'profile',
+        profile: 'coding',
+        coordinates: { targetRelativePath: 'profiles/coding' },
+        sourcePath: profileDir,
+        clock: fixedClock,
+      });
+
+      // The removal deleted the profile (that is why the item exists).
+      await fs.remove(profileDir);
+
+      const result = await restoreRecoveryItem({
+        appHomePath: appHome,
+        itemId: item.id,
+        clock: fixedClock,
+      });
+
+      expect(result.consumed).toBe(true);
+      const { profilesPath } = getAppHomePaths(appHome);
+      // The profile tree is back at its own directory, not a nested path.
+      expect(await fs.pathExists(join(profilesPath, 'coding', 'profile.json'))).toBe(true);
+      expect(await fs.pathExists(join(profilesPath, 'coding', 'profiles'))).toBe(false);
+    });
+
+    it('profile delete-and-restore bins the conflicting Profile then restores (S14)', async () => {
+      const appHome = await makeAppHome();
+      const profileDir = await makeProfile(appHome, 'coding');
+      await fs.writeFile(join(profileDir, 'profile.json'), '{"profileName":"coding","content":"original"}', 'utf8');
+
+      const item = await createFileTreeItem({
+        appHomePath: appHome,
+        origin: 'remove',
+        kind: 'profile',
+        profile: 'coding',
+        coordinates: { targetRelativePath: 'profiles/coding' },
+        sourcePath: profileDir,
+        clock: fixedClock,
+      });
+
+      await fs.remove(profileDir);
+
+      // Recreate `coding` with different content (S14 conflict).
+      await makeProfile(appHome, 'coding');
+      await fs.writeFile(join(profileDir, 'profile.json'), '{"profileName":"coding","content":"conflict"}', 'utf8');
+
+      const result = await restoreRecoveryItem({
+        appHomePath: appHome,
+        itemId: item.id,
+        collisionResolution: 'delete-and-restore',
+        clock: fixedClock,
+      });
+
+      expect(result.consumed).toBe(true);
+
+      // The original (bin) content is restored at the profile root.
+      const { profilesPath } = getAppHomePaths(appHome);
+      const restored = await fs.readJson(join(profilesPath, 'coding', 'profile.json'));
+      expect((restored as Record<string, unknown>).content).toBe('original');
+      // No nested profiles/ garbage directory.
+      expect(await fs.pathExists(join(profilesPath, 'coding', 'profiles'))).toBe(false);
+
+      // The conflicting Profile became its own profile-kind Bin item.
+      const binItems = await listRecoveryBinItems(appHome);
+      const conflicting = binItems.find((i) => i.id !== item.id);
+      expect(conflicting?.kind).toBe('profile');
+      const conflictingJson = await fs.readJson(
+        join(conflicting!.itemDirPath, 'profiles', 'coding', 'profile.json'),
+      );
+      expect((conflictingJson as Record<string, unknown>).content).toBe('conflict');
+    });
+
+    it('resolves a fragment collision with restore-as-new-name at entry level', async () => {
+      const appHome = await makeAppHome();
+      const profileDir = await makeProfile(appHome, 'coding');
+      const settingsPath = join(profileDir, 'claude-home', 'settings.json');
+
+      const item = await createFragmentItem({
+        appHomePath: appHome,
+        origin: 'remove',
+        kind: 'mcp-server',
+        profile: 'coding',
+        coordinates: {
+          file: 'claude-home/settings.json',
+          keyPath: 'mcpServers.myServer',
+          value: { command: 'node', args: ['server.js'] },
+        },
+        clock: fixedClock,
+      });
+
+      // Re-add the conflicting key so restore collides.
+      const settings = (await fs.readJson(settingsPath)) as Record<string, unknown>;
+      settings.mcpServers = { myServer: { command: 'other' } };
+      await fs.writeJson(settingsPath, settings);
+
+      const result = await restoreRecoveryItem({
+        appHomePath: appHome,
+        itemId: item.id,
+        collisionResolution: 'restore-as-new-name',
+        newName: 'myServer2',
+        clock: fixedClock,
+      });
+
+      expect(result.consumed).toBe(true);
+      const restored = (await fs.readJson(settingsPath)) as Record<string, unknown>;
+      const servers = restored.mcpServers as Record<string, unknown>;
+      // Both the conflicting original and the renamed restore exist.
+      expect(servers.myServer).toEqual({ command: 'other' });
+      expect(servers.myServer2).toEqual({ command: 'node', args: ['server.js'] });
+    });
+
+    it('fragment delete-and-restore bins the conflicting entry then restores', async () => {
+      const appHome = await makeAppHome();
+      const profileDir = await makeProfile(appHome, 'coding');
+      const settingsPath = join(profileDir, 'claude-home', 'settings.json');
+
+      const item = await createFragmentItem({
+        appHomePath: appHome,
+        origin: 'remove',
+        kind: 'mcp-server',
+        profile: 'coding',
+        coordinates: {
+          file: 'claude-home/settings.json',
+          keyPath: 'mcpServers.myServer',
+          value: { command: 'node', args: ['server.js'] },
+        },
+        clock: fixedClock,
+      });
+
+      const settings = (await fs.readJson(settingsPath)) as Record<string, unknown>;
+      settings.mcpServers = { myServer: { command: 'conflict' } };
+      await fs.writeJson(settingsPath, settings);
+
+      const result = await restoreRecoveryItem({
+        appHomePath: appHome,
+        itemId: item.id,
+        collisionResolution: 'delete-and-restore',
+        clock: fixedClock,
+      });
+
+      expect(result.consumed).toBe(true);
+      const restored = (await fs.readJson(settingsPath)) as Record<string, unknown>;
+      expect((restored.mcpServers as Record<string, unknown>).myServer).toEqual({
+        command: 'node',
+        args: ['server.js'],
+      });
+
+      // The conflicting entry became its own fragment item.
+      const binItems = await listRecoveryBinItems(appHome);
+      const conflicting = binItems.find((i) => i.id !== item.id);
+      expect(conflicting?.kind).toBe('mcp-server');
+      const coords = conflicting!.coordinates as { file: string; keyPath: string; value: unknown };
+      expect(coords.keyPath).toBe('mcpServers.myServer');
+      expect(coords.value).toEqual({ command: 'conflict' });
     });
   });
 
