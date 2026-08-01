@@ -206,6 +206,22 @@ describe('profile validator', () => {
     );
   });
 
+  it('flags malformed settings.json as a launch blocker (S48/P4)', async () => {
+    const { appHome, paths } = await makeProfile();
+    await fs.writeFile(paths.settingsPath, '{not-json', 'utf8');
+
+    const result = await validateProfile({ appHomePath: appHome, name: 'coding' });
+
+    expect(result.status).toBe('error');
+    expect(result.findings).toContainEqual(
+      expect.objectContaining({
+        severity: 'error',
+        code: 'SETTINGS_MALFORMED',
+        path: paths.settingsPath,
+      }),
+    );
+  });
+
   it('detects path traversal in launch plugin directories', async () => {
     const { appHome, paths } = await makeProfile();
     const manifest = await fs.readJson(paths.profileConfigPath);

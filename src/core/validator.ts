@@ -87,13 +87,13 @@ export async function validateProfile(
   await validateManagedProfileRule(paths.ccpsProfileRulePath, findings);
 
   const parsedJson = new Map<string, unknown>();
-  for (const [, key] of jsonFiles) {
+  for (const [label, key] of jsonFiles) {
     const filePath = paths[key];
     if (!(await fs.pathExists(filePath))) {
       continue;
     }
 
-    const parsed = await readJsonForValidation(filePath, findings);
+    const parsed = await readJsonForValidation(filePath, label, findings);
     if (parsed.ok) {
       parsedJson.set(filePath, parsed.value);
     }
@@ -256,14 +256,18 @@ async function requirePath(
 
 async function readJsonForValidation(
   filePath: string,
+  label: string,
   findings: ValidationFinding[],
 ): Promise<{ ok: true; value: unknown } | { ok: false }> {
   try {
     return { ok: true, value: await fs.readJson(filePath) };
   } catch {
+    // A malformed settings.json is a distinct, well-known launch blocker
+    // (spec §15.1 P4 / S48); other JSON files keep the generic code.
+    const code = label === 'settings.json' ? 'SETTINGS_MALFORMED' : 'JSON_INVALID';
     findings.push({
       severity: 'error',
-      code: 'JSON_INVALID',
+      code,
       message: 'JSON file cannot be parsed.',
       path: filePath,
       suggestion: 'Fix the JSON syntax before launching with this profile.',
