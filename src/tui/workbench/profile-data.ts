@@ -36,11 +36,12 @@ export type ResourceCounts = {
 export type ResourceDetails = {
   userMemory: UserMemoryEntry;
   agents: AgentEntry[];
-  autoMemory: number;
-  skills: number;
-  mcp: number;
-  settings: number;
-  launchConfig: number;
+  /** Skill entry names under `claude-home/skills/` (sidebar tree item rows). */
+  skills: string[];
+  /** Auto Memory entry file names under `claude-home/memory/auto/`. */
+  autoMemory: string[];
+  /** Top-level keys of `claude-home/settings.json`. */
+  settings: string[];
 };
 
 export type WorkbenchData = {
@@ -60,11 +61,19 @@ export async function loadWorkbenchData(appHomePath?: string): Promise<Workbench
       const claudeHome = join(profilesPath, summary.name, 'claude-home');
       // One .claude.json read yields both the MCP count and the server names.
       const mcpServers = await readConfiguredMcpNames(claudeHome);
-      const counts = await countResources(paths.appHomePath, summary.name, mcpServers.length);
-      const [userMemory, agents] = await Promise.all([
+      const [userMemory, agents, skills, autoMemory, settings] = await Promise.all([
         loadUserMemory(paths.appHomePath, summary.name),
         listAgents(paths.appHomePath, summary.name),
+        listEntryNames(join(claudeHome, 'skills')),
+        listEntryNames(join(claudeHome, 'memory', 'auto'), true),
+        listSettingKeys(join(claudeHome, 'settings.json')),
       ]);
+      // Skills/Auto Memory counts derive from the item-name listings so each
+      // directory is scanned once for both purposes.
+      const counts = await countResources(paths.appHomePath, summary.name, mcpServers.length, {
+        skills: skills.length,
+        autoMemory: autoMemory.length,
+      });
       let validation: ProfileValidationResult | null = null;
       try {
         validation = await validateProfile({
@@ -85,11 +94,9 @@ export async function loadWorkbenchData(appHomePath?: string): Promise<Workbench
         resourceDetails: {
           userMemory,
           agents,
-          autoMemory: counts.autoMemory,
-          skills: counts.skills,
-          mcp: counts.mcp,
-          settings: counts.settings,
-          launchConfig: counts.launchConfig,
+          skills,
+          autoMemory,
+          settings,
         },
         mcpServers,
         validation,
@@ -102,7 +109,12 @@ export async function loadWorkbenchData(appHomePath?: string): Promise<Workbench
   return { profiles, defaultProfile };
 }
 
-async function countResources(appHomePath: string, profileName: string, mcpCount: number): Promise<ResourceCounts> {
+async function countResources(
+  appHomePath: string,
+  profileName: string,
+  mcpCount: number,
+  listed: { skills: number; autoMemory: number },
+): Promise<ResourceCounts> {
   const { profilesPath } = getAppHomePaths(appHomePath);
   const profileRoot = join(profilesPath, profileName);
   const claudeHome = join(profileRoot, 'claude-home');
@@ -117,12 +129,34 @@ async function countResources(appHomePath: string, profileName: string, mcpCount
   };
 
   const userMemory = (await fs.pathExists(join(claudeHome, 'CLAUDE.md'))) ? 1 : 0;
-  const autoMemory = await countEntries(join(claudeHome, 'memory', 'auto'), (e) => e.isFile());
-  const skills = await countEntries(join(claudeHome, 'skills'), (e) => e.isFile() || e.isDirectory());
+  const autoMemory = listed.autoMemory;
+  const skills = listed.skills;
   const agents = await countEntries(join(claudeHome, 'agents'), (e) => e.isFile());
   const mcp = mcpCount;
   const settings = (await fs.pathExists(join(claudeHome, 'settings.json'))) ? 1 : 0;
   const launchConfig = 1; // profile.json always counts as 1
 
   return { userMemory, autoMemory, skills, agents, mcp, settings, launchConfig };
+}
+
+/** Entry names in a directory (sidebar tree item rows); [] when absent. */
+async function listEntryNames(dir: string, filesOnly = false): Promise<string[]> {
+  try {
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    return entries.filter((e) => !filesOnly || e.isFile()).map((e) => e.name).sort();
+  } catch {
+    return [];
+  }
+}
+
+/** Top-level keys of a settings.json; [] when absent or unparseable. */
+async function listSettingKeys(settingsPath: string): Promise<string[]> {
+  try {
+    if (!(await fs.pathExists(settingsPath))) return [];
+    const parsed: unknown = await fs.readJson(settingsPath);
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return [];
+    return Object.keys(parsed).sort();
+  } catch {
+    return [];
+  }
 }

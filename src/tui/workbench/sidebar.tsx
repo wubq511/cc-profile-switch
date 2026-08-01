@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Text, useInput, useStdin } from 'ink';
 
+import type { SearchResult } from '../../core/resource/types';
 import { useI18n } from './i18n/react';
 import type { LocaleKey } from './i18n/en';
 import { NoMatchEmptyState, useHints, ZeroProfilesEmptyState } from './guidance';
@@ -12,7 +13,21 @@ import {
   type LifecycleAction,
   type LifecyclePromptKind,
 } from './lifecycle';
+import { CATEGORIES } from './main-pane';
 import type { WorkbenchProfile } from './profile-data';
+import {
+  buildSidebarRows,
+  SIDEBAR_CATEGORY_KEYS,
+  type CategoryKey,
+  type TreeRow,
+} from './sidebar-tree';
+
+const CATEGORY_LABEL_KEYS: Record<CategoryKey, LocaleKey> = Object.fromEntries(
+  CATEGORIES.map((c) => [c.key, c.labelKey]),
+) as Record<CategoryKey, LocaleKey>;
+
+/** Debounce for the cross-profile content search behind the sidebar box. */
+const CONTENT_SEARCH_DEBOUNCE_MS = 200;
 
 type SidebarProps = {
   profiles: WorkbenchProfile[];
@@ -36,6 +51,12 @@ type SidebarProps = {
   onLaunchBar: (profileName: string) => void;
   onLaunchDirScreen: (profileName: string) => void;
   onAddSkill?: (profileName: string) => void;
+  /** Drill from a tree category/item row into the category's surface (#83). */
+  onDrillCategory?: (profileName: string, categoryKey: CategoryKey, itemName?: string) => void;
+  /** Jump to a cross-profile content hit surfaced by sidebar search (#83). */
+  onJumpContentHit?: (hit: SearchResult) => void;
+  /** Cross-profile content search backing the sidebar box (searchAllResources). */
+  onSearchContent?: (query: string) => Promise<SearchResult[]>;
 };
 
 export function Sidebar({
@@ -54,6 +75,9 @@ export function Sidebar({
   onLaunchBar,
   onLaunchDirScreen,
   onAddSkill,
+  onDrillCategory,
+  onJumpContentHit,
+  onSearchContent,
 }: SidebarProps): React.ReactElement {
   const { t } = useI18n();
   const { markUsed, liveKeys } = useHints();
@@ -61,24 +85,117 @@ export function Sidebar({
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
   const [templateIndex, setTemplateIndex] = useState(0);
+  // Card-tree state (§4.1): user-driven expansion plus a cursor over the
+  // visible rows; search auto-expands inside buildSidebarRows instead.
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
+  const [rowCursor, setRowCursor] = useState(0);
+  const [contentHits, setContentHits] = useState<SearchResult[]>([]);
   // First-search-focus tip: shown only during the first search focus of the
   // session, then gone for good (§5 discovery tips).
   const searchTipShown = useRef(false);
   const [searchTipVisible, setSearchTipVisible] = useState(false);
 
-  const filtered = searchQuery
-    ? profiles.filter((p) => p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.description.toLowerCase().includes(searchQuery.toLowerCase()))
-    : profiles;
+  const categoryLabels = useMemo(
+    () =>
+      Object.fromEntries(
+        SIDEBAR_CATEGORY_KEYS.map((key) => [key, t(CATEGORY_LABEL_KEYS[key])]),
+      ) as Record<CategoryKey, string>,
+    [t],
+  );
 
-  const filteredIndex = (originalIndex: number): number => {
-    const profile = profiles[originalIndex];
-    if (!profile) return -1;
-    return filtered.findIndex((f) => f.name === profile.name);
+  const rows = useMemo(
+    () =>
+      buildSidebarRows({
+        profiles,
+        expanded,
+        query: searchQuery,
+        categoryLabels,
+        contentHits,
+      }),
+    [profiles, expanded, searchQuery, categoryLabels, contentHits],
+  );
+
+  // Debounced cross-profile content search (§4.2): hits become auto-expanded
+  // content-hit rows. Stale responses are dropped via the cancelled flag.
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (!q || !onSearchContent) {
+      setContentHits([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      onSearchContent(q)
+        .then((hits) => {
+          if (!cancelled) setContentHits(hits);
+        })
+        .catch(() => {
+          if (!cancelled) setContentHits([]);
+        });
+    }, CONTENT_SEARCH_DEBOUNCE_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [searchQuery, onSearchContent]);
+
+  // Keep the cursor inside the visible rows as filtering shrinks the tree.
+  useEffect(() => {
+    if (rowCursor >= rows.length) {
+      setRowCursor(Math.max(0, rows.length - 1));
+    }
+  }, [rows.length, rowCursor]);
+
+  // Follow external selection changes (e.g. content-hit jumps, launch remount)
+  // unless the cursor already sits inside the selected Profile's subtree.
+  useEffect(() => {
+    const selected = profiles[selectedIndex];
+    if (!selected) return;
+    const current = rows[rowCursor];
+    if (current && current.profileName === selected.name) return;
+    const idx = rows.findIndex((r) => r.kind === 'profile' && r.profileName === selected.name);
+    if (idx >= 0 && idx !== rowCursor) setRowCursor(idx);
+  }, [selectedIndex, profiles, rows, rowCursor]);
+
+  const moveCursor = (next: number): void => {
+    const clamped = Math.max(0, Math.min(next, rows.length - 1));
+    setRowCursor(clamped);
+    const row = rows[clamped];
+    if (!row) return;
+    const profileIdx = profiles.findIndex((p) => p.name === row.profileName);
+    if (profileIdx >= 0 && profileIdx !== selectedIndex) onSelect(profileIdx);
+  };
+
+  const toggleExpand = (profileName: string): void => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(profileName)) {
+        next.delete(profileName);
+      } else {
+        next.add(profileName);
+      }
+      return next;
+    });
+  };
+
+  const focusSearch = (): void => {
+    markUsed('/');
+    setSearchFocused(true);
+    if (!searchTipShown.current) {
+      searchTipShown.current = true;
+      setSearchTipVisible(true);
+    }
   };
 
   const listHeight = Math.max(1, height - 4);
   const canUseInput = !headless && inkStdin.isTTY;
   const launchActive = lifecycle.launch.phase !== 'idle';
+  const searchActive = searchQuery.trim().length > 0;
+
+  const cursorRow: TreeRow | undefined = rows[rowCursor];
+  const cursorProfile = cursorRow
+    ? profiles.find((p) => p.name === cursorRow.profileName)
+    : profiles[selectedIndex];
 
   useInput((input: string, key: Record<string, boolean>) => {
     if (capture || wizardOpen) return;
@@ -138,7 +255,7 @@ export function Sidebar({
       }
     }
 
-    // Search input handling
+    // Search box input (§4.2): Esc clears; ↓/Enter returns to the filtered list.
     if (searchFocused) {
       if (key.escape) {
         setSearchFocused(false);
@@ -146,9 +263,10 @@ export function Sidebar({
         setSearchQuery('');
         return;
       }
-      if (key.return) {
+      if (key.return || key.downArrow) {
         setSearchFocused(false);
         setSearchTipVisible(false);
+        moveCursor(0);
         return;
       }
       if (key.backspace || key.delete) {
@@ -163,21 +281,20 @@ export function Sidebar({
 
     // Launch flow keys (only when idle and not in launch flow)
     if (lifecycle.phase === 'idle' && !launchActive && !resourceNavActive) {
-      const profile = filtered[filteredIndex(selectedIndex)];
-      if (profile) {
+      if (cursorProfile) {
         if (input === 'l') {
           markUsed('l');
-          onLaunchBar(profile.name);
+          onLaunchBar(cursorProfile.name);
           return;
         }
         if (input === 'L') {
           markUsed('L');
-          onLaunchDirScreen(profile.name);
+          onLaunchDirScreen(cursorProfile.name);
           return;
         }
         if (input === 'a' && onAddSkill) {
           markUsed('a');
-          onAddSkill(profile.name);
+          onAddSkill(cursorProfile.name);
           return;
         }
         // Note: 'd' is already used for 'default' in LIFECYCLE_ACTIONS.
@@ -198,27 +315,26 @@ export function Sidebar({
             return;
           }
 
-          const profile = filtered[filteredIndex(selectedIndex)];
-          if (!profile) return;
+          if (!cursorProfile) return;
 
           if (act.kind === 'validate' || act.kind === 'backup' || act.kind === 'default') {
             const immediateAction: LifecycleAction = {
               type: 'START_IMMEDIATE',
               kind: act.kind,
-              profileName: profile.name,
+              profileName: cursorProfile.name,
             };
             markUsed(act.key);
             onLifecycleAction(immediateAction);
-            onAction(immediateAction, profile.name, '', null);
+            onAction(immediateAction, cursorProfile.name, '', null);
           } else if (act.kind === 'remove') {
             // Workbench removal opens the inline destructive panel (§9.1).
             markUsed(act.key);
-            onLifecycleAction({ type: 'START_CONFIRM', kind: act.kind, profileName: profile.name });
+            onLifecycleAction({ type: 'START_CONFIRM', kind: act.kind, profileName: cursorProfile.name });
           } else {
             onLifecycleAction({
               type: 'START_PROMPT',
               kind: act.kind,
-              profileName: profile.name,
+              profileName: cursorProfile.name,
             });
             markUsed(act.key);
           }
@@ -230,26 +346,61 @@ export function Sidebar({
     // Navigation (skipped entirely while a resource view owns the keys)
     if (resourceNavActive) return;
     if (input === '/') {
-      markUsed('/');
-      setSearchFocused(true);
-      if (!searchTipShown.current) {
-        searchTipShown.current = true;
-        setSearchTipVisible(true);
-      }
+      focusSearch();
       return;
     }
     if (key.upArrow) {
-      const currentFiltered = filteredIndex(selectedIndex);
-      if (currentFiltered > 0) {
-        onSelect(profiles.findIndex((p) => p.name === filtered[currentFiltered - 1].name));
+      // ↑ past the top of the list focuses the search box (§4.2).
+      if (rowCursor <= 0) {
+        focusSearch();
+      } else {
+        moveCursor(rowCursor - 1);
       }
       return;
     }
     if (key.downArrow) {
-      const currentFiltered = filteredIndex(selectedIndex);
-      if (currentFiltered < filtered.length - 1) {
-        onSelect(profiles.findIndex((p) => p.name === filtered[currentFiltered + 1].name));
+      moveCursor(rowCursor + 1);
+      return;
+    }
+    if (key.rightArrow) {
+      if (cursorRow?.kind === 'profile' && !searchActive) {
+        setExpanded((prev) => new Set(prev).add(cursorRow.profileName));
       }
+      return;
+    }
+    if (key.leftArrow) {
+      if (cursorRow?.kind === 'profile' && !searchActive) {
+        if (expanded.has(cursorRow.profileName)) {
+          setExpanded((prev) => {
+            const next = new Set(prev);
+            next.delete(cursorRow.profileName);
+            return next;
+          });
+        }
+      } else if (cursorRow && cursorRow.kind !== 'profile') {
+        // Jump back to the parent Profile row.
+        const parentIdx = rows.findIndex(
+          (r) => r.kind === 'profile' && r.profileName === cursorRow.profileName,
+        );
+        if (parentIdx >= 0) setRowCursor(parentIdx);
+      }
+      return;
+    }
+    if (key.return) {
+      if (!cursorRow) return;
+      if (cursorRow.kind === 'profile') {
+        if (!searchActive) toggleExpand(cursorRow.profileName);
+        return;
+      }
+      if (cursorRow.kind === 'category') {
+        onDrillCategory?.(cursorRow.profileName, cursorRow.categoryKey);
+        return;
+      }
+      if (cursorRow.kind === 'item') {
+        onDrillCategory?.(cursorRow.profileName, cursorRow.categoryKey, cursorRow.itemName);
+        return;
+      }
+      onJumpContentHit?.(cursorRow.hit);
       return;
     }
   }, { isActive: canUseInput && !capture && !wizardOpen });
@@ -279,6 +430,87 @@ export function Sidebar({
   const skillsLive = liveKeys(['a']);
   const allHintsRetired = lifecycleLive.length === 0 && launchLive.length === 0;
 
+  // Follow-the-cursor scroll window over the visible rows.
+  const windowStart = Math.max(0, Math.min(rowCursor - listHeight + 1, rows.length - listHeight));
+  const visibleRows = rows.slice(windowStart, windowStart + listHeight);
+
+  const renderRow = (row: TreeRow, absoluteIndex: number): React.ReactElement => {
+    const isCursor = absoluteIndex === rowCursor;
+    const profile = profiles.find((p) => p.name === row.profileName);
+
+    if (row.kind === 'profile') {
+      const marker = profile?.isDefault ? ` [${t('sidebar.default')}]` : '';
+      const lastUsed = profile?.isLastUsed ? ` ${t('sidebar.lastUsed')}` : '';
+      const totalResources = profile
+        ? Object.values(profile.resourceCounts).reduce((a, b) => a + b, 0)
+        : 0;
+      const chevron = searchActive || expanded.has(row.profileName) ? '▾' : '▸';
+      return React.createElement(
+        Box,
+        { key: `p:${row.profileName}`, paddingX: 1 },
+        React.createElement(
+          Text,
+          {
+            bold: isCursor,
+            color: isCursor ? 'cyan' : undefined,
+            inverse: isCursor,
+            wrap: 'truncate',
+          },
+          `${chevron} ${row.profileName}${marker}${lastUsed} (${totalResources} ${t('sidebar.resources')})`,
+        ),
+      );
+    }
+
+    if (row.kind === 'category') {
+      const count = profile ? profile.resourceCounts[row.categoryKey] : 0;
+      return React.createElement(
+        Box,
+        { key: `c:${row.profileName}:${row.categoryKey}`, paddingX: 1 },
+        React.createElement(
+          Text,
+          {
+            bold: isCursor,
+            color: isCursor ? 'cyan' : undefined,
+            inverse: isCursor,
+            wrap: 'truncate',
+          },
+          `  ${categoryLabels[row.categoryKey]} (${count})`,
+        ),
+      );
+    }
+
+    if (row.kind === 'item') {
+      return React.createElement(
+        Box,
+        { key: `i:${row.profileName}:${row.categoryKey}:${row.itemName}`, paddingX: 1 },
+        React.createElement(
+          Text,
+          {
+            color: isCursor ? 'cyan' : undefined,
+            inverse: isCursor,
+            dimColor: !isCursor,
+            wrap: 'truncate',
+          },
+          `    ${row.itemName}`,
+        ),
+      );
+    }
+
+    return React.createElement(
+      Box,
+      { key: `h:${row.profileName}:${row.hit.relativePath}:${row.hit.lineNumber}`, paddingX: 1 },
+      React.createElement(
+        Text,
+        {
+          color: isCursor ? 'cyan' : 'yellow',
+          inverse: isCursor,
+          wrap: 'truncate',
+        },
+        `    ↳ ${row.hit.matchLine.trim()} (${t('sidebar.search.hitLine')} ${row.hit.lineNumber})`,
+      ),
+    );
+  };
+
   return React.createElement(
     Box,
     { flexDirection: 'column', width, borderStyle: 'single', borderRight: true },
@@ -292,15 +524,17 @@ export function Sidebar({
       { paddingX: 1, flexDirection: 'column' },
       searchFocused
         ? React.createElement(Text, { color: 'cyan' }, `/${searchQuery}█`)
-        : React.createElement(Text, { dimColor: true }, t('sidebar.search.placeholder')),
+        : searchActive
+          ? React.createElement(Text, { color: 'cyan' }, `/${searchQuery}`)
+          : React.createElement(Text, { dimColor: true }, t('sidebar.search.placeholder')),
       searchFocused && searchQuery === '' && searchTipVisible &&
         React.createElement(Text, { dimColor: true, wrap: 'wrap' }, t('search.tip')),
     ),
     React.createElement(
       Box,
       { flexDirection: 'column', flexGrow: 1 },
-      filtered.length === 0
-        ? searchQuery
+      rows.length === 0
+        ? searchActive
           ? React.createElement(
               NoMatchEmptyState,
               { query: searchQuery },
@@ -312,26 +546,7 @@ export function Sidebar({
         : React.createElement(
             Box,
             { flexDirection: 'column' },
-            ...filtered.slice(0, listHeight).map((profile) => {
-              const isOriginalSelected = profiles[selectedIndex]?.name === profile.name;
-              const marker = profile.isDefault ? ` [${t('sidebar.default')}]` : '';
-              const lastUsed = profile.isLastUsed ? ` ${t('sidebar.lastUsed')}` : '';
-              const totalResources = Object.values(profile.resourceCounts).reduce((a, b) => a + b, 0);
-
-              return React.createElement(
-                Box,
-                { key: profile.name, paddingX: 1 },
-                React.createElement(
-                  Text,
-                  {
-                    bold: isOriginalSelected,
-                    color: isOriginalSelected ? 'cyan' : undefined,
-                    inverse: isOriginalSelected,
-                  },
-                  `${isOriginalSelected ? '▸ ' : '  '}${profile.name}${marker}${lastUsed} (${totalResources} ${t('sidebar.resources')})`,
-                ),
-              );
-            }),
+            ...visibleRows.map((row, i) => renderRow(row, windowStart + i)),
           ),
     ),
     // Lifecycle UI sections

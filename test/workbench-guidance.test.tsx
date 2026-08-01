@@ -85,6 +85,13 @@ const codingProfile: WorkbenchProfile = {
   isLastUsed: true,
   status: 'valid',
   resourceCounts: { userMemory: 1, autoMemory: 5, skills: 3, agents: 2, mcp: 1, settings: 1, launchConfig: 1 },
+  resourceDetails: {
+    userMemory: { kind: 'user-memory', name: 'CLAUDE.md', relativePath: 'claude-home/CLAUDE.md', exists: true, lineCount: 12, excerpt: '' },
+    agents: [],
+    skills: [],
+    autoMemory: [],
+    settings: [],
+  },
   mcpServers: [],
   validation: null,
 };
@@ -326,8 +333,8 @@ describe('empty states', () => {
       stdout,
     );
     const output = stripAnsi(stdout.output);
-    expect(output).toContain('No profiles match "xyz".');
-    expect(flatten(output)).toContain('Search covers profile names and descriptions.');
+    expect(output).toContain('Nothing matches "xyz".');
+    expect(flatten(output)).toContain('Search covers profiles, resource items, and memory/agent content.');
     expect(output).toContain('Press [esc] to clear search');
     instance.unmount();
     await instance.waitUntilExit();
@@ -562,7 +569,7 @@ describe('keypress guidance flows', () => {
     stdin.press('/');
     await waitForOutputSettled(stdout, slashBaseline);
     const output = stripAnsi(stdout.output);
-    expect(flatten(output)).toContain('search covers profile names and descriptions');
+    expect(flatten(output)).toContain('covers profiles, resource items, and memory/agent content');
     instance.unmount();
     await instance.waitUntilExit();
   });
@@ -575,7 +582,7 @@ describe('keypress guidance flows', () => {
     const firstBaseline = stdout.output;
     stdin.press('/');
     await waitForOutputSettled(stdout, firstBaseline);
-    expect(flatten(stripAnsi(stdout.output))).toContain('search covers profile names and descriptions');
+    expect(flatten(stripAnsi(stdout.output))).toContain('covers profiles, resource items, and memory/agent content');
 
     // Blur out of search, then focus again — the tip must stay gone.
     stdout.snapshot();
@@ -584,7 +591,7 @@ describe('keypress guidance flows', () => {
     const secondBaseline = stdout.output;
     stdin.press('/');
     await waitForOutputSettled(stdout, secondBaseline);
-    expect(flatten(stripAnsi(stdout.output))).not.toContain('search covers profile names');
+    expect(flatten(stripAnsi(stdout.output))).not.toContain('covers profiles, resource items');
     instance.unmount();
     await instance.waitUntilExit();
   });
