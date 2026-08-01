@@ -23,6 +23,8 @@ type SidebarProps = {
   headless?: boolean;
   lifecycle: LifecycleState;
   wizardOpen?: boolean;
+  /** When true, resource navigation owns arrow keys and action keys. */
+  resourceNavActive?: boolean;
   onLifecycleAction: (action: LifecycleAction) => void;
   onAction: (
     action: LifecycleAction,
@@ -45,6 +47,7 @@ export function Sidebar({
   headless,
   lifecycle,
   wizardOpen,
+  resourceNavActive = false,
   onLifecycleAction,
   onAction,
   onLaunchBar,
@@ -147,7 +150,7 @@ export function Sidebar({
     }
 
     // Launch flow keys (only when idle and not in launch flow)
-    if (lifecycle.phase === 'idle' && !launchActive) {
+    if (lifecycle.phase === 'idle' && !launchActive && !resourceNavActive) {
       const profile = filtered[filteredIndex(selectedIndex)];
       if (profile) {
         if (input === 'l') {
@@ -168,7 +171,7 @@ export function Sidebar({
     }
 
     // Lifecycle action keys (only when idle)
-    if (lifecycle.phase === 'idle' && !launchActive) {
+    if (lifecycle.phase === 'idle' && !launchActive && !resourceNavActive) {
       for (const act of LIFECYCLE_ACTIONS) {
         if (input === act.key) {
           const profile = filtered[filteredIndex(selectedIndex)];
@@ -197,7 +200,8 @@ export function Sidebar({
       }
     }
 
-    // Navigation
+    // Navigation (skipped entirely while a resource view owns the keys)
+    if (resourceNavActive) return;
     if (input === '/') {
       setSearchFocused(true);
       return;

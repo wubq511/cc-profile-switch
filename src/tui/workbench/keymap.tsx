@@ -24,6 +24,15 @@ const KEYBINDINGS = [
   { key: 'v', group: 'actions' as const, labelKey: 'lifecycle.validate' as const },
   { key: 'b', group: 'actions' as const, labelKey: 'lifecycle.backup' as const },
   { key: 'x', group: 'actions' as const, labelKey: 'lifecycle.remove' as const },
+  // Resource rows (User Memory / Agents)
+  { key: 'u', group: 'resource' as const, labelKey: 'main.category.userMemory' as const },
+  { key: 'a', group: 'resource' as const, labelKey: 'main.category.agents' as const },
+  { key: 'Enter', group: 'resource' as const, labelKey: 'keymap.enter' as const },
+  { key: 'e', group: 'resource' as const, labelKey: 'resource.edit' as const },
+  { key: 'x', group: 'resource' as const, labelKey: 'resource.remove' as const },
+  { key: 'c', group: 'resource' as const, labelKey: 'resource.copy' as const },
+  { key: 'd', group: 'resource' as const, labelKey: 'resource.diff.title' as const },
+  { key: 'f', group: 'resource' as const, labelKey: 'resource.agent.frontmatter.edit' as const },
 ];
 
 export function KeymapOverlay({ visible }: KeymapOverlayProps): React.ReactElement | null {
@@ -33,6 +42,7 @@ export function KeymapOverlay({ visible }: KeymapOverlayProps): React.ReactEleme
 
   const navBindings = KEYBINDINGS.filter((b) => b.group === 'nav');
   const actionBindings = KEYBINDINGS.filter((b) => b.group === 'actions');
+  const resourceBindings = KEYBINDINGS.filter((b) => b.group === 'resource');
 
   return React.createElement(
     Box,
@@ -53,6 +63,17 @@ export function KeymapOverlay({ visible }: KeymapOverlayProps): React.ReactEleme
       React.createElement(Text, { bold: true }, t('keymap.actions')),
     ),
     ...actionBindings.map((b) =>
+      React.createElement(
+        Box,
+        { key: b.key },
+        React.createElement(Text, { color: 'cyan' }, `  ${b.key.padEnd(10)}`),
+        React.createElement(Text, null, t(b.labelKey)),
+      ),
+    ),
+    React.createElement(Box, { marginTop: 1 },
+      React.createElement(Text, { bold: true }, t('keymap.resources')),
+    ),
+    ...resourceBindings.map((b) =>
       React.createElement(
         Box,
         { key: b.key },
