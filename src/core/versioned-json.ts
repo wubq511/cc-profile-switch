@@ -12,7 +12,7 @@ export type VersionedJsonSpec<T, V extends number = number> = {
   errorPrefix: string;
 };
 
-function prefix(spec: VersionedJsonSpec<any>, suffix: string): string {
+function prefix(spec: VersionedJsonSpec<never>, suffix: string): string {
   return `${spec.errorPrefix}_${suffix}`;
 }
 

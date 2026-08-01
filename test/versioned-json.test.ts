@@ -250,7 +250,7 @@ describe('saveVersionedJson', () => {
     const filePath = join(dir, 'test.json');
 
     await expect(
-      saveVersionedJson(testSpec, filePath, { version: 2, name: 'ok', unknownExtra: true } as any),
+      saveVersionedJson(testSpec, filePath, { version: 2, name: 'ok', unknownExtra: true } as TestV2),
     ).rejects.toMatchObject({
       code: 'TEST_CONFIG_INVALID',
     });

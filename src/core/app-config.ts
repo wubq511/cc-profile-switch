@@ -1,7 +1,7 @@
 import fs from 'fs-extra';
 
 import { getAppHomePath, resolveInside } from '../platform/path';
-import { appConfigV2Schema, appConfigV1Schema, type AppConfig, type AppConfigV1 } from '../schemas/config';
+import { appConfigV2Schema, appConfigV1Schema, type AppConfig } from '../schemas/config';
 import { CcpsError } from '../utils/errors';
 import {
   loadVersionedJson,
