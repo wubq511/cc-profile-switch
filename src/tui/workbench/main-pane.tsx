@@ -3,26 +3,62 @@ import { Box, Text } from 'ink';
 
 import { useI18n } from './i18n/react';
 import type { WorkbenchProfile, ResourceCounts } from './profile-data';
+import type { ResourceNavState } from './resource-nav';
+import type {
+  AgentFrontmatter,
+  UserMemoryDiff,
+  AgentsDiff,
+  SearchResult,
+} from '../../core/resource';
+import type { EditSession } from '../../core/edit-session';
+import { ResourceMainPane } from './resource-main';
 
 type MainPaneProps = {
   profile: WorkbenchProfile | undefined;
+  profiles: WorkbenchProfile[];
+  nav: ResourceNavState;
   width: number;
   height: number;
+  sessionFor: (resourceName: string) => EditSession | undefined;
+  content: string | null;
+  diff: UserMemoryDiff | AgentsDiff | null;
+  drilledAgent: string | null;
+  agentFrontmatter: AgentFrontmatter | null;
+  searchResults: SearchResult[];
+  onSaveFrontmatter: (updates: Partial<AgentFrontmatter>) => void;
+  onBack: () => void;
+  hintLine: string;
 };
 
 const CATEGORIES = [
-  { key: 'userMemory' as const, labelKey: 'main.category.userMemory' as const },
-  { key: 'autoMemory' as const, labelKey: 'main.category.autoMemory' as const },
-  { key: 'skills' as const, labelKey: 'main.category.skills' as const },
-  { key: 'agents' as const, labelKey: 'main.category.agents' as const },
-  { key: 'mcp' as const, labelKey: 'main.category.mcp' as const },
-  { key: 'settings' as const, labelKey: 'main.category.settings' as const },
-  { key: 'launchConfig' as const, labelKey: 'main.category.launchConfig' as const },
+  { key: 'userMemory' as const, labelKey: 'main.category.userMemory' as const, drillable: true as const, resourceCategory: 'user-memory' as const },
+  { key: 'autoMemory' as const, labelKey: 'main.category.autoMemory' as const, drillable: false as const },
+  { key: 'skills' as const, labelKey: 'main.category.skills' as const, drillable: false as const },
+  { key: 'agents' as const, labelKey: 'main.category.agents' as const, drillable: true as const, resourceCategory: 'agents' as const },
+  { key: 'mcp' as const, labelKey: 'main.category.mcp' as const, drillable: false as const },
+  { key: 'settings' as const, labelKey: 'main.category.settings' as const, drillable: false as const },
+  { key: 'launchConfig' as const, labelKey: 'main.category.launchConfig' as const, drillable: false as const },
 ] as const;
 
-type CategoryKey = (typeof CATEGORIES)[number]['key'];
+type CategoryDef = (typeof CATEGORIES)[number];
+type CategoryKey = CategoryDef['key'];
 
-export function MainPane({ profile, width, height }: MainPaneProps): React.ReactElement {
+export function MainPane({
+  profile,
+  profiles,
+  nav,
+  width,
+  height,
+  sessionFor,
+  content,
+  diff,
+  drilledAgent,
+  agentFrontmatter,
+  searchResults,
+  onSaveFrontmatter,
+  onBack,
+  hintLine,
+}: MainPaneProps): React.ReactElement {
   const { t } = useI18n();
 
   if (!profile) {
@@ -31,6 +67,26 @@ export function MainPane({ profile, width, height }: MainPaneProps): React.React
       { flexDirection: 'column', justifyContent: 'center', alignItems: 'center', width, height },
       React.createElement(Text, { dimColor: true }, t('main.selectProfile')),
     );
+  }
+
+  // When drilled into a resource category, render the resource sub-view.
+  if (nav.phase !== 'idle') {
+    return React.createElement(ResourceMainPane, {
+      profile,
+      profiles,
+      nav,
+      sessionFor,
+      content,
+      diff,
+      drilledAgent,
+      agentFrontmatter,
+      searchResults,
+      hintLine,
+      onSaveFrontmatter,
+      onBack,
+      width,
+      height,
+    });
   }
 
   const colWidth = Math.floor((width - 4) / 2);
@@ -66,9 +122,9 @@ export function MainPane({ profile, width, height }: MainPaneProps): React.React
         React.createElement(
           Box,
           { key: left.key, gap: 1 },
-          renderCategoryCard(left.key, left.labelKey, counts[left.key], colW),
+          renderCategoryCard(left, counts[left.key], colW),
           right
-            ? renderCategoryCard(right.key, right.labelKey, counts[right.key as CategoryKey], colW)
+            ? renderCategoryCard(right, counts[right.key as CategoryKey], colW)
             : React.createElement(Box, { width: colW }),
         ),
       );
@@ -76,17 +132,24 @@ export function MainPane({ profile, width, height }: MainPaneProps): React.React
     return rows;
   }
 
-  function renderCategoryCard(
-    key: string,
-    labelKey: (typeof CATEGORIES)[number]['labelKey'],
-    count: number,
-    colW: number,
-  ): React.ReactElement {
+  function renderCategoryCard(def: CategoryDef, count: number, colW: number): React.ReactElement {
+    const drillHint = def.drillable
+      ? def.resourceCategory === 'user-memory'
+        ? ' [u]'
+        : ' [a]'
+      : '';
     return React.createElement(
       Box,
-      { flexDirection: 'column', width: colW, borderStyle: 'round', paddingX: 1 },
-      React.createElement(Text, { bold: true }, t(labelKey)),
+      {
+        flexDirection: 'column',
+        width: colW,
+        borderStyle: 'round',
+        borderColor: 'gray',
+        paddingX: 1,
+      },
+      React.createElement(Text, { bold: true }, t(def.labelKey)),
       React.createElement(Text, null, `${count}`),
+      drillHint && React.createElement(Text, { dimColor: true }, drillHint),
     );
   }
 }

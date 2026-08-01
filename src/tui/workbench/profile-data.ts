@@ -7,6 +7,7 @@ import {
   type ProfileSummary,
 } from '../../core/profile-management';
 import { validateProfile, type ProfileValidationResult } from '../../core/validator';
+import { loadUserMemory, listAgents, type AgentEntry, type UserMemoryEntry } from '../../core/resource';
 
 export type WorkbenchProfile = {
   name: string;
@@ -15,6 +16,7 @@ export type WorkbenchProfile = {
   isLastUsed: boolean;
   status: string;
   resourceCounts: ResourceCounts;
+  resourceDetails: ResourceDetails;
   validation: ProfileValidationResult | null;
 };
 
@@ -23,6 +25,16 @@ export type ResourceCounts = {
   autoMemory: number;
   skills: number;
   agents: number;
+  mcp: number;
+  settings: number;
+  launchConfig: number;
+};
+
+export type ResourceDetails = {
+  userMemory: UserMemoryEntry;
+  agents: AgentEntry[];
+  autoMemory: number;
+  skills: number;
   mcp: number;
   settings: number;
   launchConfig: number;
@@ -42,6 +54,10 @@ export async function loadWorkbenchData(appHomePath?: string): Promise<Workbench
   const profiles: WorkbenchProfile[] = await Promise.all(
     summaries.map(async (summary) => {
       const counts = await countResources(paths.appHomePath, summary.name);
+      const [userMemory, agents] = await Promise.all([
+        loadUserMemory(paths.appHomePath, summary.name),
+        listAgents(paths.appHomePath, summary.name),
+      ]);
       let validation: ProfileValidationResult | null = null;
       try {
         validation = await validateProfile({
@@ -59,6 +75,15 @@ export async function loadWorkbenchData(appHomePath?: string): Promise<Workbench
         isLastUsed: summary.isLastUsed,
         status: summary.status,
         resourceCounts: counts,
+        resourceDetails: {
+          userMemory,
+          agents,
+          autoMemory: counts.autoMemory,
+          skills: counts.skills,
+          mcp: counts.mcp,
+          settings: counts.settings,
+          launchConfig: counts.launchConfig,
+        },
         validation,
       };
     }),
