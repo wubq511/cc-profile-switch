@@ -199,8 +199,10 @@ export async function previewTransaction(options: PreviewOptions): Promise<Trans
   const diff = await computeTreeDiff(liveExists ? livePath : undefined, options.stagedPath);
 
   // Overwriting a locally-drifted tree loses the out-of-band edit; the caller
-  // must confirm. A fresh install (no live tree) never requires confirmation.
-  const requiresConfirmation = hasLocalDrift && liveExists;
+  // must confirm. hasLocalDrift already implies a live tree exists (liveHash
+  // is only set when liveExists), so it alone gates confirmation; a fresh
+  // install never requires it.
+  const requiresConfirmation = hasLocalDrift;
 
   // Carry the cached audit state from the existing record (spec §7.1 preview).
   const auditView = record ? computeAuditView(record, new Date()) : undefined;
@@ -566,13 +568,13 @@ async function rollbackTransaction(
   await fs.remove(sidecarPath).catch(() => {});
 }
 
-function fault(point: FaultPoint): CcpsError {
+function crashFault(point: FaultPoint): CcpsError {
   return new CcpsError(FAULT_ERROR_CODE, `Fault injected at ${point} (test-only).`, {
     guidance: 'This is a simulated crash for reconciliation tests.',
   });
 }
 
-function realFailure(point: FaultPoint): Error {
+function rollbackFault(point: FaultPoint): Error {
   return new Error(`Real failure injected at ${point} (test-only).`);
 }
 
@@ -587,8 +589,8 @@ function isInjectedFault(error: unknown): boolean {
  * because both leave the same on-disk residue and skip the catch-block rollback.
  */
 function maybeInjectFault(options: ApplyOptions, point: FaultPoint): void {
-  if (options.__fault === point) throw fault(point);
-  if (options.__failAt === point) throw realFailure(point);
+  if (options.__fault === point) throw crashFault(point);
+  if (options.__failAt === point) throw rollbackFault(point);
 }
 
 // ─── Crash-state reconciliation (startup sweep) ──────────────────────────
