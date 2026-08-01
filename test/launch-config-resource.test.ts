@@ -45,7 +45,7 @@ describe('launch configuration resource service', () => {
   }
 
   describe('inspectLaunchConfig', () => {
-    it('lists launch fields with sensitive/restricted flags', async () => {
+    it('lists launch fields with sensitive flags', async () => {
       const { appHome } = await makeAppHome();
       await makeProfile(appHome, 'coding');
 
@@ -58,11 +58,6 @@ describe('launch configuration resource service', () => {
       expect(entries.get('skipPermissions')?.sensitive).toBe(true);
       expect(entries.get('claudeArgs')?.sensitive).toBe(true);
       expect(entries.get('mcpMode')?.sensitive).toBe(false);
-      // `name` is owned by lifecycle Rename — flagged restricted if present.
-      const nameEntry = entries.get('name');
-      if (nameEntry) {
-        expect(nameEntry.restricted).toBe(true);
-      }
     });
   });
 
@@ -133,10 +128,11 @@ describe('launch configuration resource service', () => {
       expect(saved.updatedAt).toBe('2026-08-01T00:00:00.000Z');
     });
 
-    it('requires a consequence warning for skipPermissions', async () => {
+    it('requires a consequence warning before editing skipPermissions', async () => {
       const { appHome } = await makeAppHome();
       await makeProfile(appHome, 'coding');
 
+      // First call (not confirmed): refused with the warning, nothing applied.
       const result = await editLaunchConfigKey({
         appHomePath: appHome,
         profileName: 'coding',
@@ -147,9 +143,22 @@ describe('launch configuration resource service', () => {
 
       expect(result.requiresWarning).toBe(true);
       expect(result.warningMessage).toContain('--dangerously-skip-permissions');
-      // The edit is still applied.
-      const paths = getProfileTemplatePaths(appHome, 'coding');
-      const saved = await fs.readJson(paths.profileConfigPath);
+      let paths = getProfileTemplatePaths(appHome, 'coding');
+      let saved = await fs.readJson(paths.profileConfigPath);
+      expect(saved.launch.skipPermissions).toBe(true); // unchanged
+
+      // Confirmed call applies the edit.
+      const confirmed = await editLaunchConfigKey({
+        appHomePath: appHome,
+        profileName: 'coding',
+        key: 'skipPermissions',
+        value: false,
+        clock: FIXED_CLOCK,
+        confirmed: true,
+      });
+      expect(confirmed.requiresWarning).toBe(false);
+      paths = getProfileTemplatePaths(appHome, 'coding');
+      saved = await fs.readJson(paths.profileConfigPath);
       expect(saved.launch.skipPermissions).toBe(false);
     });
 
@@ -164,6 +173,7 @@ describe('launch configuration resource service', () => {
           key: 'claudeArgs',
           value: 'not-an-array',
           clock: FIXED_CLOCK,
+          confirmed: true,
         }),
       ).rejects.toMatchObject({ code: 'LAUNCH_CONFIG_INVALID' });
     });

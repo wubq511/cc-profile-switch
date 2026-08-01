@@ -166,6 +166,29 @@ describe('settings resource service', () => {
       expect(result.malformed).toBe(true);
       expect(result.entries).toEqual([]);
     });
+
+    it('redacts credential-marker env keys beyond ANTHROPIC_* (e.g. OPENAI_API_KEY)', async () => {
+      const { appHome } = await makeAppHome();
+      await makeProfile(appHome, 'coding');
+      const paths = getProfileTemplatePaths(appHome, 'coding');
+      await fs.writeJson(paths.settingsPath, {
+        env: {
+          OPENAI_API_KEY: 'sk-proj-abcdefghijklmnopqrstuvwxyz',
+          GITHUB_TOKEN: 'ghp_abcdefghijklmnopqrstuvwxyz123456',
+          NODE_ENV: 'production', // not credential-class
+        },
+      });
+
+      const result = await previewSettings(appHome, 'coding');
+
+      const openai = result.entries.find((e) => e.keyPath === 'env.OPENAI_API_KEY');
+      expect(openai?.displayValue).toBe('<redacted>');
+      const github = result.entries.find((e) => e.keyPath === 'env.GITHUB_TOKEN');
+      expect(github?.displayValue).toBe('<redacted>');
+      // Non-credential env values still render.
+      const nodeEnv = result.entries.find((e) => e.keyPath === 'env.NODE_ENV');
+      expect(nodeEnv?.displayValue).toBe('production');
+    });
   });
 
   describe('searchSettings', () => {
@@ -208,6 +231,23 @@ describe('settings resource service', () => {
         profileName: 'coding',
         keyPath: 'autoMemoryDirectory',
         value: '/tmp/elsewhere',
+        clock: FIXED_CLOCK,
+      });
+
+      expect(result.refused).toBe('managed');
+    });
+
+    it('refuses editing the parent env key to prevent bypassing managed fields', async () => {
+      const { appHome } = await makeAppHome();
+      await makeProfile(appHome, 'coding');
+
+      // Assigning the whole `env` object would overwrite the managed
+      // env.CLAUDE_CODE_ATTRIBUTION_HEADER — must be refused.
+      const result = await editSettingsKey({
+        appHomePath: appHome,
+        profileName: 'coding',
+        keyPath: 'env',
+        value: { OTHER: 'x' },
         clock: FIXED_CLOCK,
       });
 
@@ -347,6 +387,20 @@ describe('settings resource service', () => {
       ).rejects.toMatchObject({ code: 'SETTINGS_MANAGED_FIELD_READONLY' });
     });
 
+    it('refuses removing the parent env key (managed-field bypass)', async () => {
+      const { appHome } = await makeAppHome();
+      await makeProfile(appHome, 'coding');
+
+      await expect(
+        removeSettingsKey({
+          appHomePath: appHome,
+          profileName: 'coding',
+          keyPath: 'env',
+          clock: FIXED_CLOCK,
+        }),
+      ).rejects.toMatchObject({ code: 'SETTINGS_MANAGED_FIELD_READONLY' });
+    });
+
     it('throws when the key does not exist', async () => {
       const { appHome } = await makeAppHome();
       await makeProfile(appHome, 'coding');
@@ -417,6 +471,25 @@ describe('settings resource service', () => {
       await expect(
         backfillSettings({ appHomePath: appHome, profileName: 'coding', clock: FIXED_CLOCK }),
       ).rejects.toMatchObject({ code: 'SETTINGS_MALFORMED' });
+    });
+
+    it('does not clobber a non-record env value when backfilling', async () => {
+      const { appHome } = await makeAppHome();
+      await makeProfile(appHome, 'coding');
+      const paths = getProfileTemplatePaths(appHome, 'coding');
+      // Malformed env shape — backfill must not overwrite it.
+      await fs.writeJson(paths.settingsPath, { env: 'not-an-object' });
+
+      const result = await backfillSettings({
+        appHomePath: appHome,
+        profileName: 'coding',
+        clock: FIXED_CLOCK,
+      });
+
+      expect(result.backfilledKeys).not.toContain('env.CLAUDE_CODE_ATTRIBUTION_HEADER');
+      const saved = await fs.readJson(paths.settingsPath);
+      expect(saved.env).toBe('not-an-object'); // preserved untouched
+      expect(saved.autoMemoryDirectory).toBe(paths.autoMemoryPath);
     });
   });
 

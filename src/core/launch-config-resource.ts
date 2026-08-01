@@ -36,8 +36,6 @@ export type LaunchConfigEntry = {
   value: unknown;
   /** True if this field requires a consequence warning before editing. */
   sensitive: boolean;
-  /** True if this field cannot be edited here (owned by another lifecycle). */
-  restricted: boolean;
 };
 
 export type LaunchConfigPreviewResult = {
@@ -108,14 +106,24 @@ async function readProfileConfig(
   }
 }
 
+/**
+ * Launch configuration fields editable through this service (launch.* in profile.json).
+ * Single source of truth for both the flattened inspect/search view and the edit allow-list.
+ */
+const EDITABLE_LAUNCH_KEYS = [
+  'mcpMode',
+  'pluginDirs',
+  'disableAutoMemory',
+  'skipPermissions',
+  'claudeArgs',
+] as const;
+
 function flattenLaunchConfig(config: ProfileConfig): Record<string, unknown> {
-  return {
-    mcpMode: config.launch.mcpMode,
-    pluginDirs: config.launch.pluginDirs,
-    disableAutoMemory: config.launch.disableAutoMemory,
-    skipPermissions: config.launch.skipPermissions,
-    claudeArgs: config.launch.claudeArgs,
-  };
+  const flat: Record<string, unknown> = {};
+  for (const key of EDITABLE_LAUNCH_KEYS) {
+    flat[key] = config.launch[key];
+  }
+  return flat;
 }
 
 // ─── Inspect ─────────────────────────────────────────────────────────────
@@ -138,7 +146,6 @@ export async function inspectLaunchConfig(
       key,
       value: flat[key],
       sensitive: SENSITIVE_LAUNCH_FIELDS.has(key),
-      restricted: key === 'name',
     }));
 
   return { entries, malformed: false };
@@ -202,6 +209,9 @@ export type EditLaunchConfigOptions = {
   key: string;
   value: unknown;
   clock?: Clock;
+  /** Required for security-sensitive fields (skipPermissions, claudeArgs):
+   *  the caller must show the consequence warning and re-invoke with confirmed=true. */
+  confirmed?: boolean;
 };
 
 export async function editLaunchConfigKey(
@@ -213,14 +223,7 @@ export async function editLaunchConfigKey(
   }
 
   // Only launch.* fields are editable through this service.
-  const allowedKeys = new Set([
-    'mcpMode',
-    'pluginDirs',
-    'disableAutoMemory',
-    'skipPermissions',
-    'claudeArgs',
-  ]);
-  if (!allowedKeys.has(options.key)) {
+  if (!(EDITABLE_LAUNCH_KEYS as readonly string[]).includes(options.key)) {
     throw new CcpsError(
       'LAUNCH_CONFIG_KEY_INVALID',
       `Key "${options.key}" is not an editable launch configuration field.`,
@@ -230,6 +233,13 @@ export async function editLaunchConfigKey(
 
   const isSensitive = SENSITIVE_LAUNCH_FIELDS.has(options.key);
   const warningMessage = isSensitive ? SENSITIVE_FIELD_WARNINGS[options.key] : undefined;
+
+  // Security-sensitive fields require the consequence warning to be shown and
+  // confirmed first — the edit is refused until the caller re-invokes with
+  // confirmed=true (spec §6.3: "show consequence warnings before editing").
+  if (isSensitive && options.confirmed !== true) {
+    return { key: options.key, requiresWarning: true, warningMessage };
+  }
 
   const paths = getProfileTemplatePaths(options.appHomePath, options.profileName);
   const result = await readProfileConfig(paths.profileConfigPath);
@@ -266,8 +276,8 @@ export async function editLaunchConfigKey(
 
   return {
     key: options.key,
-    requiresWarning: isSensitive,
-    warningMessage,
+    requiresWarning: false,
+    warningMessage: undefined,
   };
 }
 

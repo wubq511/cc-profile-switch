@@ -16,19 +16,21 @@
 import fs from 'fs-extra';
 
 import { getProfileTemplatePaths, getRealClaudeMdExcludePaths } from './profile-template';
-import { diffSettings, flattenToKeyPaths, type SettingsDiffEntry } from './diff';
+import {
+  deleteNestedValue,
+  diffSettings,
+  flattenToKeyPaths,
+  getNestedValue,
+  setNestedValue,
+  type SettingsDiffEntry,
+} from './diff';
 import { createFragmentItem, type RecoveryBinItem } from './recovery-bin';
-import { writeJsonFile, type Clock } from './app-config';import { CcpsError } from '../utils/errors';
+import { writeJsonFile, type Clock } from './app-config';
+import { CcpsError } from '../utils/errors';
 
 // ─── Managed field definitions ───────────────────────────────────────────
 
-/** Top-level keys that ccps manages and are read-only in the Workbench editor. */
-export const CCPS_MANAGED_SETTINGS_KEYS = new Set([
-  'autoMemoryDirectory',
-  'claudeMdExcludes',
-]);
-
-/** Dot-path keys that ccps manages (nested under env). */
+/** Dot-path keys that ccps manages (read-only in the Workbench editor). */
 export const CCPS_MANAGED_SETTINGS_KEY_PATHS = new Set([
   'autoMemoryDirectory',
   'claudeMdExcludes',
@@ -40,6 +42,9 @@ export const REFUSED_SETTINGS_KEY = 'mcpServers';
 
 /** Prefix for credential-class env keys (values are never rendered). */
 const CREDENTIAL_ENV_PREFIX = 'ANTHROPIC_';
+
+/** Substrings that mark an env key as credential-class (e.g. API_KEY, TOKEN, SECRET). */
+const CREDENTIAL_KEY_MARKERS = ['API_KEY', 'TOKEN', 'SECRET', 'PASSWORD', 'CREDENTIAL', 'AUTH'];
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
@@ -166,14 +171,17 @@ export function redactValue(keyPath: string, value: unknown): string {
 }
 
 function isCredentialKeyPath(keyPath: string): boolean {
-  // env.ANTHROPIC_* keys are credential-class.
-  if (keyPath.startsWith('env.')) {
-    const envKey = keyPath.slice(4); // strip 'env.'
-    if (envKey.startsWith(CREDENTIAL_ENV_PREFIX)) {
-      return true;
-    }
+  // Values under env are credentials when the key is ANTHROPIC_* (the codebase's
+  // named secret-class per the export contract §11.2) or carries a credential
+  // marker (API_KEY / TOKEN / SECRET / PASSWORD / CREDENTIAL / AUTH).
+  if (!keyPath.startsWith('env.')) {
+    return false;
   }
-  return false;
+  const envKey = keyPath.slice(4); // strip 'env.'
+  if (envKey.startsWith(CREDENTIAL_ENV_PREFIX)) {
+    return true;
+  }
+  return CREDENTIAL_KEY_MARKERS.some((marker) => envKey.includes(marker));
 }
 
 export async function previewSettings(
@@ -245,8 +253,9 @@ export async function editSettingsKey(options: EditSettingsOptions): Promise<Set
     return { keyPath: options.keyPath, refused: 'mcpServers' };
   }
 
-  // Refuse ccps-managed fields.
-  if (CCPS_MANAGED_SETTINGS_KEY_PATHS.has(options.keyPath)) {
+  // Refuse ccps-managed fields — including ancestor paths (e.g. `env`) so the
+  // managed env.CLAUDE_CODE_ATTRIBUTION_HEADER cannot be altered indirectly.
+  if (isManagedKeyPathOrAncestor(options.keyPath)) {
     return { keyPath: options.keyPath, refused: 'managed' };
   }
 
@@ -289,8 +298,9 @@ export async function removeSettingsKey(
     );
   }
 
-  // Refuse removal of managed fields.
-  if (CCPS_MANAGED_SETTINGS_KEY_PATHS.has(options.keyPath)) {
+  // Refuse removal of managed fields — including ancestor paths (e.g. `env`) so
+  // removing the parent cannot silently discard env.CLAUDE_CODE_ATTRIBUTION_HEADER.
+  if (isManagedKeyPathOrAncestor(options.keyPath)) {
     throw new CcpsError(
       'SETTINGS_MANAGED_FIELD_READONLY',
       'ccps-managed settings fields cannot be removed.',
@@ -387,15 +397,15 @@ export async function backfillSettings(
     backfilledKeys.push('claudeMdExcludes');
   }
 
-  // Backfill env.CLAUDE_CODE_ATTRIBUTION_HEADER.
-  const env = (settings.env ?? {}) as Record<string, unknown>;
-  if (!isRecord(settings.env)) {
-    settings.env = {};
-  }
-  if (!Object.hasOwn(env, 'CLAUDE_CODE_ATTRIBUTION_HEADER')) {
-    env.CLAUDE_CODE_ATTRIBUTION_HEADER = '0';
-    settings.env = env;
-    backfilledKeys.push('env.CLAUDE_CODE_ATTRIBUTION_HEADER');
+  // Backfill env.CLAUDE_CODE_ATTRIBUTION_HEADER. A present-but-non-record env is
+  // left untouched (repair is a different concern; never clobber data).
+  if (settings.env === undefined || isRecord(settings.env)) {
+    const env = (settings.env ?? {}) as Record<string, unknown>;
+    if (!Object.hasOwn(env, 'CLAUDE_CODE_ATTRIBUTION_HEADER')) {
+      env.CLAUDE_CODE_ATTRIBUTION_HEADER = '0';
+      settings.env = env;
+      backfilledKeys.push('env.CLAUDE_CODE_ATTRIBUTION_HEADER');
+    }
   }
 
   if (backfilledKeys.length > 0 || created) {
@@ -477,66 +487,17 @@ export async function validateSettings(
   }
 }
 
-// ─── Nested value helpers ────────────────────────────────────────────────
-
-function getNestedValue(obj: unknown, keyPath: string): unknown {
-  const keys = keyPath.split('.');
-  let current: unknown = obj;
-  for (const key of keys) {
-    if (current === null || current === undefined || typeof current !== 'object') {
-      return undefined;
-    }
-    current = (current as Record<string, unknown>)[key];
-  }
-  return current;
-}
-
-function setNestedValue(
-  obj: Record<string, unknown>,
-  keyPath: string,
-  value: unknown,
-): Record<string, unknown> {
-  const result = { ...obj };
-  const keys = keyPath.split('.');
-  let current: Record<string, unknown> = result;
-  for (let i = 0; i < keys.length - 1; i++) {
-    const next = current[keys[i]];
-    if (next === null || next === undefined || typeof next !== 'object') {
-      current[keys[i]] = {};
-    } else {
-      current[keys[i]] = { ...(next as Record<string, unknown>) };
-    }
-    current = current[keys[i]] as Record<string, unknown>;
-  }
-  current[keys[keys.length - 1]] = value;
-  return result;
-}
-
-function deleteNestedValue(
-  obj: Record<string, unknown>,
-  keyPath: string,
-): Record<string, unknown> {
-  const result = { ...obj };
-  const keys = keyPath.split('.');
-  let current: unknown = result;
-  for (let i = 0; i < keys.length - 1; i++) {
-    if (current === null || current === undefined || typeof current !== 'object') {
-      return result;
-    }
-    const key = keys[i];
-    const next = (current as Record<string, unknown>)[key];
-    if (typeof next === 'object' && next !== null) {
-      (current as Record<string, unknown>)[key] = { ...(next as Record<string, unknown>) };
-    }
-    current = (current as Record<string, unknown>)[key];
-  }
-  if (current !== null && current !== undefined && typeof current === 'object') {
-    delete (current as Record<string, unknown>)[keys[keys.length - 1]];
-  }
-  return result;
-}
-
 // ─── Utility ─────────────────────────────────────────────────────────────
+
+/** True when the key path is a managed field itself or an ancestor of one. */
+function isManagedKeyPathOrAncestor(keyPath: string): boolean {
+  for (const managed of CCPS_MANAGED_SETTINGS_KEY_PATHS) {
+    if (keyPath === managed || managed.startsWith(`${keyPath}.`)) {
+      return true;
+    }
+  }
+  return false;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);

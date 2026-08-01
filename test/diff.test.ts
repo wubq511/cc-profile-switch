@@ -8,7 +8,9 @@ import {
   lineDiff,
   countChanges,
   fileDiff,
-  unflattenFromKeyPaths,
+  getNestedValue,
+  setNestedValue,
+  deleteNestedValue,
   verdictSymbol,
 } from '../src/core/diff';
 
@@ -80,14 +82,34 @@ describe('diff utilities', () => {
       const flat = flattenToKeyPaths({ claudeMdExcludes: ['/a', '/b'] });
       expect(flat.claudeMdExcludes).toEqual(['/a', '/b']);
     });
+  });
 
-    it('round-trips through unflattenFromKeyPaths', () => {
-      const original = {
-        env: { A: '1', nested: { B: '2' } },
-        top: true,
-      };
-      const flat = flattenToKeyPaths(original);
-      expect(unflattenFromKeyPaths(flat)).toEqual(original);
+  describe('nested value helpers (clone semantics)', () => {
+    it('gets values by dot path', () => {
+      const obj = { env: { A: '1', nested: { B: '2' } } };
+      expect(getNestedValue(obj, 'env.A')).toBe('1');
+      expect(getNestedValue(obj, 'env.nested.B')).toBe('2');
+      expect(getNestedValue(obj, 'env.missing')).toBeUndefined();
+    });
+
+    it('sets nested values without mutating the input', () => {
+      const obj = { env: { A: '1' } };
+      const updated = setNestedValue(obj, 'env.A', '2');
+      expect(updated).toEqual({ env: { A: '2' } });
+      // The original object is unchanged (clone semantics).
+      expect(obj).toEqual({ env: { A: '1' } });
+    });
+
+    it('creates intermediate objects when setting a new path', () => {
+      const updated = setNestedValue({}, 'env.NEW.KEY', 'x');
+      expect(updated).toEqual({ env: { NEW: { KEY: 'x' } } });
+    });
+
+    it('deletes nested values without mutating the input', () => {
+      const obj = { env: { A: '1', B: '2' } };
+      const updated = deleteNestedValue(obj, 'env.A');
+      expect(updated).toEqual({ env: { B: '2' } });
+      expect(obj).toEqual({ env: { A: '1', B: '2' } });
     });
   });
 
@@ -160,6 +182,21 @@ describe('diff utilities', () => {
       expect(result).toContainEqual(
         expect.objectContaining({ key: 'b', verdict: 'only-b', valueB: 2 }),
       );
+    });
+
+    it('flags a sensitive field on add/remove, not just change', () => {
+      // skipPermissions absent in A (only in B): an add is still a change.
+      const onlyB = diffLaunchConfig({}, { skipPermissions: true });
+      expect(onlyB.find((r) => r.key === 'skipPermissions')).toMatchObject({
+        verdict: 'only-b',
+        sensitive: true,
+      });
+
+      const onlyA = diffLaunchConfig({ skipPermissions: false }, {});
+      expect(onlyA.find((r) => r.key === 'skipPermissions')).toMatchObject({
+        verdict: 'only-a',
+        sensitive: true,
+      });
     });
   });
 

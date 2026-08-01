@@ -222,6 +222,22 @@ describe('profile validator', () => {
     );
   });
 
+  it('flags a settings.json that is not an object as a launch blocker', async () => {
+    const { appHome, paths } = await makeProfile();
+    await fs.writeJson(paths.settingsPath, [1, 2, 3]);
+
+    const result = await validateProfile({ appHomePath: appHome, name: 'coding' });
+
+    expect(result.status).toBe('error');
+    expect(result.findings).toContainEqual(
+      expect.objectContaining({
+        severity: 'error',
+        code: 'SETTINGS_INVALID',
+        path: paths.settingsPath,
+      }),
+    );
+  });
+
   it('detects path traversal in launch plugin directories', async () => {
     const { appHome, paths } = await makeProfile();
     const manifest = await fs.readJson(paths.profileConfigPath);

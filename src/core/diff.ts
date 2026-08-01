@@ -81,13 +81,23 @@ export function keyDiff(
   a: Record<string, unknown>,
   b: Record<string, unknown>,
 ): KeyDiffEntry[] {
+  return walkKeyedRecords(a, b).map(({ key, verdict }) => ({ key, verdict }));
+}
+
+/** Shared key-verdict walk over two flat records (deep value comparison). */
+function walkKeyedRecords(
+  a: Record<string, unknown>,
+  b: Record<string, unknown>,
+): { key: string; verdict: KeyVerdict; inA: boolean; valueA?: unknown; valueB?: unknown }[] {
   const keys = [...new Set([...Object.keys(a), ...Object.keys(b)])].sort();
   return keys.map((k) => {
     const inA = k in a;
     const inB = k in b;
-    if (!inA) return { key: k, verdict: 'only-b' as const };
-    if (!inB) return { key: k, verdict: 'only-a' as const };
-    return { key: k, verdict: deepEqual(a[k], b[k]) ? ('same' as const) : ('changed' as const) };
+    let verdict: KeyVerdict;
+    if (!inA) verdict = 'only-b';
+    else if (!inB) verdict = 'only-a';
+    else verdict = deepEqual(a[k], b[k]) ? 'same' : 'changed';
+    return { key: k, verdict, inA, valueA: inA ? a[k] : undefined, valueB: inB ? b[k] : undefined };
   });
 }
 
@@ -141,24 +151,14 @@ export function diffLaunchConfig(
   a: Record<string, unknown>,
   b: Record<string, unknown>,
 ): LaunchConfigDiffEntry[] {
-  const keys = [...new Set([...Object.keys(a), ...Object.keys(b)])].sort();
-  return keys.map((k) => {
-    const inA = k in a;
-    const inB = k in b;
-    let verdict: KeyVerdict;
-    if (!inA) verdict = 'only-b';
-    else if (!inB) verdict = 'only-a';
-    else verdict = deepEqual(a[k], b[k]) ? 'same' : 'changed';
-
-    const isSensitive = SENSITIVE_LAUNCH_FIELDS.has(k);
-    return {
-      key: k,
-      verdict,
-      valueA: inA ? a[k] : undefined,
-      valueB: inB ? b[k] : undefined,
-      sensitive: isSensitive && verdict === 'changed',
-    };
-  });
+  return walkKeyedRecords(a, b).map(({ key, verdict, valueA, valueB }) => ({
+    key,
+    verdict,
+    valueA,
+    valueB,
+    // Add/remove counts as a change for security-sensitive fields (spec §12).
+    sensitive: SENSITIVE_LAUNCH_FIELDS.has(key) && verdict !== 'same',
+  }));
 }
 
 // ─── File-tree diff (Skills vs source) ───────────────────────────────────
@@ -233,27 +233,64 @@ export function flattenToKeyPaths(obj: Record<string, unknown>, prefix = ''): Re
   return result;
 }
 
-/**
- * Unflatten dot-separated key paths back into a nested object.
- * Inverse of flattenToKeyPaths for simple cases.
- */
-export function unflattenFromKeyPaths(flat: Record<string, unknown>): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
-  for (const [path, value] of Object.entries(flat)) {
-    setNestedValue(result, path, value);
+// ─── Nested value helpers (clone semantics) ──────────────────────────────
+// Shared by the Settings resource service for atomic edits: the read object is
+// never mutated in place; each helper returns a shallow-cloned copy along the
+// touched path so the caller can write the result atomically.
+
+export function getNestedValue(obj: unknown, keyPath: string): unknown {
+  const keys = keyPath.split('.');
+  let current: unknown = obj;
+  for (const key of keys) {
+    if (current === null || current === undefined || typeof current !== 'object') {
+      return undefined;
+    }
+    current = (current as Record<string, unknown>)[key];
   }
-  return result;
+  return current;
 }
 
-function setNestedValue(obj: Record<string, unknown>, keyPath: string, value: unknown): void {
+export function setNestedValue(
+  obj: Record<string, unknown>,
+  keyPath: string,
+  value: unknown,
+): Record<string, unknown> {
+  const result = { ...obj };
   const keys = keyPath.split('.');
-  let current: Record<string, unknown> = obj;
+  let current: Record<string, unknown> = result;
   for (let i = 0; i < keys.length - 1; i++) {
     const next = current[keys[i]];
     if (next === null || next === undefined || typeof next !== 'object') {
       current[keys[i]] = {};
+    } else {
+      current[keys[i]] = { ...(next as Record<string, unknown>) };
     }
     current = current[keys[i]] as Record<string, unknown>;
   }
   current[keys[keys.length - 1]] = value;
+  return result;
+}
+
+export function deleteNestedValue(
+  obj: Record<string, unknown>,
+  keyPath: string,
+): Record<string, unknown> {
+  const result = { ...obj };
+  const keys = keyPath.split('.');
+  let current: unknown = result;
+  for (let i = 0; i < keys.length - 1; i++) {
+    if (current === null || current === undefined || typeof current !== 'object') {
+      return result;
+    }
+    const key = keys[i];
+    const next = (current as Record<string, unknown>)[key];
+    if (typeof next === 'object' && next !== null) {
+      (current as Record<string, unknown>)[key] = { ...(next as Record<string, unknown>) };
+    }
+    current = (current as Record<string, unknown>)[key];
+  }
+  if (current !== null && current !== undefined && typeof current === 'object') {
+    delete (current as Record<string, unknown>)[keys[keys.length - 1]];
+  }
+  return result;
 }
