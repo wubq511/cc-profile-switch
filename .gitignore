@@ -2,6 +2,9 @@ node_modules/
 dist/
 coverage/
 probe-output/
+# Materialized fixture trees are generated on demand by the deterministic
+# generator (npm run fixtures:generate); never commit generated fixtures.
+.fixtures-out/
 .env
 .env.*
 *.log
