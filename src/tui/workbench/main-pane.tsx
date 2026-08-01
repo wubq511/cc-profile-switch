@@ -8,6 +8,10 @@ type MainPaneProps = {
   profile: WorkbenchProfile | undefined;
   width: number;
   height: number;
+  /** Whether the main pane holds keyboard focus (Tab-toggleable from sidebar). */
+  focused?: boolean;
+  /** Index of the highlighted category card when focused. */
+  selectedCategoryIndex?: number;
 };
 
 const CATEGORIES = [
@@ -20,9 +24,16 @@ const CATEGORIES = [
   { key: 'launchConfig' as const, labelKey: 'main.category.launchConfig' as const },
 ] as const;
 
+export const CATEGORY_COUNT = CATEGORIES.length;
+
+/** Category key at a given cursor index (mirrors the card grid order). */
+export function categoryKeyAt(index: number): (typeof CATEGORIES)[number]['key'] | undefined {
+  return CATEGORIES[index]?.key;
+}
+
 type CategoryKey = (typeof CATEGORIES)[number]['key'];
 
-export function MainPane({ profile, width, height }: MainPaneProps): React.ReactElement {
+export function MainPane({ profile, width, height, focused, selectedCategoryIndex }: MainPaneProps): React.ReactElement {
   const { t } = useI18n();
 
   if (!profile) {
@@ -34,6 +45,7 @@ export function MainPane({ profile, width, height }: MainPaneProps): React.React
   }
 
   const colWidth = Math.floor((width - 4) / 2);
+  const cursor = selectedCategoryIndex ?? 0;
 
   return React.createElement(
     Box,
@@ -52,11 +64,16 @@ export function MainPane({ profile, width, height }: MainPaneProps): React.React
     React.createElement(
       Box,
       { flexDirection: 'column', gap: 1 },
-      ...renderCategoryGrid(profile.resourceCounts, colWidth),
+      ...renderCategoryGrid(profile.resourceCounts, colWidth, cursor, focused ?? false),
+    ),
+    focused && React.createElement(
+      Box,
+      { marginTop: 1 },
+      React.createElement(Text, { dimColor: true }, t('main.drillIn')),
     ),
   );
 
-  function renderCategoryGrid(counts: ResourceCounts, colW: number): React.ReactElement[] {
+  function renderCategoryGrid(counts: ResourceCounts, colW: number, cursorIdx: number, isFocused: boolean): React.ReactElement[] {
     const rows: React.ReactElement[] = [];
     for (let i = 0; i < CATEGORIES.length; i += 2) {
       const left = CATEGORIES[i];
@@ -66,9 +83,9 @@ export function MainPane({ profile, width, height }: MainPaneProps): React.React
         React.createElement(
           Box,
           { key: left.key, gap: 1 },
-          renderCategoryCard(left.key, left.labelKey, counts[left.key], colW),
+          renderCategoryCard(left.key, left.labelKey, counts[left.key], colW, i === cursorIdx && isFocused),
           right
-            ? renderCategoryCard(right.key, right.labelKey, counts[right.key as CategoryKey], colW)
+            ? renderCategoryCard(right.key, right.labelKey, counts[right.key as CategoryKey], colW, i + 1 === cursorIdx && isFocused)
             : React.createElement(Box, { width: colW }),
         ),
       );
@@ -81,11 +98,16 @@ export function MainPane({ profile, width, height }: MainPaneProps): React.React
     labelKey: (typeof CATEGORIES)[number]['labelKey'],
     count: number,
     colW: number,
+    highlighted: boolean,
   ): React.ReactElement {
     return React.createElement(
       Box,
       { flexDirection: 'column', width: colW, borderStyle: 'round', paddingX: 1 },
-      React.createElement(Text, { bold: true }, t(labelKey)),
+      React.createElement(
+        Text,
+        { bold: true, inverse: highlighted, color: highlighted ? 'cyan' : undefined },
+        `${highlighted ? '▸ ' : ''}${t(labelKey)}`,
+      ),
       React.createElement(Text, null, `${count}`),
     );
   }
