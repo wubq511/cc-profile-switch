@@ -149,7 +149,7 @@ describe('Invariant 3: Credential insulation — secrets in memory only, redacte
     const paths = getProfileTemplatePaths(appHome, 'coding');
     const settings = await fs.readJson(paths.settingsPath);
     settings.env = settings.env ?? {};
-    settings.env.ANTHROPIC_API_KEY = 'sk-ant-api03-SECRET-never-appear';
+    settings.env.ANTHROPIC_API_KEY = 'test-cred-SECRET-never-appear';
     await fs.writeJson(paths.settingsPath, settings);
 
     const preview = await previewSettings(appHome, 'coding');
@@ -166,7 +166,7 @@ describe('Invariant 3: Credential insulation — secrets in memory only, redacte
     const paths = getProfileTemplatePaths(appHome, 'coding');
     const settings = await fs.readJson(paths.settingsPath);
     settings.env = settings.env ?? {};
-    settings.env.ANTHROPIC_API_KEY = 'sk-ant-api03-SECRET-never-appear';
+    settings.env.ANTHROPIC_API_KEY = 'test-cred-SECRET-never-appear';
     await fs.writeJson(paths.settingsPath, settings);
 
     const inspect = await inspectSettings(appHome, 'coding');
@@ -174,7 +174,7 @@ describe('Invariant 3: Credential insulation — secrets in memory only, redacte
     expect(inspect.keys.some((k) => k.includes('ANTHROPIC'))).toBe(true);
     // Values never in key names
     for (const key of inspect.keys) {
-      expect(key).not.toContain('sk-ant');
+      expect(key).not.toContain('test-cred');
       expect(key).not.toContain('SECRET');
     }
   });
@@ -185,7 +185,7 @@ describe('Invariant 3: Credential insulation — secrets in memory only, redacte
 
     const preview = await previewLaunchConfig(appHome, 'coding');
     if (preview.rawJson) {
-      expect(preview.rawJson).not.toContain('sk-ant');
+      expect(preview.rawJson).not.toContain('test-cred');
       expect(preview.rawJson).not.toContain('SECRET');
     }
   });
