@@ -8,6 +8,12 @@ import { backupProfile, createProfile, initProfiles, type Clock } from '../core/
 import { ensureProfileCreator } from '../core/profile-creator';
 import { exportProfile } from '../core/profile-export';
 import {
+  importProfile,
+  type ImportConfirmDecision,
+  type ImportPreview,
+  type ImportResult,
+} from '../core/profile-import';
+import {
   clearDefaultProfile,
   copyProfile,
   getDefaultProfile,
@@ -266,6 +272,50 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
         runtime.writeOut(`MCP servers: ${manifest.mcpServerNames.join(', ')}\n`);
       }
       runtime.writeOut(`Exporter: ccps ${manifest.exporterVersion}\n`);
+    });
+
+  program
+    .command('import <bundle> [target-name]')
+    .description('Create a new profile from a portable .tar.gz bundle.')
+    .action(async (bundlePath: string, targetName: string | undefined) => {
+      const confirm = async (preview: ImportPreview): Promise<ImportConfirmDecision> => {
+        runtime.writeOut(formatImportPreview(preview));
+        if (preview.collision) {
+          const typed = await runtime.readInput(
+            `A profile named "${preview.targetName}" already exists. Type a new profile name to import as (or press Enter to abort): `,
+          );
+          const trimmed = typed.trim();
+          if (trimmed.length === 0) {
+            return { action: 'abort' };
+          }
+          // Choosing a new name IS the commitment to proceed (no second y/N).
+          // Echo the resolved target so the user sees what will land before the
+          // import runs.
+          runtime.writeOut(`Import as: ${trimmed}\n`);
+          return { action: 'proceed-as-new-name', targetName: trimmed };
+        }
+        const answer = await runtime.readInput(
+          `Proceed with import as "${preview.targetName}"? [y/N]: `,
+        );
+        return answer.trim().toLowerCase().startsWith('y')
+          ? { action: 'proceed' }
+          : { action: 'abort' };
+      };
+
+      const outcome = await importProfile({
+        bundlePath,
+        targetName,
+        confirm,
+        captureProcess: runtime.captureProcess,
+        clock: runtime.clock,
+      });
+
+      if ('aborted' in outcome) {
+        runtime.writeOut('Import aborted.\n');
+        return;
+      }
+
+      runtime.writeOut(formatImportResult(outcome));
     });
 
   program
@@ -897,4 +947,70 @@ function countStrippedKeys(
   entries: { keys: string[] }[],
 ): number {
   return entries.reduce((sum, entry) => sum + entry.keys.length, 0);
+}
+
+function formatImportPreview(preview: ImportPreview): string {
+  const m = preview.manifest;
+  const r = m.resources;
+  const lines: string[] = [];
+
+  lines.push(`Bundle: ccps profile-bundle (exporter ccps ${m.exporterVersion}, exported ${m.exportedAt})`);
+  lines.push(`Source profile: ${m.profileName}`);
+  lines.push(`Import as: ${preview.targetName}${preview.collision ? ' (NAME EXISTS)' : ''}`);
+  lines.push(
+    `Resources: ${r.userMemory} user memory, ${r.autoMemory} auto memory, ${r.skills} skills, ${r.agents} agents, ${r.mcpServers} MCP servers, ${r.settings} settings, ${r.launchConfig} launch config`,
+  );
+  if (m.mcpServerNames.length > 0) {
+    lines.push(`MCP servers: ${m.mcpServerNames.join(', ')}`);
+  }
+  lines.push(`Secrets: ${describeImportSecrets(m)}`);
+  return `${lines.join('\n')}\n`;
+}
+
+function describeImportSecrets(manifest: ImportPreview['manifest']): string {
+  if (manifest.includeSecrets) {
+    return manifest.secretsPresent ? 'included (plaintext)' : 'included (none present)';
+  }
+  if (manifest.secretsStripped) {
+    const count = countStrippedKeys(manifest.strippedKeys);
+    return `excluded (${count} key${count === 1 ? '' : 's'} stripped, re-enter after import)`;
+  }
+  return 'excluded (none present)';
+}
+
+function formatImportResult(result: ImportResult): string {
+  const lines: string[] = [];
+  lines.push(`Imported profile "${result.profileName}" to ${result.profileRootPath}`);
+
+  const ok = result.mcpServers.filter((s) => s.reRegistered).map((s) => s.name);
+  const failed = result.mcpServers.filter((s) => !s.reRegistered);
+  if (ok.length > 0) {
+    lines.push(`MCP servers re-registered: ${ok.join(', ')}`);
+  }
+  for (const f of failed) {
+    lines.push(`MCP server "${f.name}" failed: ${f.failureMessage ?? 'unknown error'}`);
+  }
+  const envReentry = result.mcpServers
+    .filter((s) => s.envKeysToReenter.length > 0)
+    .map((s) => `${s.name} (${s.envKeysToReenter.join(', ')})`);
+  if (envReentry.length > 0) {
+    lines.push(`MCP env keys to re-enter: ${envReentry.join('; ')}`);
+  }
+  if (result.settingsSecretKeysToReenter.length > 0) {
+    lines.push(
+      `Secrets to re-enter in settings.json: ${result.settingsSecretKeysToReenter.join(', ')}`,
+    );
+  }
+  for (const legacy of result.legacyMcpEnvKeysToReenter) {
+    lines.push(
+      `Legacy mcp.json env keys to re-enter (${legacy.server}): ${legacy.keys.join(', ')}`,
+    );
+  }
+
+  lines.push(`Validation: ${result.validation.status}`);
+  if (result.validation.findings.length > 0) {
+    lines.push(formatFindings(result.validation.findings).trimEnd());
+  }
+  lines.push(`Next: ccps launch ${result.profileName} --dry-run`);
+  return `${lines.join('\n')}\n`;
 }
