@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { createAppConfig, getAppHomePaths } from '../src/core/app-config';
+import { loadAppState } from '../src/core/app-state';
 import {
   createProfileFromTemplate,
   getProfileTemplatePaths,
@@ -696,5 +697,54 @@ describe('launcher', () => {
     const afterLaunch = await fs.readJson(paths.settingsPath);
     expect(afterLaunch).toHaveProperty('claudeMdExcludes');
     expect(Array.isArray(afterLaunch.claudeMdExcludes)).toBe(true);
+  });
+
+  it('records cwd in state.json after a successful real launch', async () => {
+    const { appHome } = await makeProfile();
+    const projectCwd = await makeTempRoot('ccps-project-');
+
+    await launchProfile({
+      appHomePath: appHome,
+      profileName: 'coding',
+      cwd: projectCwd,
+      spawnProcess: async () => ({ exitCode: 0 }),
+      clock: () => new Date('2026-05-20T11:30:00Z'),
+    });
+
+    const state = await loadAppState(appHome);
+    expect(state.recentProjectDirs).toHaveLength(1);
+    expect(state.recentProjectDirs[0].path).toBe(projectCwd);
+  });
+
+  it('does not record cwd in state.json on a dry-run launch', async () => {
+    const { appHome } = await makeProfile();
+    const projectCwd = await makeTempRoot('ccps-project-');
+
+    await buildLaunchPlan({
+      appHomePath: appHome,
+      profileName: 'coding',
+      cwd: projectCwd,
+    });
+
+    const state = await loadAppState(appHome);
+    expect(state.recentProjectDirs).toHaveLength(0);
+  });
+
+  it('does not record cwd in state.json when profile validation blocks launch', async () => {
+    const { appHome, paths } = await makeProfile();
+    const projectCwd = await makeTempRoot('ccps-project-');
+    await rm(paths.settingsPath);
+
+    await expect(
+      launchProfile({
+        appHomePath: appHome,
+        profileName: 'coding',
+        cwd: projectCwd,
+        spawnProcess: async () => ({ exitCode: 0 }),
+      }),
+    ).rejects.toMatchObject({ code: 'PROFILE_VALIDATION_FAILED' });
+
+    const state = await loadAppState(appHome);
+    expect(state.recentProjectDirs).toHaveLength(0);
   });
 });

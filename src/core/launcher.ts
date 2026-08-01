@@ -1,6 +1,7 @@
 import fs from 'fs-extra';
 
 import { loadAppConfig, saveAppConfig, type Clock } from './app-config';
+import { recordRecentProjectDir } from './app-state';
 import { resolveApiSettings, type ApiSettingsSource } from './api-settings';
 import { extractAnthropicApiEnv, getClaudeSettingsPath } from './claude-settings';
 import { resolveLaunchProfile } from './profile-management';
@@ -239,6 +240,7 @@ export async function launchProfile(options: LaunchProfileOptions): Promise<Laun
     },
     { clock: options.clock },
   );
+  await recordRecentProjectDir(options.appHomePath, plan.cwd, { clock: options.clock });
 
   if (result.exitCode !== null && result.exitCode !== 0) {
     throw new CcpsError('CLAUDE_EXITED_WITH_ERROR', 'Claude Code exited with a non-zero status.', {
