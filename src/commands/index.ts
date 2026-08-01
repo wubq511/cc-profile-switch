@@ -6,6 +6,7 @@ import { getAppHomePaths, loadAppConfig } from '../core/app-config';
 import { buildLaunchPlan, formatLaunchDryRun, launchProfile } from '../core/launcher';
 import { backupProfile, createProfile, initProfiles, type Clock } from '../core/profile';
 import { ensureProfileCreator } from '../core/profile-creator';
+import { exportProfile } from '../core/profile-export';
 import {
   clearDefaultProfile,
   copyProfile,
@@ -187,6 +188,57 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
 
       runtime.writeOut(`Backup created: ${result.backupPath}\n`);
       runtime.writeOut(`Source profile unchanged: ${result.sourcePath}\n`);
+    });
+
+  program
+    .command('export <name> <path>')
+    .description('Package a profile as a single portable .tar.gz bundle.')
+    .option(
+      '--include-secrets',
+      'Include secret-class values (env.ANTHROPIC_* and MCP env). Writes the file 0600.',
+    )
+    .action(async (name: string, outputPath: string, options: { includeSecrets?: boolean }) => {
+      const result = await exportProfile({
+        name,
+        outputPath,
+        includeSecrets: options.includeSecrets,
+        clock: runtime.clock,
+      });
+      const manifest = result.manifest;
+
+      if (manifest.includeSecrets) {
+        runtime.writeOut(
+          'WARNING: this bundle contains plaintext credentials; anyone with the file can use the API account.\n',
+        );
+      }
+      runtime.writeOut(`Exported profile "${result.profileName}" to ${result.bundlePath}\n`);
+
+      const strippedKeyCount = countStrippedKeys(result.strippedKeys);
+      const secretState = manifest.includeSecrets
+        ? manifest.secretsPresent
+          ? 'included'
+          : 'included (none present)'
+        : manifest.secretsStripped
+          ? `excluded (${strippedKeyCount} key${strippedKeyCount === 1 ? '' : 's'} stripped)`
+          : 'excluded (none present)';
+      runtime.writeOut(`Secrets: ${secretState}\n`);
+      for (const entry of result.strippedKeys) {
+        if (entry.keys.length === 0) {
+          continue;
+        }
+        const serverSuffix =
+          entry.scope === 'mcp-env' && entry.mcpServer ? ` (${entry.mcpServer})` : '';
+        runtime.writeOut(`  ${entry.file}${serverSuffix}: ${entry.keys.join(', ')}\n`);
+      }
+
+      const r = manifest.resources;
+      runtime.writeOut(
+        `Bundle: ${r.userMemory} user memory, ${r.skills} skills, ${r.agents} agents, ${r.mcpServers} MCP servers\n`,
+      );
+      if (manifest.mcpServerNames.length > 0) {
+        runtime.writeOut(`MCP servers: ${manifest.mcpServerNames.join(', ')}\n`);
+      }
+      runtime.writeOut(`Exporter: ccps ${manifest.exporterVersion}\n`);
     });
 
   program
@@ -565,4 +617,10 @@ function formatFindings(findings: ValidationFinding[]): string {
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && 'code' in error;
+}
+
+function countStrippedKeys(
+  entries: { keys: string[] }[],
+): number {
+  return entries.reduce((sum, entry) => sum + entry.keys.length, 0);
 }
