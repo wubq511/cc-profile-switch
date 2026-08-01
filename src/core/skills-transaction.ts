@@ -221,7 +221,13 @@ export async function previewTransaction(options: PreviewOptions): Promise<Trans
   };
 }
 
-async function computeTreeDiff(
+/**
+ * Hash-based file diff between two directory trees. `oldPath` may be undefined
+ * (fresh install: every file is added). Shared by the transaction preview and
+ * the Diff-vs-source surface (spec §12) — the profile copy is `old`, the source
+ * is `new`, so `added` = new-at-source and `removed` = gone-at-source.
+ */
+export async function computeTreeDiff(
   oldPath: string | undefined,
   newPath: string,
 ): Promise<DiffEntry[]> {
@@ -345,6 +351,8 @@ export type ApplyResult = {
   record: SkillProvenanceRecord;
   /** True when an existing tree was replaced. */
   replaced: boolean;
+  /** Recovery Item id when the old tree was binned (replaceOld kind 'bin'). */
+  binItemId?: string;
 };
 
 type ApplyPhase =
@@ -407,8 +415,14 @@ export async function applySkillTransaction(options: ApplyOptions): Promise<Appl
     maybeInjectFault(options, 'after-rename-new');
 
     // 4. Dispose of the old tree (delete, or bin-then-delete).
+    let binItemId: string | undefined;
     if (oldExists) {
-      await disposeOldTree(oldPath, options.replaceOld ?? { kind: 'delete' }, options.name, clock);
+      binItemId = await disposeOldTree(
+        oldPath,
+        options.replaceOld ?? { kind: 'delete' },
+        options.name,
+        clock,
+      );
     }
     phase = 'old-disposed';
     maybeInjectFault(options, 'before-manifest');
@@ -423,7 +437,7 @@ export async function applySkillTransaction(options: ApplyOptions): Promise<Appl
     // Success: the transaction is complete — drop the sidecar.
     await fs.remove(sidecarPath).catch(() => {});
 
-    return { name: options.name, targetPath, record, replaced: oldExists };
+    return { name: options.name, targetPath, record, replaced: oldExists, binItemId };
   } catch (error) {
     if (isInjectedFault(error)) {
       // Simulated crash: leave the sidecar + residue for the startup sweep.
@@ -481,15 +495,15 @@ async function disposeOldTree(
   disposition: ReplaceOldDisposition,
   skillName: string,
   clock: Clock,
-): Promise<void> {
+): Promise<string | undefined> {
   if (disposition.kind === 'delete') {
     await fs.remove(oldPath);
-    return;
+    return undefined;
   }
   // Bin the old tree (copy to Recovery Bin), then delete the live copy. The
   // bin copy is taken from .ccps-old-<id>, so the recorded targetRelativePath
   // is the original skill location, not the transient .ccps-old name.
-  await createFileTreeItem({
+  const item = await createFileTreeItem({
     appHomePath: disposition.appHomePath,
     origin: disposition.origin,
     kind: 'skill',
@@ -499,6 +513,7 @@ async function disposeOldTree(
     clock,
   });
   await fs.remove(oldPath);
+  return item.id;
 }
 
 async function buildApplyRecord(

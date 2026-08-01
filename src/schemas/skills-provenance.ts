@@ -114,7 +114,11 @@ export const corruptionSignalSchema = z
 export type CorruptionSignal = z.infer<typeof corruptionSignalSchema>;
 
 // Reason a mutation is disabled for a record (Update / Diff-vs-source), per spec §7.1 backfill.
-export const disabledReasonSchema = z.enum(['no-source', 'no-git-repo']);
+// - `no-source`: source kind is `unknown` (backfilled pre-manifest Skill).
+// - `no-git-repo`: local source has no enclosing git repository (Update needs git).
+// - `no-remote`: local source repo exists but has no origin/upstream to pull from.
+// - `link-mode`: Linked Skills are live at the source — Diff-vs-source (Copied only) is a no-op.
+export const disabledReasonSchema = z.enum(['no-source', 'no-git-repo', 'no-remote', 'link-mode']);
 export type DisabledReason = z.infer<typeof disabledReasonSchema>;
 
 export const capabilityResultSchema = z

@@ -543,13 +543,28 @@ describe('canUpdate and canDiffVsSource', () => {
     expect(canDiffVsSource(r)).toEqual({ enabled: true });
   });
 
-  it('enables local sources with a discovered repo', () => {
+  it('enables local sources with a discovered repo and a remote', () => {
+    const r = record({
+      kind: 'local',
+      path: '/some/path',
+      repo: {
+        root: '/repo',
+        skillPathInRepo: 'skills/foo',
+        remoteUrl: 'https://example.com/repo.git',
+      },
+    });
+    expect(canUpdate(r)).toEqual({ enabled: true });
+    expect(canDiffVsSource(r)).toEqual({ enabled: true });
+  });
+
+  it('disables Update with no-remote for a local repo without an origin (no upstream to pull)', () => {
     const r = record({
       kind: 'local',
       path: '/some/path',
       repo: { root: '/repo', skillPathInRepo: 'skills/foo' },
     });
-    expect(canUpdate(r)).toEqual({ enabled: true });
+    expect(canUpdate(r)).toEqual({ enabled: false, reason: 'no-remote' });
+    // Diff-vs-source compares against the local path directly — still enabled.
     expect(canDiffVsSource(r)).toEqual({ enabled: true });
   });
 
@@ -560,6 +575,16 @@ describe('canUpdate and canDiffVsSource', () => {
     expect(canUpdate(record({ kind: 'url', url: 'https://example.com/skill.md' }))).toEqual({
       enabled: true,
     });
+  });
+
+  it('disables Diff-vs-source for Linked Skills (Copied-only, spec §6.3) but keeps Update enabled', () => {
+    const r: SkillProvenanceRecord = {
+      ...record({ kind: 'local', path: '/src', repo: { root: '/repo', skillPathInRepo: 'x', remoteUrl: 'https://example.com/r.git' } }),
+      mode: 'link',
+      link: { targetPath: '/src' },
+    };
+    expect(canDiffVsSource(r)).toEqual({ enabled: false, reason: 'link-mode' });
+    expect(canUpdate(r)).toEqual({ enabled: true });
   });
 });
 
