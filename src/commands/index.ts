@@ -231,18 +231,25 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
   program
     .command('remove <name>')
     .description('Remove a profile after exact-name confirmation and backup.')
-    .action(async (name: string) => {
+    .option('--no-backup', 'Skip backup; create a Recovery Item instead.')
+    .action(async (name: string, cmdOptions: { noBackup?: boolean }) => {
       const confirmation = await runtime.readInput(
         `Type the exact profile name to remove "${name}": `,
       );
       const result = await removeProfile({
         name,
         confirmation,
+        noBackup: cmdOptions.noBackup,
         clock: runtime.clock,
       });
 
       runtime.writeOut(`Removed profile "${result.profileName}".\n`);
-      runtime.writeOut(`Backup: ${result.backupPath}\n`);
+      if (result.backupPath) {
+        runtime.writeOut(`Backup: ${result.backupPath}\n`);
+      }
+      if (result.recoveryItem) {
+        runtime.writeOut(`Recovery item: ${result.recoveryItem.id}\n`);
+      }
       runtime.writeOut(`Removed path: ${result.removedPath}\n`);
     });
 
