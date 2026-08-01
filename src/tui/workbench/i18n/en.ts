@@ -62,7 +62,12 @@ export const en = {
   'lifecycle.findings.warnings': 'warnings',
   'lifecycle.default.set': 'Set as default',
   'lifecycle.default.cleared': 'Default cleared',
-  'lifecycle.template.blank': 'blank',
+  'lifecycle.success.created': 'created',
+  'lifecycle.success.copiedTo': 'Copied to',
+  'lifecycle.success.renamedTo': 'Renamed to',
+  'lifecycle.success.removed': 'removed',
+  'lifecycle.success.backedUp': 'backed up',
+  'lifecycle.success.valid': 'Valid',
 } as const;
 
 export type LocaleKey = keyof typeof en;

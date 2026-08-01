@@ -13,7 +13,12 @@ import {
 import { validateProfile } from '../../core/validator';
 import { I18nProvider, useI18n } from './i18n/react';
 import type { Locale } from './i18n/react';
-import { initialLifecycleState, lifecycleReducer, type LifecycleAction } from './lifecycle';
+import {
+  initialLifecycleState,
+  lifecycleReducer,
+  type LifecycleAction,
+  type LifecyclePromptKind,
+} from './lifecycle';
 import { KeymapOverlay } from './keymap';
 import { MainPane } from './main-pane';
 import type { WorkbenchProfile, WorkbenchData } from './profile-data';
@@ -101,6 +106,10 @@ function WorkbenchInner({ data, headless, skipWelcome }: { data: WorkbenchData; 
     }
   }, { isActive: canUseInput });
 
+  const onLifecycleAction = useCallback((action: LifecycleAction) => {
+    setLifecycle((prev) => lifecycleReducer(prev, action));
+  }, []);
+
   const handleLifecycleAction = useCallback(async (
     action: LifecycleAction,
     profileName: string,
@@ -110,71 +119,74 @@ function WorkbenchInner({ data, headless, skipWelcome }: { data: WorkbenchData; 
     if (action.type !== 'SUBMIT' && action.type !== 'START_IMMEDIATE') return;
 
     const appHomePath = getAppHomePaths().appHomePath;
+    const kind = action.kind as LifecyclePromptKind;
 
     try {
-      if (lifecycle.kind === 'create') {
+      if (kind === 'create') {
         await createProfile({
           appHomePath,
           name: input,
           template: (selectedTemplate ?? 'general') as ProfileTemplateName,
         });
-        setLifecycle(lifecycleReducer(lifecycle, { type: 'EXECUTE_SUCCESS', message: `"${input}" created` }));
-      } else if (lifecycle.kind === 'copy') {
+        setLifecycle((prev) => lifecycleReducer(prev, { type: 'EXECUTE_SUCCESS', message: `"${input}" ${t('lifecycle.success.created')}` }));
+      } else if (kind === 'copy') {
         await copyProfile({ appHomePath, from: profileName, to: input });
-        setLifecycle(lifecycleReducer(lifecycle, { type: 'EXECUTE_SUCCESS', message: `Copied to "${input}"` }));
-      } else if (lifecycle.kind === 'rename') {
+        setLifecycle((prev) => lifecycleReducer(prev, { type: 'EXECUTE_SUCCESS', message: `${t('lifecycle.success.copiedTo')} "${input}"` }));
+      } else if (kind === 'rename') {
         await renameProfile({ appHomePath, oldName: profileName, newName: input });
-        setLifecycle(lifecycleReducer(lifecycle, { type: 'EXECUTE_SUCCESS', message: `Renamed to "${input}"` }));
-      } else if (lifecycle.kind === 'remove') {
+        setLifecycle((prev) => lifecycleReducer(prev, { type: 'EXECUTE_SUCCESS', message: `${t('lifecycle.success.renamedTo')} "${input}"` }));
+      } else if (kind === 'remove') {
         await removeProfile({ appHomePath, name: profileName, confirmation: input });
-        setLifecycle(lifecycleReducer(lifecycle, { type: 'EXECUTE_SUCCESS', message: `"${profileName}" removed` }));
-      } else if (lifecycle.kind === 'default') {
+        setLifecycle((prev) => lifecycleReducer(prev, { type: 'EXECUTE_SUCCESS', message: `"${profileName}" ${t('lifecycle.success.removed')}` }));
+      } else if (kind === 'default') {
         const profile = workbenchData.profiles.find((p) => p.name === profileName);
         if (profile?.isDefault) {
           await clearDefaultProfile({ appHomePath });
-          setLifecycle(lifecycleReducer(lifecycle, { type: 'EXECUTE_SUCCESS', message: t('lifecycle.default.cleared') }));
+          setLifecycle((prev) => lifecycleReducer(prev, { type: 'EXECUTE_SUCCESS', message: t('lifecycle.default.cleared') }));
         } else {
           await setDefaultProfile({ appHomePath, name: profileName });
-          setLifecycle(lifecycleReducer(lifecycle, { type: 'EXECUTE_SUCCESS', message: t('lifecycle.default.set') }));
+          setLifecycle((prev) => lifecycleReducer(prev, { type: 'EXECUTE_SUCCESS', message: t('lifecycle.default.set') }));
         }
-      } else if (lifecycle.kind === 'validate') {
+      } else if (kind === 'validate') {
         const result = await validateProfile({ appHomePath, name: profileName });
         const findings = result.findings.map((f) => ({
           severity: f.severity,
           code: f.code,
           message: f.message,
         }));
-        setLifecycle(lifecycleReducer(lifecycle, { type: 'SET_FINDINGS', findings }));
+        setLifecycle((prev) => lifecycleReducer(prev, { type: 'SET_FINDINGS', findings }));
         if (findings.length === 0) {
-          setLifecycle(lifecycleReducer(lifecycle, { type: 'EXECUTE_SUCCESS', message: 'Valid' }));
+          setLifecycle((prev) => lifecycleReducer(prev, { type: 'EXECUTE_SUCCESS', message: t('lifecycle.success.valid') }));
         } else {
           const errorCount = findings.filter((f) => f.severity === 'error').length;
           const warningCount = findings.filter((f) => f.severity === 'warning').length;
-          setLifecycle(lifecycleReducer(lifecycle, {
+          setLifecycle((prev) => lifecycleReducer(prev, {
             type: 'EXECUTE_SUCCESS',
             message: `${errorCount} ${t('lifecycle.findings.errors')}, ${warningCount} ${t('lifecycle.findings.warnings')}`,
           }));
         }
-      } else if (lifecycle.kind === 'backup') {
+      } else if (kind === 'backup') {
         await backupProfile({ appHomePath, name: profileName });
-        setLifecycle(lifecycleReducer(lifecycle, { type: 'EXECUTE_SUCCESS', message: `"${profileName}" backed up` }));
+        setLifecycle((prev) => lifecycleReducer(prev, { type: 'EXECUTE_SUCCESS', message: `"${profileName}" ${t('lifecycle.success.backedUp')}` }));
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      setLifecycle(lifecycleReducer(lifecycle, { type: 'EXECUTE_ERROR', message }));
+      setLifecycle((prev) => lifecycleReducer(prev, { type: 'EXECUTE_ERROR', message }));
       return;
     }
 
     // Refresh data after any mutation
-    if (lifecycle.kind !== 'validate') {
+    if (kind !== 'validate') {
       try {
         const freshData = await loadWorkbenchData(appHomePath);
         setWorkbenchData(freshData);
+        // Clamp selectedIndex if profiles were removed
+        setSelectedIndex((prev) => Math.min(prev, Math.max(0, freshData.profiles.length - 1)));
       } catch {
         // refresh failure is non-fatal
       }
     }
-  }, [lifecycle, workbenchData, t]);
+  }, [workbenchData, t]);
 
   const sidebarWidth = Math.max(26, Math.floor(width * 0.3));
   const mainWidth = width - sidebarWidth - 2;
@@ -199,6 +211,8 @@ function WorkbenchInner({ data, headless, skipWelcome }: { data: WorkbenchData; 
               height: height - 1,
               capture,
               headless,
+              lifecycle,
+              onLifecycleAction,
               onAction: handleLifecycleAction,
             }),
             React.createElement(MainPane, {

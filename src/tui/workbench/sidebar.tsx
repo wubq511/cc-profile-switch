@@ -4,8 +4,6 @@ import { Box, Text, useInput, useStdin } from 'ink';
 import { useI18n } from './i18n/react';
 import type { LocaleKey } from './i18n/en';
 import {
-  initialLifecycleState,
-  lifecycleReducer,
   LIFECYCLE_ACTIONS,
   TEMPLATE_LIST,
   type LifecycleState,
@@ -22,7 +20,9 @@ type SidebarProps = {
   height: number;
   capture: boolean;
   headless?: boolean;
-  onAction?: (
+  lifecycle: LifecycleState;
+  onLifecycleAction: (action: LifecycleAction) => void;
+  onAction: (
     action: LifecycleAction,
     profileName: string,
     input: string,
@@ -38,13 +38,14 @@ export function Sidebar({
   height,
   capture,
   headless,
+  lifecycle,
+  onLifecycleAction,
   onAction,
 }: SidebarProps): React.ReactElement {
   const { t } = useI18n();
   const { stdin: inkStdin } = useStdin();
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
-  const [lifecycle, setLifecycle] = useState<LifecycleState>(initialLifecycleState);
   const [templateIndex, setTemplateIndex] = useState(0);
 
   const filtered = searchQuery
@@ -65,7 +66,7 @@ export function Sidebar({
     // Lifecycle prompt input handling (highest priority)
     if (lifecycle.phase === 'prompting') {
       if (key.escape) {
-        setLifecycle(lifecycleReducer(lifecycle, { type: 'CANCEL' }));
+        onLifecycleAction({ type: 'CANCEL' });
         return;
       }
       if (lifecycle.kind === 'create' && lifecycle.step === 1) {
@@ -79,19 +80,19 @@ export function Sidebar({
         }
         if (key.return) {
           const template = TEMPLATE_LIST[templateIndex] ?? 'general';
-          setLifecycle(lifecycleReducer(lifecycle, { type: 'SELECT_TEMPLATE', templateName: template }));
-          setLifecycle(lifecycleReducer(lifecycle, { type: 'NEXT_STEP' }));
+          onLifecycleAction({ type: 'SELECT_TEMPLATE', templateName: template });
+          onLifecycleAction({ type: 'NEXT_STEP' });
           return;
         }
         return;
       }
       if (key.backspace || key.delete) {
-        setLifecycle(lifecycleReducer(lifecycle, { type: 'BACKSPACE' }));
+        onLifecycleAction({ type: 'BACKSPACE' });
         return;
       }
       if (key.return) {
-        setLifecycle(lifecycleReducer(lifecycle, { type: 'SUBMIT' }));
-        onAction?.(
+        onLifecycleAction({ type: 'SUBMIT' });
+        onAction(
           { type: 'SUBMIT' },
           lifecycle.profileName,
           lifecycle.input,
@@ -100,7 +101,7 @@ export function Sidebar({
         return;
       }
       if (!key.ctrl && !key.meta && input.length === 1) {
-        setLifecycle(lifecycleReducer(lifecycle, { type: 'INPUT_CHAR', char: input }));
+        onLifecycleAction({ type: 'INPUT_CHAR', char: input });
         return;
       }
       return;
@@ -109,7 +110,7 @@ export function Sidebar({
     // Dismiss success/error
     if (lifecycle.phase === 'success' || lifecycle.phase === 'error') {
       if (key.escape || key.return || input === ' ') {
-        setLifecycle(lifecycleReducer(lifecycle, { type: 'DISMISS' }));
+        onLifecycleAction({ type: 'DISMISS' });
         return;
       }
     }
@@ -143,23 +144,19 @@ export function Sidebar({
           if (!profile) return;
 
           if (act.kind === 'validate' || act.kind === 'backup' || act.kind === 'default') {
-            setLifecycle(lifecycleReducer(lifecycle, {
+            const immediateAction: LifecycleAction = {
               type: 'START_IMMEDIATE',
               kind: act.kind,
               profileName: profile.name,
-            }));
-            onAction?.(
-              { type: 'START_IMMEDIATE', kind: act.kind, profileName: profile.name },
-              profile.name,
-              '',
-              null,
-            );
+            };
+            onLifecycleAction(immediateAction);
+            onAction(immediateAction, profile.name, '', null);
           } else {
-            setLifecycle(lifecycleReducer(lifecycle, {
+            onLifecycleAction({
               type: 'START_PROMPT',
               kind: act.kind,
               profileName: profile.name,
-            }));
+            });
             if (act.kind === 'create') {
               setTemplateIndex(0);
             }
@@ -194,7 +191,7 @@ export function Sidebar({
   useEffect(() => {
     if (lifecycle.phase !== 'success') return;
     const timer = setTimeout(() => {
-      setLifecycle(lifecycleReducer(lifecycle, { type: 'DISMISS' }));
+      onLifecycleAction({ type: 'DISMISS' });
     }, 1500);
     return () => clearTimeout(timer);
   }, [lifecycle.phase, lifecycle.message]);

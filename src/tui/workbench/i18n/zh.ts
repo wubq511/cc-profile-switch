@@ -63,5 +63,10 @@ export const zh: Record<LocaleKey, string> = {
   'lifecycle.findings.warnings': '警告',
   'lifecycle.default.set': '设为默认',
   'lifecycle.default.cleared': '已清除默认',
-  'lifecycle.template.blank': '空白',
+  'lifecycle.success.created': '已创建',
+  'lifecycle.success.copiedTo': '已复制到',
+  'lifecycle.success.renamedTo': '已重命名为',
+  'lifecycle.success.removed': '已删除',
+  'lifecycle.success.backedUp': '已备份',
+  'lifecycle.success.valid': '有效',
 };
