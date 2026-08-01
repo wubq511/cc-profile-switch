@@ -13,7 +13,7 @@ ccps launch coding
 
 Launch sets `CLAUDE_CONFIG_DIR=<profile>/claude-home`, keeps `cwd` unchanged, and never copies or overwrites the real user Claude directory.
 
-Tech stack: TypeScript, Node.js LTS, Commander, Zod, Vitest, tsup, fs-extra, picocolors.
+Tech stack: TypeScript, Node.js LTS, Commander, Zod, Vitest, tsup, fs-extra, tar, picocolors.
 
 ## Commands
 
