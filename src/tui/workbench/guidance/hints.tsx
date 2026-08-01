@@ -27,11 +27,9 @@ const HintsContext = createContext<HintsApi>({
 
 type HintsProviderProps = {
   children: React.ReactNode;
-  /** Retirement threshold; defaults to HINT_RETIRE_AFTER. */
-  retireAfter?: number;
 };
 
-export function HintsProvider({ children, retireAfter = HINT_RETIRE_AFTER }: HintsProviderProps): React.ReactElement {
+export function HintsProvider({ children }: HintsProviderProps): React.ReactElement {
   const [used, setUsed] = useState<Record<string, number>>({});
 
   const markUsed = useCallback((key: string) => {
@@ -39,8 +37,8 @@ export function HintsProvider({ children, retireAfter = HINT_RETIRE_AFTER }: Hin
   }, []);
 
   const isRetired = useCallback(
-    (key: string) => (used[key] ?? 0) >= retireAfter,
-    [used, retireAfter],
+    (key: string) => (used[key] ?? 0) >= HINT_RETIRE_AFTER,
+    [used],
   );
 
   const liveKeys = useCallback(

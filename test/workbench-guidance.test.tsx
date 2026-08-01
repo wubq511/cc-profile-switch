@@ -198,6 +198,29 @@ describe('error panel', () => {
     instance.unmount();
     await instance.waitUntilExit();
   });
+
+  it('numbers each recovery step when guidance has several sentences', async () => {
+    const stdout = new FakeTtyStdout();
+    const instance = await renderTree(
+      React.createElement(
+        I18nProvider,
+        { initialLocale: 'en' },
+        React.createElement(ErrorPanel, {
+          message: 'Launch blocked.',
+          code: 'LAUNCH_BLOCKED',
+          guidance: 'Run ccps validate coding. Fix every error finding. Then retry the launch.',
+        }),
+      ),
+      stdout,
+    );
+    const flat = flatten(stripAnsi(stdout.output));
+    expect(flat).toContain('1.');
+    expect(flat).toContain('2.');
+    expect(flat).toContain('3.');
+    expect(flat).toContain('Fix every error finding');
+    instance.unmount();
+    await instance.waitUntilExit();
+  });
 });
 
 describe('destructive panel', () => {
@@ -303,7 +326,7 @@ describe('empty states', () => {
     );
     const output = stripAnsi(stdout.output);
     expect(output).toContain('No profiles match "xyz".');
-    expect(flatten(output)).toContain('names, descriptions, and every resource item');
+    expect(flatten(output)).toContain('Search covers profile names and descriptions.');
     expect(output).toContain('Press [esc] to clear search');
     instance.unmount();
     await instance.waitUntilExit();
@@ -522,7 +545,29 @@ describe('keypress guidance flows', () => {
     stdin.press('/');
     await waitForOutputSettled(stdout, slashBaseline);
     const output = stripAnsi(stdout.output);
-    expect(flatten(output)).toContain('search covers everything');
+    expect(flatten(output)).toContain('search covers profile names and descriptions');
+    instance.unmount();
+    await instance.waitUntilExit();
+  });
+
+  it('search discovery tip does not reappear on a later focus (first-focus only)', async () => {
+    resetWelcomeSessionForTests();
+    const { instance, stdout, stdin } = await renderInteractive(
+      React.createElement(WorkbenchApp, { data: sampleData, initialLocale: 'en', skipWelcome: true }),
+    );
+    const firstBaseline = stdout.output;
+    stdin.press('/');
+    await waitForOutputSettled(stdout, firstBaseline);
+    expect(flatten(stripAnsi(stdout.output))).toContain('search covers profile names and descriptions');
+
+    // Blur out of search, then focus again — the tip must stay gone.
+    stdout.snapshot();
+    stdin.press('\x1b');
+    await waitForOutputSettled(stdout, '');
+    const secondBaseline = stdout.output;
+    stdin.press('/');
+    await waitForOutputSettled(stdout, secondBaseline);
+    expect(flatten(stripAnsi(stdout.output))).not.toContain('search covers profile names');
     instance.unmount();
     await instance.waitUntilExit();
   });

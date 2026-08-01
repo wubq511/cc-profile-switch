@@ -54,8 +54,10 @@ export function Sidebar({
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
   const [templateIndex, setTemplateIndex] = useState(0);
-  // First-search-focus tip: shown once per session (§5 discovery tips).
+  // First-search-focus tip: shown only during the first search focus of the
+  // session, then gone for good (§5 discovery tips).
   const searchTipShown = useRef(false);
+  const [searchTipVisible, setSearchTipVisible] = useState(false);
 
   const filtered = searchQuery
     ? profiles.filter((p) => p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.description.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -133,11 +135,13 @@ export function Sidebar({
     if (searchFocused) {
       if (key.escape) {
         setSearchFocused(false);
+        setSearchTipVisible(false);
         setSearchQuery('');
         return;
       }
       if (key.return) {
         setSearchFocused(false);
+        setSearchTipVisible(false);
         return;
       }
       if (key.backspace || key.delete) {
@@ -214,8 +218,11 @@ export function Sidebar({
     // Navigation
     if (input === '/') {
       markUsed('/');
-      searchTipShown.current = true;
       setSearchFocused(true);
+      if (!searchTipShown.current) {
+        searchTipShown.current = true;
+        setSearchTipVisible(true);
+      }
       return;
     }
     if (key.upArrow) {
@@ -272,7 +279,7 @@ export function Sidebar({
       searchFocused
         ? React.createElement(Text, { color: 'cyan' }, `/${searchQuery}█`)
         : React.createElement(Text, { dimColor: true }, t('sidebar.search.placeholder')),
-      searchFocused && searchQuery === '' && searchTipShown.current &&
+      searchFocused && searchQuery === '' && searchTipVisible &&
         React.createElement(Text, { dimColor: true, wrap: 'wrap' }, t('search.tip')),
     ),
     React.createElement(
@@ -325,14 +332,14 @@ export function Sidebar({
             lifecycleLive.length > 0 &&
               React.createElement(
                 Text,
-                { dimColor: true },
-                LIFECYCLE_ACTIONS.filter((a) => lifecycleLive.includes(a.key)).map((a) => `[${a.key}]`).join(''),
+                { dimColor: true, wrap: 'wrap' },
+                LIFECYCLE_ACTIONS.filter((a) => lifecycleLive.includes(a.key)).map((a) => `[${a.key}] ${t(a.labelKey)}`).join('  '),
               ),
             launchLive.length > 0 &&
               React.createElement(
                 Text,
-                { dimColor: true },
-                LAUNCH_ACTIONS.filter((a) => launchLive.includes(a.key)).map((a) => `[${a.key}]`).join(''),
+                { dimColor: true, wrap: 'wrap' },
+                LAUNCH_ACTIONS.filter((a) => launchLive.includes(a.key)).map((a) => `[${a.key}] ${t(a.labelKey)}`).join('  '),
               ),
           ),
     ),

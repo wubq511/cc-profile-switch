@@ -208,7 +208,7 @@ describe('lifecycle reducer', () => {
       kind: 'remove',
       profileName: 'coding',
     });
-    state = lifecycleReducer(state, { type: 'CONFIRM_CHOICE', choice: 'backup' });
+    state = lifecycleReducer(state, { type: 'CONFIRM_CHOICE' });
     expect(state.phase).toBe('executing');
     expect(state.kind).toBe('remove');
   });
@@ -224,10 +224,7 @@ describe('lifecycle reducer', () => {
   });
 
   it('CONFIRM_CHOICE outside confirm is a no-op', () => {
-    const state = lifecycleReducer(initialLifecycleState(), {
-      type: 'CONFIRM_CHOICE',
-      choice: 'backup',
-    });
+    const state = lifecycleReducer(initialLifecycleState(), { type: 'CONFIRM_CHOICE' });
     expect(state.phase).toBe('idle');
   });
 

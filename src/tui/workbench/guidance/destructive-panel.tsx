@@ -8,6 +8,7 @@ import React from 'react';
 import { Box, Text } from 'ink';
 
 import { useI18n } from '../i18n/react';
+import { GuidancePanel } from './panel';
 import type { WorkbenchProfile } from '../profile-data';
 
 type RemoveProfilePanelProps = {
@@ -22,8 +23,8 @@ export function RemoveProfilePanel({ profile }: RemoveProfilePanelProps): React.
     .replace('{agents}', String(profile.resourceCounts.agents));
 
   return React.createElement(
-    Box,
-    { flexShrink: 0, flexDirection: 'column', borderStyle: 'round', borderColor: 'yellow', paddingX: 1 },
+    GuidancePanel,
+    { borderColor: 'yellow' },
     React.createElement(
       Box,
       null,

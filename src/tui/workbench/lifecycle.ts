@@ -71,7 +71,7 @@ export type LifecycleAction =
   | { type: 'START_PROMPT'; kind: LifecyclePromptKind; profileName: string }
   | { type: 'START_IMMEDIATE'; kind: LifecyclePromptKind; profileName: string }
   | { type: 'START_CONFIRM'; kind: LifecyclePromptKind; profileName: string }
-  | { type: 'CONFIRM_CHOICE'; choice: 'backup' | 'no-backup' }
+  | { type: 'CONFIRM_CHOICE' }
   | { type: 'INPUT_CHAR'; char: string }
   | { type: 'BACKSPACE' }
   | { type: 'SELECT_TEMPLATE'; templateName: ProfileTemplateName }

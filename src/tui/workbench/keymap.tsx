@@ -2,6 +2,7 @@ import React from 'react';
 import { Box, Text } from 'ink';
 
 import { useI18n } from './i18n/react';
+import type { LocaleKey } from './i18n/en';
 
 type KeymapOverlayProps = {
   visible: boolean;
@@ -49,14 +50,14 @@ const KEYBINDINGS: Binding[] = [
   { key: 'x', group: 'actions', labelKey: 'lifecycle.remove' },
 ];
 
-const CONCEPT_KEYS = [
-  'keymap.concept.profile',
-  'keymap.concept.copied',
-  'keymap.concept.linked',
-  'keymap.concept.backup',
-  'keymap.concept.bin',
-  'keymap.concept.plugins',
-] as const;
+const CONCEPTS: Array<{ term: LocaleKey; definition: LocaleKey }> = [
+  { term: 'keymap.concept.profile.term', definition: 'keymap.concept.profile.def' },
+  { term: 'keymap.concept.copied.term', definition: 'keymap.concept.copied.def' },
+  { term: 'keymap.concept.linked.term', definition: 'keymap.concept.linked.def' },
+  { term: 'keymap.concept.backup.term', definition: 'keymap.concept.backup.def' },
+  { term: 'keymap.concept.bin.term', definition: 'keymap.concept.bin.def' },
+  { term: 'keymap.concept.plugins.term', definition: 'keymap.concept.plugins.def' },
+];
 
 export function KeymapOverlay({ visible }: KeymapOverlayProps): React.ReactElement | null {
   const { t } = useI18n();
@@ -80,11 +81,6 @@ export function KeymapOverlay({ visible }: KeymapOverlayProps): React.ReactEleme
       ),
     );
 
-  const conceptLines = CONCEPT_KEYS.map((labelKey) => {
-    const [term, ...rest] = t(labelKey).split('— ');
-    return { term: term?.trim() ?? '', definition: rest.join('— ') };
-  });
-
   return React.createElement(
     Box,
     { flexDirection: 'column', flexGrow: 1, paddingX: 1 },
@@ -100,14 +96,14 @@ export function KeymapOverlay({ visible }: KeymapOverlayProps): React.ReactEleme
     React.createElement(Box, { marginTop: 1 },
       React.createElement(Text, { bold: true }, t('keymap.concepts')),
     ),
-    ...conceptLines.map((line) =>
+    ...CONCEPTS.map((concept) =>
       React.createElement(
         Box,
-        { key: line.term, paddingX: 2 },
+        { key: concept.term, paddingX: 2 },
         React.createElement(Text, { wrap: 'wrap' },
-          React.createElement(Text, { bold: true }, line.term),
+          React.createElement(Text, { bold: true }, t(concept.term)),
           React.createElement(Text, null, ' — '),
-          React.createElement(Text, null, line.definition),
+          React.createElement(Text, null, t(concept.definition)),
         ),
       ),
     ),

@@ -435,10 +435,9 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe }: { d
   }, [lifecycle, handleLifecycleAction]);
 
   const confirmRemove = useCallback((noBackup: boolean) => {
-    const choice = noBackup ? 'no-backup' : 'backup';
-    setLifecycle((prev) => lifecycleReducer(prev, { type: 'CONFIRM_CHOICE', choice }));
+    setLifecycle((prev) => lifecycleReducer(prev, { type: 'CONFIRM_CHOICE' }));
     void handleLifecycleAction(
-      { type: 'CONFIRM_CHOICE', choice },
+      { type: 'CONFIRM_CHOICE' },
       lifecycle.profileName,
       noBackup ? 'u' : 'y',
       null,
