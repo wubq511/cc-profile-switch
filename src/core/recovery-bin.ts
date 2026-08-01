@@ -181,7 +181,7 @@ export async function createFileTreeItem(options: CreateFileTreeItemOptions): Pr
   await writeItemJson(itemDir, item);
 
   if (item.secretBearing) {
-    await setDirectoryPermissions0600(itemDir);
+    await setDirectoryPermissions0700(itemDir);
   }
 
   return { ...item, itemDirPath: itemDir };
@@ -217,7 +217,7 @@ export async function createFragmentItem(options: CreateFragmentItemOptions): Pr
   await writeItemJson(itemDir, item);
 
   if (item.secretBearing) {
-    await setDirectoryPermissions0600(itemDir);
+    await setDirectoryPermissions0700(itemDir);
   }
 
   return { ...item, itemDirPath: itemDir };
@@ -427,9 +427,12 @@ async function writeItemJson(itemDir: string, item: RecoveryItem): Promise<void>
   await atomicWriteJson(itemJsonPath, item);
 }
 
-async function setDirectoryPermissions0600(dirPath: string): Promise<void> {
+async function setDirectoryPermissions0700(dirPath: string): Promise<void> {
   try {
-    await fs.chmod(dirPath, 0o600);
+    // 0700 (rwx------) on a directory: owner can traverse/read/write while
+    // other users cannot. 0600 would omit execute, which prevents even the
+    // owner from accessing files inside (list/get/restore/delete all fail).
+    await fs.chmod(dirPath, 0o700);
   } catch {
     // Windows may not support chmod; silently ignore
   }

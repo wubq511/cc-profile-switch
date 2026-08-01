@@ -29,7 +29,7 @@ describe('Recovery Bin service', () => {
   const tempRoots: string[] = [];
 
   afterEach(async () => {
-    // Restore permissions on recovery-bin items (0600 dirs can't be deleted by fs.remove)
+    // Restore permissions on recovery-bin items (0700 dirs can't be deleted by fs.remove)
     for (const root of tempRoots) {
       const binDir = join(root, '.cc-profile-switch', 'recovery-bin');
       if (await fs.pathExists(binDir)) {
@@ -173,7 +173,7 @@ describe('Recovery Bin service', () => {
       expect(item2.id).toContain('-2');
     });
 
-    it('sets directory permissions to 0600 when secretBearing is true', async () => {
+    it('sets directory permissions to 0700 when secretBearing is true', async () => {
       const appHome = await makeAppHome();
       const profileDir = await makeProfile(appHome, 'coding');
       const skillDir = join(profileDir, 'claude-home', 'skills', 'secret-skill');
@@ -195,7 +195,7 @@ describe('Recovery Bin service', () => {
       if (process.platform !== 'win32') {
         const stat = await fs.stat(item.itemDirPath);
         const mode = stat.mode & 0o777;
-        expect(mode).toBe(0o600);
+        expect(mode).toBe(0o700);
       }
     });
   });
