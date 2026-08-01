@@ -112,6 +112,12 @@ async function renderInteractive(element: React.ReactElement): Promise<{
     stdin: stdin as unknown as NodeJS.ReadStream,
     exitOnCtrlC: false,
     patchConsole: false,
+    // These tests assert on live frames driven by keypresses, so Ink must
+    // stream frames instead of deferring to unmount. Force interactive mode:
+    // Ink's auto-detection reads `is-in-ci`, and CI runners export CI=true,
+    // which would otherwise flip this harness to non-interactive regardless
+    // of the fake TTY.
+    interactive: true,
   });
   await instance.waitUntilRenderFlush();
   await waitForInputListener(stdin);
