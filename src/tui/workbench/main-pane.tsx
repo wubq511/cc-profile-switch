@@ -66,6 +66,7 @@ const PROFILE_HINTS = [
   { key: 'l' as const, labelKey: 'lifecycle.launch' as const },
   { key: 'e' as const, labelKey: 'keymap.edit' as const },
   { key: 'b' as const, labelKey: 'lifecycle.backup' as const },
+  { key: 's' as const, labelKey: 'lifecycle.saveTemplate' as const },
   { key: 'x' as const, labelKey: 'lifecycle.remove' as const },
   { key: 'n' as const, labelKey: 'lifecycle.create' as const },
 ];

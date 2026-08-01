@@ -204,6 +204,26 @@ export async function createProfileFromTemplate(
   return { config, paths };
 }
 
+/**
+ * Ensure the Auto Memory directory and its MEMORY.md entrypoint exist.
+ * The entrypoint is written only when missing — session-derived content is
+ * never overwritten (used by create-from-custom-template, where Auto Memory
+ * was excluded from the template; spec §11.3).
+ */
+export async function ensureAutoMemoryEntrypoint(
+  paths: ProfileTemplatePaths,
+  profileName: string,
+): Promise<void> {
+  await fs.ensureDir(paths.autoMemoryPath);
+  if (await fs.pathExists(paths.autoMemoryEntrypointPath)) {
+    return;
+  }
+  await fs.writeFile(paths.autoMemoryEntrypointPath, autoMemoryEntrypoint(profileName), {
+    encoding: 'utf8',
+    flag: 'wx',
+  });
+}
+
 export async function ensureCcpsProfileRule(rulePath: string): Promise<boolean> {
   const desired = ccpsProfileRule();
 

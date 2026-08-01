@@ -14,7 +14,7 @@ import {
   type LifecyclePromptKind,
 } from './lifecycle';
 import { CATEGORIES } from './main-pane';
-import type { WorkbenchProfile } from './profile-data';
+import type { CustomTemplateSummary, WorkbenchProfile } from './profile-data';
 import {
   buildSidebarRows,
   SIDEBAR_CATEGORY_KEYS,
@@ -29,6 +29,8 @@ const CATEGORY_LABEL_KEYS: Record<CategoryKey, LocaleKey> = Object.fromEntries(
 /** Debounce for the cross-profile content search behind the sidebar box. */
 const CONTENT_SEARCH_DEBOUNCE_MS = 200;
 
+type TemplateOption = { name: string; source: 'built-in' | 'custom' };
+
 type SidebarProps = {
   profiles: WorkbenchProfile[];
   selectedIndex: number;
@@ -41,6 +43,8 @@ type SidebarProps = {
   wizardOpen?: boolean;
   /** When true, resource navigation owns arrow keys and action keys. */
   resourceNavActive?: boolean;
+  /** Custom templates listed after the built-ins in the create picker (§11.3). */
+  customTemplates?: CustomTemplateSummary[];
   onLifecycleAction: (action: LifecycleAction) => void;
   onAction: (
     action: LifecycleAction,
@@ -57,6 +61,8 @@ type SidebarProps = {
   onJumpContentHit?: (hit: SearchResult) => void;
   /** Cross-profile content search backing the sidebar box (searchAllResources). */
   onSearchContent?: (query: string) => Promise<SearchResult[]>;
+  /** Zero-confirm removal of a custom template from the create picker (S104). */
+  onRemoveCustomTemplate?: (templateName: string) => void;
 };
 
 export function Sidebar({
@@ -70,6 +76,7 @@ export function Sidebar({
   lifecycle,
   wizardOpen,
   resourceNavActive = false,
+  customTemplates = [],
   onLifecycleAction,
   onAction,
   onLaunchBar,
@@ -78,6 +85,7 @@ export function Sidebar({
   onDrillCategory,
   onJumpContentHit,
   onSearchContent,
+  onRemoveCustomTemplate,
 }: SidebarProps): React.ReactElement {
   const { t } = useI18n();
   const { markUsed, liveKeys } = useHints();
@@ -197,6 +205,15 @@ export function Sidebar({
     ? profiles.find((p) => p.name === cursorRow.profileName)
     : profiles[selectedIndex];
 
+  // Create-flow template picker: built-ins first, then customs with a clear
+  // source distinction (§11.3). Arrows wrap over the combined selectable list.
+  const templateOptions: TemplateOption[] = [
+    ...TEMPLATE_LIST.map((name): TemplateOption => ({ name, source: 'built-in' })),
+    ...customTemplates.map((c): TemplateOption => ({ name: c.name, source: 'custom' })),
+  ];
+  // Clamp after a zero-confirm custom-template removal shrinks the list.
+  const safeTemplateIndex = Math.min(templateIndex, Math.max(0, templateOptions.length - 1));
+
   useInput((input: string, key: Record<string, boolean>) => {
     if (capture || wizardOpen) return;
 
@@ -211,15 +228,24 @@ export function Sidebar({
       }
       if (lifecycle.kind === 'create' && lifecycle.step === 1) {
         if (key.upArrow) {
-          setTemplateIndex((i) => (i > 0 ? i - 1 : TEMPLATE_LIST.length - 1));
+          setTemplateIndex((i) => (i > 0 ? i - 1 : templateOptions.length - 1));
           return;
         }
         if (key.downArrow) {
-          setTemplateIndex((i) => (i < TEMPLATE_LIST.length - 1 ? i + 1 : 0));
+          setTemplateIndex((i) => (i < templateOptions.length - 1 ? i + 1 : 0));
+          return;
+        }
+        if (input === 'x') {
+          // Zero-confirm removal, custom templates only (S104); built-ins are
+          // not removable.
+          const option = templateOptions[safeTemplateIndex];
+          if (option?.source === 'custom') {
+            onRemoveCustomTemplate?.(option.name);
+          }
           return;
         }
         if (key.return) {
-          const template = TEMPLATE_LIST[templateIndex] ?? 'general';
+          const template = templateOptions[safeTemplateIndex]?.name ?? 'general';
           onLifecycleAction({ type: 'SELECT_TEMPLATE', templateName: template });
           onLifecycleAction({ type: 'NEXT_STEP' });
           return;
@@ -586,13 +612,41 @@ export function Sidebar({
             Box,
             { flexDirection: 'column' },
             React.createElement(Text, { bold: true }, t('lifecycle.prompt.createTemplate')),
+            React.createElement(Text, { dimColor: true }, t('template.section.builtin')),
             ...TEMPLATE_LIST.map((tmpl, i) =>
               React.createElement(
                 Text,
-                { key: tmpl, color: i === templateIndex ? 'cyan' : undefined, bold: i === templateIndex },
-                `${i === templateIndex ? '▸ ' : '  '}${tmpl}`,
+                {
+                  key: tmpl,
+                  color: i === safeTemplateIndex ? 'cyan' : undefined,
+                  bold: i === safeTemplateIndex,
+                },
+                `${i === safeTemplateIndex ? '▸ ' : '  '}${tmpl}`,
               ),
             ),
+            ...(customTemplates.length > 0
+              ? [
+                  React.createElement(
+                    Text,
+                    { key: 'custom-header', dimColor: true },
+                    t('template.section.custom'),
+                  ),
+                  ...customTemplates.map((custom, j) => {
+                    const i = TEMPLATE_LIST.length + j;
+                    return React.createElement(
+                      Text,
+                      {
+                        key: custom.name,
+                        color: i === safeTemplateIndex ? 'cyan' : undefined,
+                        bold: i === safeTemplateIndex,
+                      },
+                      `${i === safeTemplateIndex ? '▸ ' : '  '}${custom.name} (${t('template.source.custom')})`,
+                    );
+                  }),
+                ]
+              : []),
+            templateOptions[safeTemplateIndex]?.source === 'custom' &&
+              React.createElement(Text, { dimColor: true }, t('template.removeHint')),
           )
         : React.createElement(
             Box,
@@ -626,6 +680,7 @@ function promptLabel(kind: LifecyclePromptKind | null, t: (key: LocaleKey) => st
     case 'copy': return t('lifecycle.prompt.copy');
     case 'remove': return t('lifecycle.prompt.remove');
     case 'create': return t('lifecycle.prompt.createName');
+    case 'save-template': return t('lifecycle.prompt.saveTemplate');
     default: return '';
   }
 }

@@ -272,4 +272,101 @@ describe('lifecycle reducer', () => {
     expect(state.errorCode).toBe('PROFILE_DELETE_CONFIRMATION_MISMATCH');
     expect(state.guidance).toContain('Type the exact profile name');
   });
+
+  it('SELECT_TEMPLATE accepts a custom template name', () => {
+    let state = lifecycleReducer(initialLifecycleState(), {
+      type: 'START_PROMPT',
+      kind: 'create',
+      profileName: '',
+    });
+    state = lifecycleReducer(state, { type: 'SELECT_TEMPLATE', templateName: 'team-base' });
+    expect(state.selectedTemplate).toBe('team-base');
+  });
+
+  it('save-template flow: prompt → preview → summary confirm → save', () => {
+    const summary = { strippedCount: 3, autoMemoryExcluded: true };
+    let state = lifecycleReducer(initialLifecycleState(), {
+      type: 'START_PROMPT',
+      kind: 'save-template',
+      profileName: 'coding',
+    });
+    expect(state.phase).toBe('prompting');
+    expect(state.step).toBe(0); // single-step name prompt, no template picker
+    expect(state.templateSummary).toBeNull();
+
+    // Type the template name; SUBMIT moves to executing while the stripping
+    // preview runs (nothing is saved yet).
+    state = lifecycleReducer(state, { type: 'INPUT_CHAR', char: 'b' });
+    state = lifecycleReducer(state, { type: 'INPUT_CHAR', char: 'a' });
+    state = lifecycleReducer(state, { type: 'SUBMIT' });
+    expect(state.phase).toBe('executing');
+
+    // The preview result moves to the light-confirm panel, keeping the name.
+    state = lifecycleReducer(state, { type: 'SHOW_TEMPLATE_SUMMARY', summary });
+    expect(state.phase).toBe('confirm');
+    expect(state.kind).toBe('save-template');
+    expect(state.profileName).toBe('coding');
+    expect(state.input).toBe('ba');
+    expect(state.templateSummary).toEqual(summary);
+
+    // [y] confirms, the save runs, and the summary survives into the flash.
+    state = lifecycleReducer(state, { type: 'CONFIRM_CHOICE' });
+    expect(state.phase).toBe('executing');
+    state = lifecycleReducer(state, { type: 'EXECUTE_SUCCESS', message: 'Template "ba" saved' });
+    expect(state.phase).toBe('success');
+    state = lifecycleReducer(state, { type: 'DISMISS' });
+    expect(state.phase).toBe('idle');
+    expect(state.templateSummary).toBeNull();
+  });
+
+  it('SHOW_TEMPLATE_SUMMARY is gated to the save-template flow', () => {
+    const summary = { strippedCount: 1, autoMemoryExcluded: true };
+
+    // idle: no-op
+    let state = lifecycleReducer(initialLifecycleState(), {
+      type: 'SHOW_TEMPLATE_SUMMARY',
+      summary,
+    });
+    expect(state.phase).toBe('idle');
+    expect(state.templateSummary).toBeNull();
+
+    // another kind (rename prompting): no-op
+    state = lifecycleReducer(initialLifecycleState(), {
+      type: 'START_PROMPT',
+      kind: 'rename',
+      profileName: 'coding',
+    });
+    state = lifecycleReducer(state, { type: 'SHOW_TEMPLATE_SUMMARY', summary });
+    expect(state.phase).toBe('prompting');
+    expect(state.templateSummary).toBeNull();
+
+    // save-template but from confirm phase: no-op (already past the gate)
+    state = lifecycleReducer(initialLifecycleState(), {
+      type: 'START_PROMPT',
+      kind: 'save-template',
+      profileName: 'coding',
+    });
+    state = lifecycleReducer(state, { type: 'SHOW_TEMPLATE_SUMMARY', summary });
+    expect(state.phase).toBe('confirm');
+    state = lifecycleReducer(state, { type: 'SHOW_TEMPLATE_SUMMARY', summary });
+    expect(state.phase).toBe('confirm');
+  });
+
+  it('CANCEL from the save-template confirm panel resets the summary', () => {
+    let state = lifecycleReducer(initialLifecycleState(), {
+      type: 'START_PROMPT',
+      kind: 'save-template',
+      profileName: 'coding',
+    });
+    state = lifecycleReducer(state, { type: 'SUBMIT' });
+    state = lifecycleReducer(state, {
+      type: 'SHOW_TEMPLATE_SUMMARY',
+      summary: { strippedCount: 2, autoMemoryExcluded: true },
+    });
+    expect(state.phase).toBe('confirm');
+    state = lifecycleReducer(state, { type: 'CANCEL' });
+    expect(state.phase).toBe('idle');
+    expect(state.templateSummary).toBeNull();
+    expect(state.kind).toBeNull();
+  });
 });

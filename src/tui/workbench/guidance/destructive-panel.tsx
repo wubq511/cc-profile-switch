@@ -52,3 +52,45 @@ export function RemoveProfilePanel({ profile }: RemoveProfilePanelProps): React.
     ),
   );
 }
+
+type SaveTemplatePanelProps = {
+  templateName: string;
+  strippedCount: number;
+};
+
+// Save-as-template light confirmation (spec §11.3): one stripping summary
+// line plus [y] save / [esc] cancel. Nothing is written until [y]. Auto
+// Memory exclusion is unconditional, so the summary copy states it outright.
+export function SaveTemplatePanel({
+  templateName,
+  strippedCount,
+}: SaveTemplatePanelProps): React.ReactElement {
+  const { t } = useI18n();
+
+  const summary = t('template.summary.stripped').replace('{count}', String(strippedCount));
+
+  return React.createElement(
+    GuidancePanel,
+    { borderColor: 'yellow' },
+    React.createElement(
+      Box,
+      null,
+      React.createElement(Text, { bold: true }, t('template.confirm.title').replace('{name}', templateName)),
+    ),
+    React.createElement(
+      Box,
+      null,
+      React.createElement(Text, { dimColor: true, wrap: 'wrap' }, summary),
+    ),
+    React.createElement(
+      Box,
+      null,
+      React.createElement(Text, { wrap: 'wrap' }, t('template.confirm.save')),
+    ),
+    React.createElement(
+      Box,
+      null,
+      React.createElement(Text, { dimColor: true, wrap: 'wrap' }, t('template.confirm.cancel')),
+    ),
+  );
+}

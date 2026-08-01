@@ -34,6 +34,7 @@ const KEYBINDINGS: Binding[] = [
   { key: 'd', group: 'actions', labelKey: 'lifecycle.default' },
   { key: 'v', group: 'actions', labelKey: 'lifecycle.validate' },
   { key: 'b', group: 'actions', labelKey: 'lifecycle.backup' },
+  { key: 's', group: 'actions', labelKey: 'lifecycle.saveTemplate' },
   { key: 'x', group: 'actions', labelKey: 'lifecycle.remove' },
   // Resource rows (User Memory / Agents)
   { key: 'u', group: 'resource', labelKey: 'main.category.userMemory' },
