@@ -15,6 +15,7 @@ vi.mock('fs-extra', () => ({
     watch: vi.fn(),
     pathExists: vi.fn(),
     readFile: vi.fn(),
+    realpathSync: { native: vi.fn((p: string) => p) },
   },
 }));
 
@@ -109,6 +110,21 @@ describe('EditSessionManager', () => {
       await manager.open('/tmp/test.md');
 
       expect(fs.watch).toHaveBeenCalledWith(dirname(resolvedPath('/tmp/test.md')), expect.any(Function));
+    });
+
+    it('watches the realpath-canonicalized directory (Windows 8.3 short-path guard)', async () => {
+      setupSpawnSuccess();
+      vi.mocked(fs.watch).mockReturnValue({ close: vi.fn() } as never);
+      // Windows: fs.watch must get the long-form path — a short-form input
+      // (e.g. under a RUNNER~1 TEMP root) trips libuv's fs-event assertion
+      // and aborts the process. The manager canonicalizes via realpath.
+      const canonical = resolve('canonical-dir');
+      vi.mocked(fs.realpathSync.native).mockImplementationOnce(() => canonical);
+
+      const manager = new EditSessionManager();
+      await manager.open('/tmp/test.md');
+
+      expect(fs.watch).toHaveBeenCalledWith(canonical, expect.any(Function));
     });
 
     it('fires onChange callback for each state transition', async () => {
