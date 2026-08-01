@@ -15,6 +15,7 @@ import {
 import {
   addMcpServer,
   deriveTransport,
+  getClaudeJsonPath,
   readMcpServersMap,
 } from './mcp-servers';
 import { cliVersion } from './version';
@@ -64,7 +65,6 @@ import { CcpsError } from '../utils/errors';
 
 const BUNDLE_PROFILE_DIR = 'profile';
 const BUNDLE_MANIFEST_FILE = 'manifest.json';
-const CLAUDE_JSON_REL = path.join('claude-home', '.claude.json');
 
 export type ImportPreview = {
   manifest: BundleManifest;
@@ -308,7 +308,7 @@ async function applyImport(args: ApplyImportArgs): Promise<ImportResult> {
 }
 
 async function clearNativeMcpServers(stagingProfile: string): Promise<void> {
-  const claudeJsonPath = path.join(stagingProfile, CLAUDE_JSON_REL);
+  const claudeJsonPath = getClaudeJsonPath(stagingProfile);
   if (!(await fs.pathExists(claudeJsonPath))) {
     return;
   }
@@ -325,6 +325,15 @@ async function repairImportedProfile(
   // profile.json: re-stamp name + timestamps for the new profile (mirrors
   // copyProfile). The bundled config is re-validated so a tampered manifest
   // never silently lands an invalid profile.json.
+  if (!(await fs.pathExists(paths.profileConfigPath))) {
+    throw new CcpsError(
+      'IMPORT_PROFILE_INVALID',
+      'Bundled profile.json is missing.',
+      {
+        guidance: 'Re-export the source profile with a current ccps version.',
+      },
+    );
+  }
   const profileJson = await fs.readJson(paths.profileConfigPath);
   const parsed = profileConfigSchema.safeParse(profileJson);
   if (!parsed.success) {
@@ -338,9 +347,13 @@ async function repairImportedProfile(
     );
   }
   const timestamp = clock().toISOString();
+  // Force mcpMode 'none': import creates a new profile, and the AGENTS.md
+  // new-profile contract requires 'none'. 'strict' is an explicit opt-in that
+  // must not travel silently across machines; the importer re-opts-in if wanted.
   const repaired: ProfileConfig = {
     ...parsed.data,
     name: targetName,
+    launch: { ...parsed.data.launch, mcpMode: 'none' },
     createdAt: timestamp,
     updatedAt: timestamp,
   };

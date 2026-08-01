@@ -21,10 +21,10 @@ import {
 import type { CaptureProcess } from '../src/platform/process';
 
 const FIXED_CLOCK = () => new Date('2026-08-01T00:00:00Z');
-// Assembled from fragments so the repo credential-insulation scan never sees a
-// contiguous real shape. Used only to assert redaction/insulation.
-const SECRET_TOKEN = 'sk-ant-' + 'api03-' + 'a'.repeat(30);
-const MCP_TOKEN = 'ghp_' + 'secret' + '_token_456';
+// Fake credential-shaped fixtures (same convention as profile-export.test.ts),
+// used only to assert redaction/insulation. Never a real secret.
+const SECRET_TOKEN = 'sk-ant-secret-token-123';
+const MCP_TOKEN = 'ghp_secret_token_456';
 
 const tempRoots: string[] = [];
 
@@ -305,6 +305,40 @@ describe('profile import service', () => {
     // auto-validate ran
     expect(result.validation.profileName).toBe('imported');
     expect(result.validation.status).toBe('valid');
+  });
+
+  it("forces launch.mcpMode to 'none' for the imported new profile", async () => {
+    const appHome = await makeAppHome();
+    await makeProfile(appHome, 'coding');
+    // Tamper the source profile to 'strict' (an explicit opt-in that must not
+    // travel silently across machines). 'merge' is the schema default, so a
+    // bundle from an older/non-ccps profile could carry it.
+    const sourcePaths = getProfileTemplatePaths(appHome, 'coding');
+    const tampered = await fs.readJson(sourcePaths.profileConfigPath);
+    await fs.writeJson(sourcePaths.profileConfigPath, {
+      ...tampered,
+      launch: { mcpMode: 'strict' },
+    });
+    const bundlePath = await exportBundle(appHome, 'coding');
+
+    const result = await importProfile({
+      appHomePath: appHome,
+      bundlePath,
+      targetName: 'imported',
+      confirm: proceedConfirm(),
+      captureProcess: mockClaudeAdd().capture,
+      clock: FIXED_CLOCK,
+    });
+
+    expect('aborted' in result).toBe(false);
+    if ('aborted' in result) return;
+
+    const imported = await fs.readJson(
+      getProfileTemplatePaths(appHome, 'imported').profileConfigPath,
+    );
+    // AGENTS.md new-profile contract: mcpMode is 'none'. 'strict' never carries
+    // over; the importer re-opts-in explicitly if they want it.
+    expect(imported.launch?.mcpMode).toBe('none');
   });
 
   it('refuses exact-name collision by default and offers import-as-new-name', async () => {
@@ -596,6 +630,33 @@ describe('profile import service', () => {
       }),
     ).rejects.toMatchObject({ code: 'IMPORT_BUNDLE_INVALID' });
   });
+
+  it('refuses a bundle whose profile tree is missing profile.json', async () => {
+    const appHome = await makeAppHome();
+    await makeProfile(appHome, 'coding');
+    const bundlePath = await exportBundle(appHome, 'coding');
+    // tamper: extract, delete profile/profile.json, repack
+    const dir = await mkdtemp(join(tmpdir(), 'ccps-import-no-profilejson-'));
+    tempRoots.push(dir);
+    const tar = await import('tar');
+    await tar.x({ file: bundlePath, cwd: dir });
+    await fs.remove(path.join(dir, 'profile', 'profile.json'));
+    const tampered = path.join(dir, 'no-profilejson.tar.gz');
+    await tar.c({ gzip: true, file: tampered, cwd: dir, portable: true }, [
+      'manifest.json',
+      'profile',
+    ]);
+
+    await expect(
+      importProfile({
+        appHomePath: appHome,
+        bundlePath: tampered,
+        targetName: 'imported',
+        confirm: proceedConfirm(),
+        clock: FIXED_CLOCK,
+      }),
+    ).rejects.toMatchObject({ code: 'IMPORT_PROFILE_INVALID' });
+  });
 });
 
 // --- CLI command ----------------------------------------------------------------
@@ -623,13 +684,24 @@ describe('import command output', () => {
       writeErr: (value) => output.push(value),
     });
     const originalHome = process.env.HOME;
+    const originalUserProfile = process.env.USERPROFILE;
     process.env.HOME = userHome;
+    process.env.USERPROFILE = userHome;
     program.exitOverride();
     try {
       await program.parseAsync(['node', 'ccps', ...args], { from: 'node' });
       return { output: output.join(''), prompts };
     } finally {
-      process.env.HOME = originalHome;
+      if (originalHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = originalHome;
+      }
+      if (originalUserProfile === undefined) {
+        delete process.env.USERPROFILE;
+      } else {
+        process.env.USERPROFILE = originalUserProfile;
+      }
     }
   }
 
