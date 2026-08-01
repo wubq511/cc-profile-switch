@@ -1,4 +1,6 @@
 import { listProfileTemplates, type ProfileTemplateName } from '../../core/profile-template';
+import type { LaunchPlan } from '../../core/launcher';
+import type { ValidationFinding } from '../../core/validator';
 
 export type LifecyclePromptKind =
   | 'create'
@@ -9,12 +11,25 @@ export type LifecyclePromptKind =
   | 'backup'
   | 'default';
 
+export type LaunchPhase =
+  | 'idle'
+  | 'bar'          // pre-launch bar (l key)
+  | 'dir-screen'   // directory screen (L key)
+  | 'dry-run'      // dry-run page (d key)
+  | 'launching'    // Claude Code is running
+  | 'exited';      // Claude Code exited, showing flash
+
 export type LifecyclePhase =
   | 'idle'
   | 'prompting'
   | 'executing'
   | 'success'
   | 'error';
+
+export type RecentDir = {
+  path: string;
+  lastUsedAt: string;
+};
 
 export type LifecycleState = {
   phase: LifecyclePhase;
@@ -25,6 +40,19 @@ export type LifecycleState = {
   selectedTemplate: ProfileTemplateName | null;
   message: string;
   findings: LifecycleFinding[] | null;
+  // Launch flow state
+  launch: LaunchState;
+};
+
+export type LaunchState = {
+  phase: LaunchPhase;
+  dir: string;                    // chosen launch directory
+  dirInput: string;               // typed path in directory screen
+  recentDirs: RecentDir[];        // MRU recent directories
+  recentIndex: number;            // selected recent index (tab cycling)
+  dryRunPlan: LaunchPlan | null;  // cached dry-run plan
+  validationFindings: ValidationFinding[];  // inline findings
+  exitCode: number | null;        // Claude exit code after resume
 };
 
 export type LifecycleFinding = {
@@ -45,7 +73,21 @@ export type LifecycleAction =
   | { type: 'EXECUTE_SUCCESS'; message: string }
   | { type: 'EXECUTE_ERROR'; message: string }
   | { type: 'SET_FINDINGS'; findings: LifecycleFinding[] }
-  | { type: 'DISMISS' };
+  | { type: 'DISMISS' }
+  // Launch flow actions
+  | { type: 'LAUNCH_BAR'; profileName: string; cwd: string; recentDirs: RecentDir[] }
+  | { type: 'LAUNCH_DIR_SCREEN' }
+  | { type: 'LAUNCH_SET_DIR'; dir: string }
+  | { type: 'LAUNCH_DIR_INPUT_CHAR'; char: string }
+  | { type: 'LAUNCH_DIR_BACKSPACE' }
+  | { type: 'LAUNCH_DIR_TAB' }
+  | { type: 'LAUNCH_DIR_PICK'; index: number }
+  | { type: 'LAUNCH_CONFIRM' }
+  | { type: 'LAUNCH_SHOW_DRYRUN'; plan: LaunchPlan }
+  | { type: 'LAUNCH_SET_VALIDATION'; findings: ValidationFinding[] }
+  | { type: 'LAUNCH_START' }
+  | { type: 'LAUNCH_EXIT'; exitCode: number | null }
+  | { type: 'LAUNCH_DISMISS' };
 
 export function initialLifecycleState(): LifecycleState {
   return {
@@ -57,6 +99,20 @@ export function initialLifecycleState(): LifecycleState {
     selectedTemplate: null,
     message: '',
     findings: null,
+    launch: initialLaunchState(),
+  };
+}
+
+export function initialLaunchState(): LaunchState {
+  return {
+    phase: 'idle',
+    dir: process.cwd(),
+    dirInput: '',
+    recentDirs: [],
+    recentIndex: -1,
+    dryRunPlan: null,
+    validationFindings: [],
+    exitCode: null,
   };
 }
 
@@ -134,6 +190,165 @@ export function lifecycleReducer(state: LifecycleState, action: LifecycleAction)
       return state;
     }
 
+    // Launch flow
+    case 'LAUNCH_BAR': {
+      return {
+        ...initialLifecycleState(),
+        launch: {
+          ...initialLaunchState(),
+          phase: 'bar',
+          dir: action.cwd,
+          recentDirs: action.recentDirs,
+        },
+        profileName: action.profileName,
+      };
+    }
+
+    case 'LAUNCH_DIR_SCREEN': {
+      if (state.launch.phase !== 'bar') return state;
+      return {
+        ...state,
+        launch: {
+          ...state.launch,
+          phase: 'dir-screen',
+          dirInput: '',
+          recentIndex: -1,
+        },
+      };
+    }
+
+    case 'LAUNCH_SET_DIR': {
+      if (state.launch.phase !== 'dir-screen') return state;
+      return {
+        ...state,
+        launch: {
+          ...state.launch,
+          dir: action.dir,
+          phase: 'bar',
+        },
+      };
+    }
+
+    case 'LAUNCH_DIR_INPUT_CHAR': {
+      if (state.launch.phase !== 'dir-screen') return state;
+      return {
+        ...state,
+        launch: {
+          ...state.launch,
+          dirInput: state.launch.dirInput + action.char,
+          recentIndex: -1,
+        },
+      };
+    }
+
+    case 'LAUNCH_DIR_BACKSPACE': {
+      if (state.launch.phase !== 'dir-screen') return state;
+      return {
+        ...state,
+        launch: {
+          ...state.launch,
+          dirInput: state.launch.dirInput.slice(0, -1),
+        },
+      };
+    }
+
+    case 'LAUNCH_DIR_TAB': {
+      if (state.launch.phase !== 'dir-screen') return state;
+      const { recentDirs, recentIndex } = state.launch;
+      if (recentDirs.length === 0) return state;
+      const nextIndex = (recentIndex + 1) % recentDirs.length;
+      return {
+        ...state,
+        launch: {
+          ...state.launch,
+          recentIndex: nextIndex,
+          dirInput: '',
+        },
+      };
+    }
+
+    case 'LAUNCH_DIR_PICK': {
+      if (state.launch.phase !== 'dir-screen') return state;
+      const picked = state.launch.recentDirs[action.index];
+      if (!picked) return state;
+      return {
+        ...state,
+        launch: {
+          ...state.launch,
+          dir: picked.path,
+          phase: 'bar',
+        },
+      };
+    }
+
+    case 'LAUNCH_CONFIRM': {
+      if (state.launch.phase !== 'bar') return state;
+      const hasErrors = state.launch.validationFindings.some((f) => f.severity === 'error');
+      if (hasErrors) return state;
+      return {
+        ...state,
+        launch: {
+          ...state.launch,
+          phase: 'launching',
+        },
+      };
+    }
+
+    case 'LAUNCH_SHOW_DRYRUN': {
+      if (state.launch.phase !== 'bar') return state;
+      return {
+        ...state,
+        launch: {
+          ...state.launch,
+          phase: 'dry-run',
+          dryRunPlan: action.plan,
+        },
+      };
+    }
+
+    case 'LAUNCH_SET_VALIDATION': {
+      return {
+        ...state,
+        launch: {
+          ...state.launch,
+          validationFindings: action.findings,
+        },
+      };
+    }
+
+    case 'LAUNCH_START': {
+      if (state.launch.phase !== 'dry-run') return state;
+      return {
+        ...state,
+        launch: {
+          ...state.launch,
+          phase: 'launching',
+        },
+      };
+    }
+
+    case 'LAUNCH_EXIT': {
+      if (state.launch.phase !== 'launching') return state;
+      return {
+        ...state,
+        launch: {
+          ...state.launch,
+          phase: 'exited',
+          exitCode: action.exitCode,
+        },
+      };
+    }
+
+    case 'LAUNCH_DISMISS': {
+      if (state.launch.phase === 'exited') {
+        return {
+          ...state,
+          launch: initialLaunchState(),
+        };
+      }
+      return state;
+    }
+
     default:
       return state;
   }
@@ -147,6 +362,11 @@ export const LIFECYCLE_ACTIONS = [
   { key: 'v', kind: 'validate' as const, labelKey: 'lifecycle.validate' as const },
   { key: 'b', kind: 'backup' as const, labelKey: 'lifecycle.backup' as const },
   { key: 'x', kind: 'remove' as const, labelKey: 'lifecycle.remove' as const },
+] as const;
+
+export const LAUNCH_ACTIONS = [
+  { key: 'l', labelKey: 'lifecycle.launch' as const },
+  { key: 'L', labelKey: 'lifecycle.launchDir' as const },
 ] as const;
 
 export const TEMPLATE_LIST = listProfileTemplates();

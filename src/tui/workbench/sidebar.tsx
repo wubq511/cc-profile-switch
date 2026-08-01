@@ -5,6 +5,7 @@ import { useI18n } from './i18n/react';
 import type { LocaleKey } from './i18n/en';
 import {
   LIFECYCLE_ACTIONS,
+  LAUNCH_ACTIONS,
   TEMPLATE_LIST,
   type LifecycleState,
   type LifecycleAction,
@@ -28,6 +29,8 @@ type SidebarProps = {
     input: string,
     selectedTemplate: string | null,
   ) => void;
+  onLaunchBar: (profileName: string) => void;
+  onLaunchDirScreen: (profileName: string) => void;
 };
 
 export function Sidebar({
@@ -41,6 +44,8 @@ export function Sidebar({
   lifecycle,
   onLifecycleAction,
   onAction,
+  onLaunchBar,
+  onLaunchDirScreen,
 }: SidebarProps): React.ReactElement {
   const { t } = useI18n();
   const { stdin: inkStdin } = useStdin();
@@ -59,6 +64,7 @@ export function Sidebar({
 
   const listHeight = Math.max(1, height - 4);
   const canUseInput = !headless && inkStdin.isTTY;
+  const launchActive = lifecycle.launch.phase !== 'idle';
 
   useInput((input: string, key: Record<string, boolean>) => {
     if (capture) return;
@@ -136,8 +142,25 @@ export function Sidebar({
       return;
     }
 
+    // Launch flow keys (only when idle and not in launch flow)
+    if (lifecycle.phase === 'idle' && !launchActive) {
+      const profile = filtered[filteredIndex(selectedIndex)];
+      if (profile) {
+        if (input === 'l') {
+          onLaunchBar(profile.name);
+          return;
+        }
+        if (input === 'L') {
+          onLaunchDirScreen(profile.name);
+          return;
+        }
+        // Note: 'd' is already used for 'default' in LIFECYCLE_ACTIONS.
+        // The dry-run key will be triggered from the pre-launch bar.
+      }
+    }
+
     // Lifecycle action keys (only when idle)
-    if (lifecycle.phase === 'idle') {
+    if (lifecycle.phase === 'idle' && !launchActive) {
       for (const act of LIFECYCLE_ACTIONS) {
         if (input === act.key) {
           const profile = filtered[filteredIndex(selectedIndex)];
@@ -196,6 +219,15 @@ export function Sidebar({
     return () => clearTimeout(timer);
   }, [lifecycle.phase, lifecycle.message]);
 
+  // Auto-dismiss launch exit flash after 3s
+  useEffect(() => {
+    if (lifecycle.launch.phase !== 'exited') return;
+    const timer = setTimeout(() => {
+      onLifecycleAction({ type: 'LAUNCH_DISMISS' });
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [lifecycle.launch.phase, lifecycle.launch.exitCode]);
+
   return React.createElement(
     Box,
     { flexDirection: 'column', width, borderStyle: 'single', borderRight: true },
@@ -247,13 +279,18 @@ export function Sidebar({
           ),
     ),
     // Lifecycle UI sections
-    lifecycle.phase === 'idle' && React.createElement(
+    lifecycle.phase === 'idle' && !launchActive && React.createElement(
       Box,
       { paddingX: 1, flexDirection: 'column' },
       React.createElement(
         Text,
         { dimColor: true },
         LIFECYCLE_ACTIONS.map((a) => `[${a.key}]${t(a.labelKey)}`).join(' '),
+      ),
+      React.createElement(
+        Text,
+        { dimColor: true },
+        LAUNCH_ACTIONS.map((a) => `[${a.key}]${t(a.labelKey)}`).join(' '),
       ),
     ),
     lifecycle.phase === 'prompting' && React.createElement(
