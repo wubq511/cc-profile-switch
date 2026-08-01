@@ -7,10 +7,9 @@ import type { WorkbenchProfile, ResourceCounts } from './profile-data';
 import type { ResourceNavState } from './resource-nav';
 import type {
   AgentFrontmatter,
-  UserMemoryDiff,
-  AgentsDiff,
   SearchResult,
 } from '../../core/resource';
+import type { ResourceDiffResult, DiffCategory } from '../../core/resource/diff-all';
 import type { EditSession } from '../../core/edit-session';
 import { ResourceMainPane } from './resource-main';
 import { WatchingBadge } from './edit-session/WatchingBadge';
@@ -32,7 +31,7 @@ type MainPaneProps = {
   editSession?: EditSession;
   sessionFor: (resourceName: string) => EditSession | undefined;
   content: string | null;
-  diff: UserMemoryDiff | AgentsDiff | null;
+  diff: ResourceDiffResult | null;
   drilledAgent: string | null;
   agentFrontmatter: AgentFrontmatter | null;
   searchResults: SearchResult[];
@@ -56,6 +55,26 @@ export const CATEGORY_COUNT = CATEGORIES.length;
 /** Category key at a given cursor index (mirrors the card grid order). */
 export function categoryKeyAt(index: number): (typeof CATEGORIES)[number]['key'] | undefined {
   return CATEGORIES[index]?.key;
+}
+
+/** Map a category card key to its diff presentation (spec §12); Auto Memory has no diff. */
+export function diffCategoryFor(key: CategoryKey): DiffCategory | undefined {
+  switch (key) {
+    case 'userMemory':
+      return 'user-memory';
+    case 'agents':
+      return 'agents';
+    case 'skills':
+      return 'skills';
+    case 'mcp':
+      return 'mcp';
+    case 'settings':
+      return 'settings';
+    case 'launchConfig':
+      return 'launch-config';
+    case 'autoMemory':
+      return undefined;
+  }
 }
 
 type CategoryDef = (typeof CATEGORIES)[number];
@@ -223,6 +242,7 @@ export function MainPane({
           ? t('empty.category.skills')
           : t('empty.category')
         : null;
+    const diffHint = diffCategoryFor(def.key) ? t('resource.diff.gridHint') : null;
 
     return React.createElement(
       Box,
@@ -239,6 +259,7 @@ export function MainPane({
       ),
       React.createElement(Text, null, `${count}`),
       drillHint && React.createElement(Text, { dimColor: true, wrap: 'wrap' }, drillHint),
+      diffHint && React.createElement(Text, { dimColor: true, wrap: 'wrap' }, diffHint),
       emptyLabel && React.createElement(Text, { dimColor: true, wrap: 'wrap' }, emptyLabel),
     );
   }
