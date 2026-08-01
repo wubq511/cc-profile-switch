@@ -1,5 +1,5 @@
 import type { ResourceCategory, SearchResult } from '../../core/resource/types';
-import { CATEGORIES } from './main-pane';
+import { CATEGORIES } from './categories';
 import type { WorkbenchProfile } from './profile-data';
 
 /**

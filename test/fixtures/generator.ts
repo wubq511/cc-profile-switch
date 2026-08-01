@@ -274,7 +274,8 @@ function normalizePathologies(ids: string[]): string[] {
 // App-home files
 // ---------------------------------------------------------------------------
 
-function buildAppHomeConfig(seed: number): unknown {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function buildAppHomeConfig(_seed: number): unknown {
   return {
     version: 2,
     defaultProfile: 'profile-001',
@@ -283,7 +284,6 @@ function buildAppHomeConfig(seed: number): unknown {
     updatedAt: FIXED_EPOCH,
     recovery: { retentionDays: 30 },
     workbench: { skillsDiscoveryExperimental: true },
-    _fixtureSeed: seed,
   };
 }
 
@@ -296,14 +296,14 @@ function buildApiSettings(seed: number): unknown {
   };
 }
 
-function buildAppState(seed: number): unknown {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function buildAppState(_seed: number): unknown {
   return {
     version: 1,
     recentProjectDirs: [
       { path: `${USERHOME_TOKEN}/fixture/project-a`, lastUsedAt: FIXED_EPOCH },
       { path: `${USERHOME_TOKEN}/fixture/project-b`, lastUsedAt: FIXED_EPOCH },
     ],
-    _fixtureSeed: seed,
   };
 }
 
