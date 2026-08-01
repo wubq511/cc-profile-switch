@@ -501,7 +501,7 @@ describe('Scenario matrix — Settings / MCP (S45–S57)', () => {
     const paths = getProfileTemplatePaths(appHome, 'coding');
     const settings = await fs.readJson(paths.settingsPath);
     settings.env = settings.env ?? {};
-    settings.env.ANTHROPIC_API_KEY = 'sk-ant-secret-value-never-show';
+    settings.env.ANTHROPIC_API_KEY = 'test-secret-value-never-show';
     await fs.writeJson(paths.settingsPath, settings);
 
     const inspect = await inspectSettings(appHome, 'coding');
@@ -513,7 +513,7 @@ describe('Scenario matrix — Settings / MCP (S45–S57)', () => {
     const secretEntry = preview.entries.find((e) => e.isSecret);
     if (secretEntry) {
       expect(secretEntry.displayValue).toBe('<redacted>');
-      expect(secretEntry.displayValue).not.toContain('sk-ant-secret');
+      expect(secretEntry.displayValue).not.toContain('test-secret');
     }
   });
 
@@ -872,20 +872,20 @@ describe('Scenario matrix — Safety / platform (S110–S124)', () => {
     const paths = getProfileTemplatePaths(appHome, 'coding');
     const settings = await fs.readJson(paths.settingsPath);
     settings.env = settings.env ?? {};
-    settings.env.ANTHROPIC_API_KEY = 'sk-ant-api03-never-appear-in-output';
+    settings.env.ANTHROPIC_API_KEY = 'test-cred-never-appear-in-output';
     await fs.writeJson(paths.settingsPath, settings);
 
     // Preview redacts
     const preview = await previewSettings(appHome, 'coding');
     const secretEntry = preview.entries.find((e) => e.isSecret);
     if (secretEntry) {
-      expect(secretEntry.displayValue).not.toContain('sk-ant-api03');
+      expect(secretEntry.displayValue).not.toContain('test-cred');
     }
 
     // Inspect shows key names only
     const inspect = await inspectSettings(appHome, 'coding');
     for (const key of inspect.keys) {
-      expect(key).not.toContain('sk-ant-api03');
+      expect(key).not.toContain('test-cred');
     }
   });
 
