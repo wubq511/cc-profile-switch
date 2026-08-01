@@ -714,7 +714,10 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
       'Collision resolution for file-tree/fragment items: refuse, restore-as-new-name, delete-and-restore.',
       'refuse',
     )
-    .option('--new-name <name>', 'New profile name when --resolve restore-as-new-name.')
+    .option(
+      '--new-name <name>',
+      'New name for the restored resource when --resolve restore-as-new-name (entry rename; new Profile name for profile-kind items).',
+    )
     .action(async (itemId: string, options: { resolve?: string; newName?: string }) => {
       const appHomePath = getAppHomePaths().appHomePath;
       const result = await restoreRecoveryItem({

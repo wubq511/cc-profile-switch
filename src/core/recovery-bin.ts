@@ -71,7 +71,12 @@ export type RestoreOptions = {
   appHomePath?: string;
   itemId: string;
   collisionResolution?: CollisionResolution;
-  /** Required when collisionResolution is 'restore-as-new-name'. */
+  /**
+   * Required when collisionResolution is 'restore-as-new-name'. Renames the
+   * entry within the same profile (last path segment for file-tree items, last
+   * keyPath segment for fragments). For kind 'profile' items it is the new
+   * profile name instead.
+   */
   newName?: string;
   /** Required to restore plugin-shape items; reinstall + re-apply state. */
   pluginRestore?: PluginRestoreHandler;
@@ -518,32 +523,58 @@ async function restoreFileTreeItem(
 ): Promise<void> {
   const coords = item.coordinates as FileTreeCoordinates;
   const profileDir = path.join(profilesPath, item.profile);
-  const targetPath = path.join(profileDir, coords.targetRelativePath);
   const resolution = options.collisionResolution ?? 'refuse';
+  const isProfileItem = item.kind === 'profile';
+
+  // Profile-kind payloads are whole profile trees recorded at
+  // `profiles/<name>`; the restore target is the profile directory itself,
+  // not a path inside it.
+  const baseTargetPath = isProfileItem
+    ? path.join(profilesPath, item.profile)
+    : path.join(profileDir, coords.targetRelativePath);
+
+  // restore-as-new-name targets a renamed location regardless of whether the
+  // original still exists: the caller asked for the new name explicitly.
+  let targetPath = baseTargetPath;
+
+  if (resolution === 'restore-as-new-name') {
+    const newName = requireNewName(options);
+
+    if (isProfileItem) {
+      // A whole-profile payload restores into a brand-new profile directory
+      // (spec §9.3 S13: recreate `coding`, restore as `coding-2`, both exist).
+      const newProfileDir = path.join(profilesPath, validateProfileName(newName));
+      if (await fs.pathExists(newProfileDir)) {
+        throw collisionError('A profile already exists with the new name.');
+      }
+      await fs.ensureDir(newProfileDir);
+      const payloadPath = path.join(item.itemDirPath, coords.targetRelativePath);
+      await fs.copy(payloadPath, newProfileDir, { overwrite: false, errorOnExist: true });
+      return;
+    }
+
+    // Resource-level rename: same profile, new name for the last path segment
+    // (spec §9.3: fragment/entry collisions resolve at entry level).
+    const newRelativePath = renameLastPathSegment(
+      coords.targetRelativePath,
+      assertSafeNewName(newName),
+    );
+    targetPath = path.join(profileDir, newRelativePath);
+    if (await fs.pathExists(targetPath)) {
+      throw collisionError('A resource already exists at the renamed restore target.');
+    }
+  }
 
   if (await fs.pathExists(targetPath)) {
     if (resolution === 'refuse') {
-      throw new CcpsError('RESTORE_COLLISION', 'A resource already exists at the restore target.', {
-        guidance: 'Use restore-as-new-name or delete-and-restore to resolve the collision.',
-      });
+      throw collisionError('A resource already exists at the restore target.');
     }
-
-    if (resolution === 'delete-and-restore') {
-      await autoBinExistingPath(targetPath, item.profile, appHomePath, clock);
-    } else if (resolution === 'restore-as-new-name') {
-      if (!options.newName) {
-        throw new CcpsError(
-          'RESTORE_NEW_NAME_REQUIRED',
-          'A new name is required for restore-as-new-name collision resolution.',
-          { guidance: 'Provide a new name for the restored resource.' },
-        );
-      }
-      const newProfileDir = path.join(profilesPath, options.newName);
-      const newTargetPath = path.join(newProfileDir, coords.targetRelativePath);
-      await fs.ensureDir(path.dirname(newTargetPath));
-      const payloadPath = path.join(item.itemDirPath, coords.targetRelativePath);
-      await fs.copy(payloadPath, newTargetPath, { overwrite: false, errorOnExist: true });
-      return;
+    // delete-and-restore: the conflicting entry becomes its own Recovery Item
+    // (spec §9.3 S14: a conflicting Profile becomes its own Bin item).
+    if (isProfileItem) {
+      await autoBinProfile(targetPath, item.profile, coords, appHomePath, clock);
+    } else {
+      await autoBinExistingPath(targetPath, item.profile, appHomePath, clock, item.kind);
     }
   }
 
@@ -557,50 +588,12 @@ async function restoreFragmentItem(
   profilesPath: string,
   appHomePath: string,
   options: RestoreOptions,
-  _clock: Clock,
+  clock: Clock,
 ): Promise<void> {
   const coords = item.coordinates as FragmentCoordinates;
   const profileDir = path.join(profilesPath, item.profile);
   const targetFilePath = path.join(profileDir, coords.file);
   const resolution = options.collisionResolution ?? 'refuse';
-
-  if (await fs.pathExists(targetFilePath)) {
-    const existing = await fs.readJson(targetFilePath);
-    const keyValue = getNestedValue(existing, coords.keyPath);
-
-    if (keyValue !== undefined && resolution === 'refuse') {
-      throw new CcpsError('RESTORE_COLLISION', 'The fragment key already exists in the target file.', {
-        guidance: 'Use delete-and-restore to replace the existing entry.',
-      });
-    }
-
-    if (keyValue !== undefined && resolution === 'delete-and-restore') {
-      await autoBinExistingFragment(targetFilePath, item.profile, coords.keyPath, keyValue, appHomePath, _clock);
-    }
-
-    if (keyValue !== undefined && resolution === 'restore-as-new-name') {
-      if (!options.newName) {
-        throw new CcpsError(
-          'RESTORE_NEW_NAME_REQUIRED',
-          'A new name is required for restore-as-new-name collision resolution.',
-          { guidance: 'Provide a new name for the restored resource.' },
-        );
-      }
-      // For fragments, restore-as-new-name writes to a file under the new profile
-      const newProfileDir = path.join(profilesPath, options.newName);
-      const newTargetFilePath = path.join(newProfileDir, coords.file);
-      let newTarget: Record<string, unknown>;
-      if (await fs.pathExists(newTargetFilePath)) {
-        newTarget = (await fs.readJson(newTargetFilePath)) as Record<string, unknown>;
-      } else {
-        newTarget = {};
-      }
-      setNestedValue(newTarget, coords.keyPath, coords.value);
-      await fs.ensureDir(path.dirname(newTargetFilePath));
-      await atomicWriteJson(newTargetFilePath, newTarget);
-      return;
-    }
-  }
 
   let target: Record<string, unknown>;
   if (await fs.pathExists(targetFilePath)) {
@@ -609,7 +602,34 @@ async function restoreFragmentItem(
     target = {};
   }
 
-  setNestedValue(target, coords.keyPath, coords.value);
+  // restore-as-new-name writes to a renamed key in the same file, regardless of
+  // whether the original key still exists — the caller asked for the new name.
+  const targetKey =
+    resolution === 'restore-as-new-name'
+      ? renameLastKeySegment(coords.keyPath, requireFragmentNewName(options))
+      : coords.keyPath;
+
+  const existingValue = getNestedValue(target, targetKey);
+  if (existingValue !== undefined) {
+    if (resolution === 'refuse') {
+      throw collisionError('The fragment key already exists in the target file.');
+    }
+    if (resolution === 'restore-as-new-name') {
+      throw collisionError('A fragment already exists at the renamed target key.');
+    }
+    // delete-and-restore: the conflicting entry becomes its own Recovery Item.
+    await autoBinExistingFragment(
+      targetFilePath,
+      item.profile,
+      targetKey,
+      existingValue,
+      appHomePath,
+      clock,
+      item.kind,
+    );
+  }
+
+  setNestedValue(target, targetKey, coords.value);
   await atomicWriteJson(targetFilePath, target);
 }
 
@@ -635,6 +655,7 @@ async function autoBinExistingPath(
   profile: string,
   appHomePath: string,
   clock: Clock,
+  kind: RecoveryItemKind,
 ): Promise<void> {
   const profilesPath = getAppHomePaths(appHomePath).profilesPath;
   const profileDir = path.join(profilesPath, profile);
@@ -650,7 +671,7 @@ async function autoBinExistingPath(
   await createFileTreeItem({
     appHomePath,
     origin: 'remove',
-    kind: 'skill',
+    kind,
     profile,
     coordinates: { targetRelativePath: relativePath },
     sourcePath: targetPath,
@@ -660,6 +681,28 @@ async function autoBinExistingPath(
   await fs.remove(targetPath);
 }
 
+async function autoBinProfile(
+  profileRoot: string,
+  profile: string,
+  coords: FileTreeCoordinates,
+  appHomePath: string,
+  clock: Clock,
+): Promise<void> {
+  // A conflicting Profile is binned with the same coordinates the original
+  // removal used, so it round-trips exactly like any other profile item.
+  await createFileTreeItem({
+    appHomePath,
+    origin: 'remove',
+    kind: 'profile',
+    profile,
+    coordinates: { targetRelativePath: coords.targetRelativePath },
+    sourcePath: profileRoot,
+    clock,
+  });
+
+  await fs.remove(profileRoot);
+}
+
 async function autoBinExistingFragment(
   filePath: string,
   profile: string,
@@ -667,6 +710,7 @@ async function autoBinExistingFragment(
   value: unknown,
   appHomePath: string,
   clock: Clock,
+  kind: RecoveryItemKind,
 ): Promise<void> {
   const profilesPath = getAppHomePaths(appHomePath).profilesPath;
   const profileDir = path.join(profilesPath, profile);
@@ -682,7 +726,7 @@ async function autoBinExistingFragment(
   await createFragmentItem({
     appHomePath,
     origin: 'remove',
-    kind: 'mcp-server',
+    kind,
     profile,
     coordinates: { file: relativeFilePath, keyPath, value },
     clock,
@@ -691,6 +735,71 @@ async function autoBinExistingFragment(
   const target = (await fs.readJson(filePath)) as Record<string, unknown>;
   deleteNestedValue(target, keyPath);
   await atomicWriteJson(filePath, target);
+}
+
+// ─── Collision helpers ─────────────────────────────────────────────────
+
+function requireNewName(options: RestoreOptions): string {
+  if (!options.newName) {
+    throw new CcpsError(
+      'RESTORE_NEW_NAME_REQUIRED',
+      'A new name is required for restore-as-new-name collision resolution.',
+      { guidance: 'Provide a new name for the restored resource.' },
+    );
+  }
+  return options.newName;
+}
+
+function requireFragmentNewName(options: RestoreOptions): string {
+  const newName = requireNewName(options);
+  assertSafeNewName(newName);
+  // Fragment key paths use dots as separators, so a dotted new name would
+  // silently create a nested key instead of a renamed one.
+  if (newName.includes('.')) {
+    throw new CcpsError('RESTORE_INVALID_NEW_NAME', 'The new name must not contain dots.', {
+      guidance: 'The fragment key path uses dots as separators; pick a plain name.',
+    });
+  }
+  return newName;
+}
+
+function assertSafeNewName(newName: string): string {
+  if (!newName || newName !== newName.trim()) {
+    throw invalidNewName();
+  }
+  if (newName === '.' || newName === '..') {
+    throw invalidNewName();
+  }
+  // Block any platform separator or NUL so the renamed target stays inside the
+  // profile directory even if the caller's name came from untrusted input.
+  if (newName.includes('/') || newName.includes('\\') || newName.includes('\0')) {
+    throw invalidNewName();
+  }
+  return newName;
+}
+
+function invalidNewName(): CcpsError {
+  return new CcpsError('RESTORE_INVALID_NEW_NAME', 'The new name is not safe.', {
+    guidance: 'Use a plain name with no path separators.',
+  });
+}
+
+function collisionError(message: string): CcpsError {
+  return new CcpsError('RESTORE_COLLISION', message, {
+    guidance: 'Use restore-as-new-name or delete-and-restore to resolve the collision.',
+  });
+}
+
+function renameLastPathSegment(relativePath: string, newName: string): string {
+  const sepIdx = Math.max(relativePath.lastIndexOf('/'), relativePath.lastIndexOf('\\'));
+  if (sepIdx === -1) return newName;
+  return `${relativePath.slice(0, sepIdx + 1)}${newName}`;
+}
+
+function renameLastKeySegment(keyPath: string, newName: string): string {
+  const sepIdx = keyPath.lastIndexOf('.');
+  if (sepIdx === -1) return newName;
+  return `${keyPath.slice(0, sepIdx + 1)}${newName}`;
 }
 
 // ─── Nested value helpers ───────────────────────────────────────────────
