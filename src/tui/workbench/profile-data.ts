@@ -2,6 +2,7 @@ import fs from 'fs-extra';
 import { join } from 'node:path';
 
 import { getAppHomePaths } from '../../core/app-config';
+import { listCustomTemplates } from '../../core/custom-template';
 import {
   listProfilesForDisplay,
   type ProfileSummary,
@@ -43,9 +44,17 @@ export type ResourceDetails = {
   launchConfig: number;
 };
 
+export type CustomTemplateSummary = {
+  name: string;
+  description?: string;
+  sourceProfile: string;
+};
+
 export type WorkbenchData = {
   profiles: WorkbenchProfile[];
   defaultProfile: string | undefined;
+  /** Custom templates listed alongside the built-ins in the create flow (§11.3). */
+  customTemplates: CustomTemplateSummary[];
 };
 
 export async function loadWorkbenchData(appHomePath?: string): Promise<WorkbenchData> {
@@ -99,7 +108,14 @@ export async function loadWorkbenchData(appHomePath?: string): Promise<Workbench
 
   const defaultProfile = profiles.find((p) => p.isDefault)?.name;
 
-  return { profiles, defaultProfile };
+  let customTemplates: CustomTemplateSummary[] = [];
+  try {
+    customTemplates = await listCustomTemplates(paths.appHomePath);
+  } catch {
+    // custom-template listing failure is non-fatal for the workbench display
+  }
+
+  return { profiles, defaultProfile, customTemplates };
 }
 
 async function countResources(appHomePath: string, profileName: string, mcpCount: number): Promise<ResourceCounts> {

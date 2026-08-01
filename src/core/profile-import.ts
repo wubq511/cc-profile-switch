@@ -26,6 +26,7 @@ import { profileConfigSchema, type ProfileConfig } from '../schemas/profile';
 import {
   bundleManifestSchema,
   type BundleManifest,
+  type BundleStrippedKeys,
 } from '../schemas/profile-bundle';
 import type { McpAddOptions } from '../schemas/mcp';
 import { CcpsError } from '../utils/errors';
@@ -301,13 +302,13 @@ async function applyImport(args: ApplyImportArgs): Promise<ImportResult> {
     profileRootPath: targetPaths.profileRootPath,
     manifest,
     mcpServers,
-    settingsSecretKeysToReenter: collectSettingsSecretKeys(manifest),
-    legacyMcpEnvKeysToReenter: collectLegacyMcpEnvKeys(manifest),
+    settingsSecretKeysToReenter: collectSettingsSecretKeys(manifest.strippedKeys),
+    legacyMcpEnvKeysToReenter: collectLegacyMcpEnvKeys(manifest.strippedKeys),
     validation,
   };
 }
 
-async function clearNativeMcpServers(stagingProfile: string): Promise<void> {
+export async function clearNativeMcpServers(stagingProfile: string): Promise<void> {
   const claudeJsonPath = getClaudeJsonPath(stagingProfile);
   if (!(await fs.pathExists(claudeJsonPath))) {
     return;
@@ -317,7 +318,7 @@ async function clearNativeMcpServers(stagingProfile: string): Promise<void> {
   await atomicWriteJson(claudeJsonPath, { mcpServers: {} });
 }
 
-async function repairImportedProfile(
+export async function repairImportedProfile(
   paths: ProfileTemplatePaths,
   targetName: string,
   clock: Clock = () => new Date(),
@@ -374,7 +375,7 @@ async function repairImportedProfile(
   await ensureCcpsProfileRule(paths.ccpsProfileRulePath);
 }
 
-async function reRegisterMcpServers(
+export async function reRegisterMcpServers(
   profileRootPath: string,
   servers: Map<string, Record<string, unknown>>,
   captureProcess?: CaptureProcess,
@@ -427,12 +428,12 @@ async function reRegisterMcpServers(
   return results;
 }
 
-function collectSettingsSecretKeys(manifest: BundleManifest): string[] {
+export function collectSettingsSecretKeys(strippedKeys: BundleStrippedKeys[]): string[] {
   // In default mode, settings.json env.ANTHROPIC_* values are `<redacted>`
   // placeholders; list their key names for guided re-entry. In includeSecrets
   // mode strippedKeys is empty (values traveled raw), so nothing to re-enter.
   const keys: string[] = [];
-  for (const entry of manifest.strippedKeys) {
+  for (const entry of strippedKeys) {
     if (entry.scope === 'settings-env') {
       keys.push(...entry.keys);
     }
@@ -440,13 +441,13 @@ function collectSettingsSecretKeys(manifest: BundleManifest): string[] {
   return [...new Set(keys)].sort((a, b) => a.localeCompare(b));
 }
 
-function collectLegacyMcpEnvKeys(
-  manifest: BundleManifest,
+export function collectLegacyMcpEnvKeys(
+  strippedKeys: BundleStrippedKeys[],
 ): { server: string; keys: string[] }[] {
   // Legacy root mcp.json travels as-is with `<redacted>` env placeholders; list
   // per-server key names so the user can re-enter them.
   const out: { server: string; keys: string[] }[] = [];
-  for (const entry of manifest.strippedKeys) {
+  for (const entry of strippedKeys) {
     if (entry.scope === 'mcp-env' && entry.file === 'mcp.json' && entry.mcpServer) {
       out.push({ server: entry.mcpServer, keys: [...entry.keys] });
     }

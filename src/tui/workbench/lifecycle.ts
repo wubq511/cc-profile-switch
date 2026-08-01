@@ -1,4 +1,4 @@
-import { listProfileTemplates, type ProfileTemplateName } from '../../core/profile-template';
+import { listProfileTemplates } from '../../core/profile-template';
 import type { LaunchPlan } from '../../core/launcher';
 import type { ValidationFinding } from '../../core/validator';
 
@@ -9,7 +9,8 @@ export type LifecyclePromptKind =
   | 'remove'
   | 'validate'
   | 'backup'
-  | 'default';
+  | 'default'
+  | 'save-template';
 
 export type LaunchPhase =
   | 'idle'
@@ -38,7 +39,10 @@ export type LifecycleState = {
   profileName: string;
   input: string;
   step: number;
-  selectedTemplate: ProfileTemplateName | null;
+  /** Built-in template name or custom template name selected in the create flow. */
+  selectedTemplate: string | null;
+  /** Stripping summary shown on the save-template confirm panel (§11.3). */
+  templateSummary: { strippedCount: number; autoMemoryExcluded: boolean } | null;
   message: string;
   /** Monotonic counter carried by success/error flashes (generation guard). */
   messageId: number;
@@ -74,9 +78,13 @@ export type LifecycleAction =
   | { type: 'CONFIRM_CHOICE' }
   | { type: 'INPUT_CHAR'; char: string }
   | { type: 'BACKSPACE' }
-  | { type: 'SELECT_TEMPLATE'; templateName: ProfileTemplateName }
+  | { type: 'SELECT_TEMPLATE'; templateName: string }
   | { type: 'NEXT_STEP' }
   | { type: 'SUBMIT' }
+  | {
+      type: 'SHOW_TEMPLATE_SUMMARY';
+      summary: { strippedCount: number; autoMemoryExcluded: boolean };
+    }
   | { type: 'CANCEL' }
   | { type: 'EXECUTE_SUCCESS'; message: string }
   | { type: 'EXECUTE_ERROR'; message: string; code?: string; guidance?: string }
@@ -105,6 +113,7 @@ export function initialLifecycleState(): LifecycleState {
     input: '',
     step: 1,
     selectedTemplate: null,
+    templateSummary: null,
     message: '',
     messageId: 0,
     errorCode: undefined,
@@ -185,6 +194,15 @@ export function lifecycleReducer(state: LifecycleState, action: LifecycleAction)
     case 'SUBMIT': {
       if (state.phase !== 'prompting') return state;
       return { ...state, phase: 'executing' };
+    }
+
+    case 'SHOW_TEMPLATE_SUMMARY': {
+      // Save-template flow: SUBMIT ran the stripping preview (prompting →
+      // executing), then this moves to the light-confirm panel with the
+      // summary. The template name stays in `input`; nothing is saved yet.
+      if (state.kind !== 'save-template') return state;
+      if (state.phase !== 'prompting' && state.phase !== 'executing') return state;
+      return { ...state, phase: 'confirm', templateSummary: action.summary };
     }
 
     case 'CANCEL': {
@@ -393,6 +411,7 @@ export const LIFECYCLE_ACTIONS = [
   { key: 'd', kind: 'default' as const, labelKey: 'lifecycle.default' as const },
   { key: 'v', kind: 'validate' as const, labelKey: 'lifecycle.validate' as const },
   { key: 'b', kind: 'backup' as const, labelKey: 'lifecycle.backup' as const },
+  { key: 's', kind: 'save-template' as const, labelKey: 'lifecycle.saveTemplate' as const },
   { key: 'x', kind: 'remove' as const, labelKey: 'lifecycle.remove' as const },
 ] as const;
 

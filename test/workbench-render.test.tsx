@@ -31,6 +31,7 @@ function dummyStdin(): Readable {
 const emptyData: WorkbenchData = {
   profiles: [],
   defaultProfile: undefined,
+  customTemplates: [],
 };
 
 const sampleData: WorkbenchData = {
@@ -78,6 +79,7 @@ const sampleData: WorkbenchData = {
     },
   ],
   defaultProfile: 'coding',
+  customTemplates: [],
 };
 
 describe('Workbench render', () => {
@@ -156,6 +158,7 @@ describe('Workbench render', () => {
     expect(output).toContain('[d]');
     expect(output).toContain('[v]');
     expect(output).toContain('[b]');
+    expect(output).toContain('[s]');
     expect(output).toContain('[x]');
     // Skill install entry point (issue #64, spec §7.2)
     expect(output).toContain('[a]');

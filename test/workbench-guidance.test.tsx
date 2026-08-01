@@ -1,19 +1,33 @@
 import { Readable, Writable } from 'node:stream';
+import fs from 'fs-extra';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path, { join } from 'node:path';
 
 import React from 'react';
 import { Box, Text, render } from 'ink';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { WorkbenchApp, resetWelcomeSessionForTests } from '../src/tui/workbench/app';
 import { MainPane } from '../src/tui/workbench/main-pane';
 import { initialResourceNavState } from '../src/tui/workbench/resource-nav';
 import { I18nProvider } from '../src/tui/workbench/i18n/react';
 import { KeymapOverlay } from '../src/tui/workbench/keymap';
+import { createAppConfig } from '../src/core/app-config';
+import {
+  listCustomTemplates,
+  saveProfileAsTemplate,
+} from '../src/core/custom-template';
+import {
+  createProfileFromTemplate,
+  getProfileTemplatePaths,
+} from '../src/core/profile-template';
 import {
   ErrorPanel,
   HintsProvider,
   NoMatchEmptyState,
   RemoveProfilePanel,
+  SaveTemplatePanel,
   ZeroProfilesEmptyState,
   useHints,
   type HintsApi,
@@ -92,6 +106,7 @@ const codingProfile: WorkbenchProfile = {
 const sampleData: WorkbenchData = {
   profiles: [codingProfile],
   defaultProfile: 'coding',
+  customTemplates: [],
 };
 
 function stripAnsi(text: string): string {
@@ -246,6 +261,49 @@ describe('destructive panel', () => {
   });
 });
 
+describe('save-template panel', () => {
+  it('renders the stripping summary with a single light [y]/[esc] confirm (S102)', async () => {
+    const stdout = new FakeTtyStdout();
+    const instance = await renderTree(
+      React.createElement(
+        I18nProvider,
+        { initialLocale: 'en' },
+        React.createElement(SaveTemplatePanel, {
+          templateName: 'team-base',
+          strippedCount: 3,
+        }),
+      ),
+      stdout,
+    );
+    const output = stripAnsi(stdout.output);
+    expect(output).toContain('Save template "team-base"?');
+    expect(output).toContain('3 secret fields stripped, Auto Memory not included');
+    expect(output).toContain('[y] save template');
+    expect(output).toContain('[esc] cancel');
+    instance.unmount();
+    await instance.waitUntilExit();
+  });
+
+  it('renders the stripping summary in Chinese', async () => {
+    const stdout = new FakeTtyStdout();
+    const instance = await renderTree(
+      React.createElement(
+        I18nProvider,
+        { initialLocale: 'zh' },
+        React.createElement(SaveTemplatePanel, {
+          templateName: 'team-base',
+          strippedCount: 2,
+        }),
+      ),
+      stdout,
+    );
+    const output = stripAnsi(stdout.output);
+    expect(output).toContain('已剔除 2 个机密字段，不包含 Auto Memory');
+    instance.unmount();
+    await instance.waitUntilExit();
+  });
+});
+
 describe('hint retirement', () => {
   let hintApi: HintsApi | null = null;
 
@@ -301,7 +359,7 @@ describe('empty states', () => {
     const stdout = new FakeTtyStdout();
     const instance = await renderTree(
       React.createElement(WorkbenchApp, {
-        data: { profiles: [], defaultProfile: undefined },
+        data: { profiles: [], defaultProfile: undefined, customTemplates: [] },
         initialLocale: 'en',
         headless: true,
         skipWelcome: true,
@@ -409,6 +467,7 @@ describe('failed-MCP amber nudge', () => {
         { ...codingProfile, mcpServers: ['filesystem', 'browser'] },
       ],
       defaultProfile: 'coding',
+      customTemplates: [],
     };
     const probe: (appHomePath: string, profileName: string) => Promise<McpServerState[]> = async () => [
       { name: 'filesystem', failed: false },
@@ -437,6 +496,7 @@ describe('failed-MCP amber nudge', () => {
     const data: WorkbenchData = {
       profiles: [{ ...codingProfile, mcpServers: ['filesystem'] }],
       defaultProfile: 'coding',
+      customTemplates: [],
     };
     const probe: (appHomePath: string, profileName: string) => Promise<McpServerState[]> = async () => [
       { name: 'filesystem', failed: false },
@@ -511,7 +571,7 @@ describe('keypress guidance flows', () => {
     resetWelcomeSessionForTests();
     const { instance, stdout, stdin } = await renderInteractive(
       React.createElement(WorkbenchApp, {
-        data: { profiles: [], defaultProfile: undefined },
+        data: { profiles: [], defaultProfile: undefined, customTemplates: [] },
         initialLocale: 'en',
         skipWelcome: true,
       }),
@@ -522,6 +582,31 @@ describe('keypress guidance flows', () => {
     await waitForOutputSettled(stdout, nBaseline);
     const output = stripAnsi(stdout.output);
     expect(output).toContain('Select template:');
+    instance.unmount();
+    await instance.waitUntilExit();
+  });
+
+  it('create picker lists custom templates after the built-ins with a source distinction (S102)', async () => {
+    resetWelcomeSessionForTests();
+    const dataWithTemplate: WorkbenchData = {
+      ...sampleData,
+      customTemplates: [{ name: 'team-base', sourceProfile: 'coding' }],
+    };
+    const { instance, stdout, stdin } = await renderInteractive(
+      React.createElement(WorkbenchApp, {
+        data: dataWithTemplate,
+        initialLocale: 'en',
+        skipWelcome: true,
+      }),
+    );
+    const nBaseline = stdout.output;
+    stdin.press('n');
+    await waitForOutputSettled(stdout, nBaseline);
+    const output = flatten(stripAnsi(stdout.output));
+    expect(output).toContain('Select template:');
+    expect(output).toContain('Built-in');
+    expect(output).toContain('Custom');
+    expect(output).toContain('team-base (custom)');
     instance.unmount();
     await instance.waitUntilExit();
   });
@@ -587,5 +672,229 @@ describe('keypress guidance flows', () => {
     expect(flatten(stripAnsi(stdout.output))).not.toContain('search covers profile names');
     instance.unmount();
     await instance.waitUntilExit();
+  });
+
+  // S102–S104 end-to-end journeys: the Workbench drives the real core
+  // services against a tmp app home (HOME override), so the picker, the
+  // zero-confirm removal, and the create/save flashes are pinned for real.
+  // The fixture profile carries one settings secret and NO MCP servers, so
+  // create never shells out to the `claude` binary.
+  describe('custom template journeys (S102-S104)', () => {
+    const TEMPLATE_FIXED_CLOCK = () => new Date('2026-08-01T00:00:00Z');
+    const tempRoots: string[] = [];
+
+    afterEach(async () => {
+      await Promise.allSettled(tempRoots.map((root) => rm(root, { recursive: true, force: true })));
+      tempRoots.length = 0;
+    });
+
+    async function makeRealAppHome(): Promise<{ userHome: string; appHome: string }> {
+      const root = await mkdtemp(join(tmpdir(), 'ccps-wb-template-'));
+      tempRoots.push(root);
+      const userHome = path.join(root, 'userhome');
+      const appHome = path.join(userHome, '.cc-profile-switch');
+      await createAppConfig(appHome, { clock: TEMPLATE_FIXED_CLOCK });
+      await createProfileFromTemplate({
+        appHomePath: appHome,
+        name: 'coding',
+        template: 'coding',
+        clock: TEMPLATE_FIXED_CLOCK,
+      });
+      const paths = getProfileTemplatePaths(appHome, 'coding');
+      await fs.writeJson(paths.settingsPath, {
+        autoMemoryDirectory: paths.autoMemoryPath,
+        claudeMdExcludes: [],
+        env: {
+          ANTHROPIC_API_KEY: 'sk-ant-secret-token-123',
+          CLAUDE_CODE_ATTRIBUTION_HEADER: '0',
+        },
+      });
+      return { userHome, appHome };
+    }
+
+    /** Run `fn` with HOME pointed at the tmp user home, then restore. */
+    async function withHome<T>(userHome: string, fn: () => Promise<T>): Promise<T> {
+      const originalHome = process.env.HOME;
+      process.env.HOME = userHome;
+      try {
+        return await fn();
+      } finally {
+        process.env.HOME = originalHome;
+      }
+    }
+
+    async function pressEach(stdin: FakeTtyStdin, stdout: FakeTtyStdout, chars: string): Promise<void> {
+      for (const ch of chars) {
+        const baseline = stdout.output;
+        stdin.press(ch);
+        await waitForOutputSettled(stdout, baseline);
+      }
+    }
+
+    /** Poll until a marker renders. Async core-service transitions (preview /
+     * save / create / remove) land frames after the 20ms settle window of
+     * waitForOutputSettled, so those steps must wait on content, not quiet. */
+    async function waitForOutputContaining(
+      stdout: FakeTtyStdout,
+      marker: string,
+      timeoutMs = 5000,
+    ): Promise<void> {
+      const deadline = Date.now() + timeoutMs;
+      while (Date.now() < deadline) {
+        if (stripAnsi(stdout.output).includes(marker)) {
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      throw new Error(`Timed out waiting for output containing: ${marker}`);
+    }
+
+    async function openPickerAtCustomRow(
+      stdin: FakeTtyStdin,
+      stdout: FakeTtyStdout,
+    ): Promise<void> {
+      let baseline = stdout.output;
+      stdin.press('n');
+      await waitForOutputSettled(stdout, baseline);
+      // 5 built-ins (coding/study/work/research/general) precede the custom row.
+      for (let i = 0; i < 5; i++) {
+        baseline = stdout.output;
+        stdin.press('\x1b[B');
+        await waitForOutputSettled(stdout, baseline);
+      }
+    }
+
+    it('S104: x on a custom picker row removes it with no confirm; built-in rows ignore x', async () => {
+      const { userHome, appHome } = await makeRealAppHome();
+      await saveProfileAsTemplate({
+        appHomePath: appHome,
+        profileName: 'coding',
+        templateName: 'team-base',
+        clock: TEMPLATE_FIXED_CLOCK,
+      });
+
+      await withHome(userHome, async () => {
+        resetWelcomeSessionForTests();
+        const data: WorkbenchData = {
+          ...sampleData,
+          customTemplates: [{ name: 'team-base', sourceProfile: 'coding' }],
+        };
+        const { instance, stdout, stdin } = await renderInteractive(
+          React.createElement(WorkbenchApp, { data, initialLocale: 'en', skipWelcome: true }),
+        );
+
+        // Open the picker; x on the highlighted built-in row (index 0) is a no-op.
+        let baseline = stdout.output;
+        stdin.press('n');
+        await waitForOutputSettled(stdout, baseline);
+        expect(flatten(stripAnsi(stdout.output))).toContain('team-base (custom)');
+        stdin.press('x');
+        // Nothing re-renders for a no-op: fixed settle window, then assert.
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        expect(await listCustomTemplates(appHome)).toHaveLength(1);
+        expect(flatten(stripAnsi(stdout.output))).toContain('Select template:');
+        expect(stripAnsi(stdout.output)).not.toContain('removed');
+
+        // Highlight the custom row (5 built-ins down): removal hint appears.
+        for (let i = 0; i < 5; i++) {
+          baseline = stdout.output;
+          stdin.press('\x1b[B');
+          await waitForOutputSettled(stdout, baseline);
+        }
+        expect(flatten(stripAnsi(stdout.output))).toContain('[x] remove this template');
+
+        // x removes it with NO confirm panel (zero-confirm, S104).
+        stdout.snapshot();
+        stdin.press('x');
+        await waitForOutputContaining(stdout, 'Template "team-base" removed');
+        const frame = flatten(stripAnsi(stdout.output));
+        expect(frame).not.toContain('[y]');
+        expect(frame).toContain('Template "team-base" removed');
+        expect(await listCustomTemplates(appHome)).toHaveLength(0);
+        instance.unmount();
+        await instance.waitUntilExit();
+      });
+    });
+
+    it('S103: create from a custom template flashes the guided re-entry keys', async () => {
+      const { userHome, appHome } = await makeRealAppHome();
+      await saveProfileAsTemplate({
+        appHomePath: appHome,
+        profileName: 'coding',
+        templateName: 'team-base',
+        clock: TEMPLATE_FIXED_CLOCK,
+      });
+
+      await withHome(userHome, async () => {
+        resetWelcomeSessionForTests();
+        const data: WorkbenchData = {
+          ...sampleData,
+          customTemplates: [{ name: 'team-base', sourceProfile: 'coding' }],
+        };
+        const { instance, stdout, stdin } = await renderInteractive(
+          React.createElement(WorkbenchApp, { data, initialLocale: 'en', skipWelcome: true }),
+        );
+
+        await openPickerAtCustomRow(stdin, stdout);
+        // Select the custom row → step 2 name prompt.
+        const selectBaseline = stdout.output;
+        stdin.press('\r');
+        await waitForOutputSettled(stdout, selectBaseline);
+        expect(stripAnsi(stdout.output)).toContain('Profile name:');
+
+        await pressEach(stdin, stdout, 'fresh');
+        stdin.press('\r');
+        await waitForOutputContaining(stdout, 'created from template "team-base"');
+        const frame = flatten(stripAnsi(stdout.output));
+        expect(frame).toContain('"fresh" created from template "team-base"');
+        expect(frame).toContain('Re-enter 1 secret keys: ANTHROPIC_API_KEY');
+        // The profile really landed in the tmp app home.
+        expect(
+          await fs.pathExists(getProfileTemplatePaths(appHome, 'fresh').profileRootPath),
+        ).toBe(true);
+        instance.unmount();
+        await instance.waitUntilExit();
+      });
+    });
+
+    it('S102: s saves the profile as a template after the stripping-summary confirm', async () => {
+      const { userHome, appHome } = await makeRealAppHome();
+
+      await withHome(userHome, async () => {
+        resetWelcomeSessionForTests();
+        const { instance, stdout, stdin } = await renderInteractive(
+          React.createElement(WorkbenchApp, { data: sampleData, initialLocale: 'en', skipWelcome: true }),
+        );
+
+        // [s] opens the template-name prompt for the selected profile.
+        const saveBaseline = stdout.output;
+        stdin.press('s');
+        await waitForOutputSettled(stdout, saveBaseline);
+        expect(stripAnsi(stdout.output)).toContain('Template name:');
+
+        await pressEach(stdin, stdout, 'my-tpl');
+        stdin.press('\r');
+        await waitForOutputContaining(stdout, 'Save template "my-tpl"?');
+        // Light-confirm panel with the stripping summary — nothing saved yet.
+        let frame = flatten(stripAnsi(stdout.output));
+        expect(frame).toContain('Save template "my-tpl"?');
+        expect(frame).toContain('1 secret fields stripped, Auto Memory not included');
+        expect(frame).toContain('[y] save template');
+        expect(await listCustomTemplates(appHome)).toHaveLength(0);
+
+        // [y] saves the stripped template.
+        stdin.press('y');
+        await waitForOutputContaining(stdout, 'Template "my-tpl" saved');
+        frame = flatten(stripAnsi(stdout.output));
+        expect(frame).toContain('Template "my-tpl" saved');
+        expect((await listCustomTemplates(appHome)).map((t) => t.name)).toEqual(['my-tpl']);
+        const savedSettings = await fs.readJson(
+          path.join(appHome, 'templates', 'my-tpl', 'profile', 'claude-home', 'settings.json'),
+        );
+        expect(savedSettings.env.ANTHROPIC_API_KEY).toBe('<redacted>');
+        instance.unmount();
+        await instance.waitUntilExit();
+      });
+    });
   });
 });

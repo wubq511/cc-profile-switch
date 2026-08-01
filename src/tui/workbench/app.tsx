@@ -62,8 +62,15 @@ import {
   type ResourceNavState,
 } from './resource-nav';
 import {
+  createProfileFromCustomTemplate,
+  previewSaveProfileAsTemplate,
+  removeCustomTemplate,
+  saveProfileAsTemplate,
+} from '../../core/custom-template';
+import {
   initialLifecycleState,
   lifecycleReducer,
+  TEMPLATE_LIST,
   type LifecycleAction,
   type LifecyclePromptKind,
   type LaunchState,
@@ -80,7 +87,7 @@ import { DirectoryScreen } from './launch/directory-screen';
 import { DryRunPage } from './launch/dry-run-page';
 import { InstallWizard } from './skills/install-wizard';
 import { AutoMemoryView } from './resources/auto-memory-view';
-import { ErrorPanel, HintsProvider, RemoveProfilePanel, useHints } from './guidance';
+import { ErrorPanel, HintsProvider, RemoveProfilePanel, SaveTemplatePanel, useHints } from './guidance';
 
 type DrillDown = { kind: 'none' } | { kind: 'autoMemory' };
 
@@ -463,6 +470,18 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe }: { d
       // refresh failure is non-fatal
     }
   }, [appHomePath]);
+
+  // Zero-confirm removal of a user-created template (S104), same flash pattern
+  // as the other zero-confirm resource removals.
+  const handleRemoveCustomTemplate = useCallback(async (templateName: string) => {
+    try {
+      await removeCustomTemplate({ appHomePath, templateName });
+      flash(t('lifecycle.success.templateRemoved').replace('{name}', templateName));
+      await refreshData();
+    } catch (error) {
+      flash(error instanceof Error ? error.message : String(error));
+    }
+  }, [appHomePath, flash, refreshData, t]);
 
   const openPreview = useCallback(async () => {
     const profile = currentProfile();
@@ -994,12 +1013,73 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe }: { d
 
     try {
       if (kind === 'create') {
-        await createProfile({
+        const customTemplate = workbenchData.customTemplates.find((c) => c.name === selectedTemplate);
+        if (customTemplate) {
+          // Create from a custom template (§11.3): stripped tree lands, MCP
+          // servers re-register via delegation, secret keys need re-entry.
+          const result = await createProfileFromCustomTemplate({
+            appHomePath,
+            templateName: customTemplate.name,
+            name: input,
+          });
+          const reenterKeys = [...new Set([
+            ...result.settingsSecretKeysToReenter,
+            ...result.mcpServers.flatMap((s) => s.envKeysToReenter),
+            ...result.legacyMcpEnvKeysToReenter.flatMap((s) => s.keys),
+          ])].sort((a, b) => a.localeCompare(b));
+          const failedServers = result.mcpServers.filter((s) => !s.reRegistered).map((s) => s.name);
+          const parts = [
+            t('lifecycle.success.createdFromTemplate')
+              .replace('{name}', input)
+              .replace('{template}', customTemplate.name),
+          ];
+          if (reenterKeys.length > 0) {
+            parts.push(
+              t('template.reenterSecrets')
+                .replace('{count}', String(reenterKeys.length))
+                .replace('{keys}', reenterKeys.join(', ')),
+            );
+          }
+          if (failedServers.length > 0) {
+            parts.push(t('template.mcpFailed').replace('{names}', failedServers.join(', ')));
+          }
+          setLifecycle((prev) => lifecycleReducer(prev, { type: 'EXECUTE_SUCCESS', message: parts.join('. ') }));
+        } else {
+          // A stale picker selection that matches nothing falls back to the
+          // default built-in rather than crashing the create.
+          const template = (TEMPLATE_LIST as string[]).includes(selectedTemplate ?? '')
+            ? (selectedTemplate as ProfileTemplateName)
+            : 'general';
+          await createProfile({
+            appHomePath,
+            name: input,
+            template,
+          });
+          setLifecycle((prev) => lifecycleReducer(prev, { type: 'EXECUTE_SUCCESS', message: `"${input}" ${t('lifecycle.success.created')}` }));
+        }
+      } else if (kind === 'save-template') {
+        if (action.type === 'SUBMIT') {
+          // Preview only — nothing is saved until the confirm panel's [y].
+          const preview = await previewSaveProfileAsTemplate({ appHomePath, profileName });
+          setLifecycle((prev) => lifecycleReducer(prev, {
+            type: 'SHOW_TEMPLATE_SUMMARY',
+            summary: {
+              strippedCount: preview.strippedCount,
+              autoMemoryExcluded: preview.autoMemoryExcluded,
+            },
+          }));
+          return;
+        }
+        // CONFIRM_CHOICE: the user accepted the stripping summary — save now.
+        const { manifest } = await saveProfileAsTemplate({
           appHomePath,
-          name: input,
-          template: (selectedTemplate ?? 'general') as ProfileTemplateName,
+          profileName,
+          templateName: input,
         });
-        setLifecycle((prev) => lifecycleReducer(prev, { type: 'EXECUTE_SUCCESS', message: `"${input}" ${t('lifecycle.success.created')}` }));
+        setLifecycle((prev) => lifecycleReducer(prev, {
+          type: 'EXECUTE_SUCCESS',
+          message: t('lifecycle.success.templateSaved').replace('{name}', manifest.name),
+        }));
       } else if (kind === 'copy') {
         await copyProfile({ appHomePath, from: profileName, to: input });
         setLifecycle((prev) => lifecycleReducer(prev, { type: 'EXECUTE_SUCCESS', message: `${t('lifecycle.success.copiedTo')} "${input}"` }));
@@ -1069,6 +1149,13 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe }: { d
       setLifecycle((prev) => lifecycleReducer(prev, { type: 'CANCEL' }));
       return;
     }
+    if (lifecycle.kind === 'save-template') {
+      // Light confirm (§11.3): [y] saves the template; [u] has no meaning here.
+      if (input === 'y') {
+        confirmSaveTemplate();
+      }
+      return;
+    }
     if (input === 'y') {
       confirmRemove(false);
       return;
@@ -1077,6 +1164,17 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe }: { d
       confirmRemove(true);
       return;
     }
+  }, [lifecycle, handleLifecycleAction]);
+
+  const confirmSaveTemplate = useCallback(() => {
+    setLifecycle((prev) => lifecycleReducer(prev, { type: 'CONFIRM_CHOICE' }));
+    // lifecycle.input still holds the template name typed in the prompt.
+    void handleLifecycleAction(
+      { type: 'CONFIRM_CHOICE' },
+      lifecycle.profileName,
+      lifecycle.input,
+      null,
+    );
   }, [lifecycle, handleLifecycleAction]);
 
   const confirmRemove = useCallback((noBackup: boolean) => {
@@ -1336,11 +1434,13 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe }: { d
                     lifecycle,
                     wizardOpen,
                     resourceNavActive: resourceNav.phase !== 'idle',
+                    customTemplates: workbenchData.customTemplates,
                     onLifecycleAction,
                     onAction: handleLifecycleAction,
                     onLaunchBar: handleLaunchBar,
                     onLaunchDirScreen: handleLaunchDirScreen,
                     onAddSkill: handleAddSkill,
+                    onRemoveCustomTemplate: handleRemoveCustomTemplate,
                   }),
                   drillDown.kind === 'autoMemory' && selectedProfile
                     ? React.createElement(AutoMemoryView, {
@@ -1394,8 +1494,16 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe }: { d
 
   // Guidance dialogs: full-width, flexShrink=0 so they never shrink-clip (#29).
   function renderGuidanceDialogs(): React.ReactElement | null {
-    if (lifecycle.phase === 'confirm' && selectedProfile) {
-      return React.createElement(RemoveProfilePanel, { profile: selectedProfile });
+    if (lifecycle.phase === 'confirm') {
+      if (lifecycle.kind === 'save-template') {
+        return React.createElement(SaveTemplatePanel, {
+          templateName: lifecycle.input,
+          strippedCount: lifecycle.templateSummary?.strippedCount ?? 0,
+        });
+      }
+      if (selectedProfile) {
+        return React.createElement(RemoveProfilePanel, { profile: selectedProfile });
+      }
     }
     if (lifecycle.phase === 'error') {
       return React.createElement(ErrorPanel, {

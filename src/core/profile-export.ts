@@ -184,7 +184,7 @@ function validateOutputPath(outputPath: string, profileRootPath: string): void {
  * includeSecrets mode nothing is stripped, so the audit trail stays empty while
  * `secretsPresent` still records that the profile contained secrets.
  */
-async function processSecrets(
+export async function processSecrets(
   stagingProfile: string,
   options: { redact: boolean },
 ): Promise<{ secretsPresent: boolean; strippedKeys: BundleStrippedKeys[] }> {
@@ -333,7 +333,7 @@ async function readJsonForRedaction(filePath: string, label: string): Promise<un
  * lifecycle managed resource) and travels with the bundle. Non-MCP fields of
  * `.claude.json` (OAuth/account) are also stripped.
  */
-async function pruneRuntimeInternals(stagingProfile: string): Promise<void> {
+export async function pruneRuntimeInternals(stagingProfile: string): Promise<void> {
   const claudeHome = path.join(stagingProfile, 'claude-home');
   for (const dir of ['sessions', 'projects']) {
     await fs.remove(path.join(claudeHome, dir));
