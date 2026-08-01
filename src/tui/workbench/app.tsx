@@ -131,14 +131,20 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch }: { data: Workb
 
   const handleLaunchInput = useCallback((input: string, key: Record<string, boolean>) => {
     const launch = lifecycle.launch;
+    // Helper to dispatch through the reducer
+    const dispatch = (action: LifecycleAction) => {
+      setLifecycle((prev) => lifecycleReducer(prev, action));
+    };
 
     if (launch.phase === 'bar') {
       if (key.escape) {
-        setLifecycle((prev) => ({ ...prev, launch: { ...prev.launch, phase: 'idle' } }));
+        dispatch({ type: 'LAUNCH_DISMISS' });
         return;
       }
       if (key.return) {
-        // Confirm launch from bar
+        dispatch({ type: 'LAUNCH_CONFIRM' });
+        // performLaunch reads current state; the reducer transition
+        // to 'launching' happens inside performLaunch after plan builds.
         const hasErrors = launch.validationFindings.some((f) => f.severity === 'error');
         if (!hasErrors) {
           performLaunch();
@@ -146,7 +152,6 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch }: { data: Workb
         return;
       }
       if (input === 'd') {
-        // Show dry-run page from bar
         handleLaunchDryRun(lifecycle.profileName);
         return;
       }
@@ -155,58 +160,33 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch }: { data: Workb
 
     if (launch.phase === 'dir-screen') {
       if (key.escape) {
-        setLifecycle((prev) => ({
-          ...prev,
-          launch: { ...prev.launch, phase: 'bar', dirInput: '' },
-        }));
+        // Return to bar — clear dirInput
+        dispatch({ type: 'CANCEL' });
         return;
       }
       if (key.return) {
         // Use typed path or selected recent
         const selectedRecent = launch.recentIndex >= 0 ? launch.recentDirs[launch.recentIndex] : null;
         const chosenDir = selectedRecent ? selectedRecent.path : (launch.dirInput || launch.dir);
-        setLifecycle((prev) => ({
-          ...prev,
-          launch: { ...prev.launch, dir: chosenDir, phase: 'bar' },
-        }));
+        dispatch({ type: 'LAUNCH_SET_DIR', dir: chosenDir });
         return;
       }
       if (key.tab) {
-        setLifecycle((prev) => {
-          const { recentDirs, recentIndex } = prev.launch;
-          if (recentDirs.length === 0) return prev;
-          const nextIndex = (recentIndex + 1) % recentDirs.length;
-          return {
-            ...prev,
-            launch: { ...prev.launch, recentIndex: nextIndex, dirInput: '' },
-          };
-        });
+        dispatch({ type: 'LAUNCH_DIR_TAB' });
         return;
       }
       if (key.backspace || key.delete) {
-        setLifecycle((prev) => ({
-          ...prev,
-          launch: { ...prev.launch, dirInput: prev.launch.dirInput.slice(0, -1) },
-        }));
+        dispatch({ type: 'LAUNCH_DIR_BACKSPACE' });
         return;
       }
       // Digit pick (1-9)
       if (!key.ctrl && !key.meta && input.length === 1 && /^[1-9]$/.test(input)) {
         const idx = parseInt(input, 10) - 1;
-        const picked = launch.recentDirs[idx];
-        if (picked) {
-          setLifecycle((prev) => ({
-            ...prev,
-            launch: { ...prev.launch, dir: picked.path, phase: 'bar' },
-          }));
-        }
+        dispatch({ type: 'LAUNCH_DIR_PICK', index: idx });
         return;
       }
       if (!key.ctrl && !key.meta && input.length === 1) {
-        setLifecycle((prev) => ({
-          ...prev,
-          launch: { ...prev.launch, dirInput: prev.launch.dirInput + input, recentIndex: -1 },
-        }));
+        dispatch({ type: 'LAUNCH_DIR_INPUT_CHAR', char: input });
         return;
       }
       return;
@@ -214,6 +194,7 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch }: { data: Workb
 
     if (launch.phase === 'dry-run') {
       if (key.escape) {
+        // Return to bar from dry-run
         setLifecycle((prev) => ({
           ...prev,
           launch: { ...prev.launch, phase: 'bar', dryRunPlan: null },
@@ -221,7 +202,7 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch }: { data: Workb
         return;
       }
       if (key.return) {
-        // Launch from dry-run page
+        dispatch({ type: 'LAUNCH_START' });
         performLaunch();
         return;
       }
@@ -230,10 +211,9 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch }: { data: Workb
 
     if (launch.phase === 'exited') {
       if (key.escape || key.return || input === ' ') {
-        setLifecycle((prev) => ({
-          ...prev,
-          launch: { ...prev.launch, phase: 'idle' },
-        }));
+        dispatch({ type: 'LAUNCH_DISMISS' });
+        // Restore persisted selection after exit flash dismiss
+        setSelectedIndex(persistedSelection.current);
         return;
       }
       return;
@@ -412,7 +392,9 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch }: { data: Workb
     }));
   }, []);
 
-  const handleLaunchDirScreen = useCallback(() => {
+  const handleLaunchDirScreen = useCallback(async (profileName: string) => {
+    // L opens bar first (loading recents + validation), then transitions to dir-screen
+    await handleLaunchBar(profileName);
     setLifecycle((prev) => ({
       ...prev,
       launch: {
@@ -422,7 +404,7 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch }: { data: Workb
         recentIndex: -1,
       },
     }));
-  }, []);
+  }, [handleLaunchBar]);
 
   const handleLaunchDryRun = useCallback(async (profileName: string) => {
     const appHomePath = getAppHomePaths().appHomePath;
@@ -514,7 +496,7 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch }: { data: Workb
     if (launch.phase === 'idle' || launch.phase === 'launching') return null;
 
     if (launch.phase === 'bar') {
-      return React.createElement(PreLaunchBar, { launch, width: w });
+      return React.createElement(PreLaunchBar, { launch, width: w, profileName: lifecycle.profileName });
     }
 
     if (launch.phase === 'dir-screen') {

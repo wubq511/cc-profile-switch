@@ -88,7 +88,7 @@ export const zh: Record<LocaleKey, string> = {
   'launch.bar.cwd': '目录：',
   'launch.bar.enter': '按 Enter 启动',
   'launch.bar.blocked': '启动被阻止 — 请先修复错误',
-  'launch.bar.validateHint': '运行 ccps validate 查看详情',
+  'launch.bar.validateHint': '运行 ccps validate {name} 查看详情',
   'launch.dir.title': '启动目录',
   'launch.dir.current': '当前目录',
   'launch.dir.recents': '最近目录',

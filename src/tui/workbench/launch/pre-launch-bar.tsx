@@ -8,9 +8,10 @@ import type { ValidationFinding } from '../../../core/validator';
 type PreLaunchBarProps = {
   launch: LaunchState;
   width: number;
+  profileName: string;
 };
 
-export function PreLaunchBar({ launch, width }: PreLaunchBarProps): React.ReactElement {
+export function PreLaunchBar({ launch, width, profileName }: PreLaunchBarProps): React.ReactElement {
   const { t } = useI18n();
   const hasErrors = launch.validationFindings.some((f: ValidationFinding) => f.severity === 'error');
   const warnings = launch.validationFindings.filter((f: ValidationFinding) => f.severity === 'warning');
@@ -63,7 +64,7 @@ export function PreLaunchBar({ launch, width }: PreLaunchBarProps): React.ReactE
             Box,
             { flexDirection: 'column' },
             React.createElement(Text, { color: 'red' }, t('launch.bar.blocked')),
-            React.createElement(Text, { dimColor: true }, t('launch.bar.validateHint')),
+            React.createElement(Text, { dimColor: true }, t('launch.bar.validateHint').replace('{name}', profileName)),
           )
         : React.createElement(Text, { color: 'green' }, t('launch.bar.enter')),
     ),

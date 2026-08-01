@@ -87,7 +87,7 @@ export const en = {
   'launch.bar.cwd': 'Directory:',
   'launch.bar.enter': 'Enter to launch',
   'launch.bar.blocked': 'Launch blocked — fix errors first',
-  'launch.bar.validateHint': 'Run ccps validate for details',
+  'launch.bar.validateHint': 'Run ccps validate {name} for details',
   'launch.dir.title': 'Launch directory',
   'launch.dir.current': 'Current directory',
   'launch.dir.recents': 'Recent directories',

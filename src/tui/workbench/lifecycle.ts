@@ -367,7 +367,6 @@ export const LIFECYCLE_ACTIONS = [
 export const LAUNCH_ACTIONS = [
   { key: 'l', labelKey: 'lifecycle.launch' as const },
   { key: 'L', labelKey: 'lifecycle.launchDir' as const },
-  { key: 'd', labelKey: 'lifecycle.dryRun' as const },
 ] as const;
 
 export const TEMPLATE_LIST = listProfileTemplates();

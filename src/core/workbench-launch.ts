@@ -3,7 +3,7 @@ import fs from 'fs-extra';
 
 import type { Clock } from './types';
 import type { LaunchPlan } from './launcher';
-import { resolveFilesystemPath } from '../platform/path';
+import { areSameFilesystemPath, resolveFilesystemPath } from '../platform/path';
 
 export type WorkbenchLaunchOptions = {
   plan: LaunchPlan;
@@ -96,18 +96,11 @@ function updateMetadataSync(options: WorkbenchLaunchOptions): void {
     }
 
     const filtered = state.recentProjectDirs.filter(
-      (entry) => !areSameFilesystemPathSync(entry.path, plan.cwd),
+      (entry) => !areSameFilesystemPath(entry.path, plan.cwd),
     );
     const updated = [{ path: plan.cwd, lastUsedAt: now }, ...filtered].slice(0, 10);
     fs.writeJsonSync(statePath, { version: 1, recentProjectDirs: updated });
   } catch {
     // Non-fatal
   }
-}
-
-function areSameFilesystemPathSync(a: string, b: string): boolean {
-  if (process.platform === 'win32') {
-    return a.toLowerCase() === b.toLowerCase();
-  }
-  return a === b;
 }

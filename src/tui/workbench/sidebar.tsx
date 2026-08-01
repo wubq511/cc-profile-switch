@@ -30,7 +30,7 @@ type SidebarProps = {
     selectedTemplate: string | null,
   ) => void;
   onLaunchBar: (profileName: string) => void;
-  onLaunchDirScreen: () => void;
+  onLaunchDirScreen: (profileName: string) => void;
 };
 
 export function Sidebar({
@@ -151,7 +151,7 @@ export function Sidebar({
           return;
         }
         if (input === 'L') {
-          onLaunchDirScreen();
+          onLaunchDirScreen(profile.name);
           return;
         }
         // Note: 'd' is already used for 'default' in LIFECYCLE_ACTIONS.
