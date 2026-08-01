@@ -6,7 +6,7 @@ import { profileConfigSchema } from '../src/schemas/profile';
 describe('config schemas', () => {
   it('parses app config with optional profile metadata', () => {
     const config = appConfigSchema.parse({
-      version: 1,
+      version: 2,
       defaultProfile: 'coding',
       lastUsedProfile: null,
     });
@@ -18,10 +18,34 @@ describe('config schemas', () => {
   it('rejects invalid profile names in app config', () => {
     expect(() =>
       appConfigSchema.parse({
-        version: 1,
+        version: 2,
         defaultProfile: '../coding',
       }),
     ).toThrow();
+  });
+
+  it('parses app config with workbench settings', () => {
+    const config = appConfigSchema.parse({
+      version: 2,
+      workbench: {
+        language: 'zh',
+        editor: 'code -w',
+        skillsDiscoveryExperimental: false,
+      },
+    });
+
+    expect(config.workbench?.language).toBe('zh');
+    expect(config.workbench?.editor).toBe('code -w');
+    expect(config.workbench?.skillsDiscoveryExperimental).toBe(false);
+  });
+
+  it('parses app config with recovery settings', () => {
+    const config = appConfigSchema.parse({
+      version: 2,
+      recovery: { retentionDays: 30 },
+    });
+
+    expect(config.recovery?.retentionDays).toBe(30);
   });
 
   it('parses profile config launch settings', () => {

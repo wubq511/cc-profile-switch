@@ -287,12 +287,29 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
 
   program
     .command('tui')
-    .description('Open the interactive profile management TUI.')
+    .description('Open the Profile Workbench.')
     .action(async () => {
-      const appPaths = getAppHomePaths();
+      // When runTui is injected (test mode), use it directly.
+      // This bypasses the TTY check so tests can verify the command routing.
+      if (options.runTui !== undefined) {
+        const appPaths = getAppHomePaths();
+        runtime.writeOut('Starting ccps TUI.\n');
+        await runtime.runTui({ appHomePath: appPaths.appHomePath });
+        return;
+      }
 
-      runtime.writeOut('Starting ccps TUI.\n');
-      await runtime.runTui({ appHomePath: appPaths.appHomePath });
+      const isDualTty = process.stdin.isTTY && process.stdout.isTTY;
+
+      if (!isDualTty) {
+        throw new CcpsError(
+          'TUI_REQUIRES_TTY',
+          'Workbench requires an interactive terminal (TTY).',
+          { guidance: 'Run ccps tui in a terminal, or use ccps <command> for scripting.' },
+        );
+      }
+
+      const { launchWorkbench } = await import('../tui/workbench-loader');
+      await launchWorkbench();
     });
 
   program

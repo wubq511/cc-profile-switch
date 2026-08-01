@@ -1,0 +1,134 @@
+import { Readable, Writable } from 'node:stream';
+
+import React from 'react';
+import { render } from 'ink';
+import { describe, expect, it } from 'vitest';
+
+import { WorkbenchApp } from '../src/tui/workbench/app';
+import { isBelowMinimum } from '../src/tui/workbench/resize-guard';
+import type { WorkbenchData } from '../src/tui/workbench/profile-data';
+
+class FakeTtyStdout extends Writable {
+  public readonly isTTY = true;
+  public columns = 100;
+  public rows = 30;
+  private readonly chunks: Buffer[] = [];
+
+  public override _write(chunk: Buffer, _encoding: string, callback: () => void): void {
+    this.chunks.push(Buffer.from(chunk));
+    callback();
+  }
+
+  public get output(): string {
+    return Buffer.concat(this.chunks).toString('utf8');
+  }
+}
+
+function dummyStdin(): Readable {
+  return new Readable({ read() {} });
+}
+
+const emptyData: WorkbenchData = {
+  profiles: [],
+  defaultProfile: undefined,
+};
+
+const sampleData: WorkbenchData = {
+  profiles: [
+    {
+      name: 'coding',
+      description: 'Daily coding profile',
+      isDefault: true,
+      isLastUsed: true,
+      status: 'valid',
+      resourceCounts: { userMemory: 1, autoMemory: 5, skills: 3, agents: 2, mcp: 1, settings: 1, plugins: 0 },
+      validation: null,
+    },
+    {
+      name: 'study',
+      description: 'Research and study',
+      isDefault: false,
+      isLastUsed: false,
+      status: 'valid',
+      resourceCounts: { userMemory: 1, autoMemory: 2, skills: 1, agents: 0, mcp: 0, settings: 1, plugins: 0 },
+      validation: null,
+    },
+  ],
+  defaultProfile: 'coding',
+};
+
+describe('Workbench render', () => {
+  it('renders without crashing with empty profiles', async () => {
+    const stdout = new FakeTtyStdout();
+    const instance = render(
+      React.createElement(WorkbenchApp, { data: emptyData, initialLocale: 'en', headless: true }),
+      {
+        stdout: stdout as unknown as NodeJS.WriteStream,
+        stdin: dummyStdin() as unknown as NodeJS.ReadStream,
+        exitOnCtrlC: false,
+        patchConsole: false,
+      },
+    );
+    await instance.waitUntilRenderFlush();
+    instance.unmount();
+    await instance.waitUntilExit();
+    expect(stdout.output.length).toBeGreaterThan(0);
+  });
+
+  it('renders without crashing with sample profiles', async () => {
+    const stdout = new FakeTtyStdout();
+    const instance = render(
+      React.createElement(WorkbenchApp, { data: sampleData, initialLocale: 'en', headless: true }),
+      {
+        stdout: stdout as unknown as NodeJS.WriteStream,
+        stdin: dummyStdin() as unknown as NodeJS.ReadStream,
+        exitOnCtrlC: false,
+        patchConsole: false,
+      },
+    );
+    await instance.waitUntilRenderFlush();
+    instance.unmount();
+    await instance.waitUntilExit();
+    expect(stdout.output.length).toBeGreaterThan(0);
+  });
+
+  it('renders in Chinese locale', async () => {
+    const stdout = new FakeTtyStdout();
+    const instance = render(
+      React.createElement(WorkbenchApp, { data: sampleData, initialLocale: 'zh', headless: true }),
+      {
+        stdout: stdout as unknown as NodeJS.WriteStream,
+        stdin: dummyStdin() as unknown as NodeJS.ReadStream,
+        exitOnCtrlC: false,
+        patchConsole: false,
+      },
+    );
+    await instance.waitUntilRenderFlush();
+    instance.unmount();
+    await instance.waitUntilExit();
+    const output = stripAnsi(stdout.output);
+    expect(output).toContain('配置');
+  });
+});
+
+describe('resize guard', () => {
+  it('detects below-minimum terminal sizes', () => {
+    expect(isBelowMinimum(79, 24)).toBe(true);
+    expect(isBelowMinimum(80, 23)).toBe(true);
+    expect(isBelowMinimum(79, 23)).toBe(true);
+  });
+
+  it('accepts minimum terminal size', () => {
+    expect(isBelowMinimum(80, 24)).toBe(false);
+  });
+
+  it('accepts above-minimum terminal sizes', () => {
+    expect(isBelowMinimum(120, 30)).toBe(false);
+    expect(isBelowMinimum(200, 50)).toBe(false);
+  });
+});
+
+function stripAnsi(text: string): string {
+  // eslint-disable-next-line no-control-regex
+  return text.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '').replace(/\r/g, '');
+}

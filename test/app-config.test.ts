@@ -33,7 +33,7 @@ describe('app config', () => {
 
   it('builds deterministic initial config', () => {
     expect(createInitialAppConfig(fixedClock)).toEqual({
-      version: 1,
+      version: 2,
       lastUsedProfile: null,
       createdAt: '2026-01-02T03:04:05.000Z',
       updatedAt: '2026-01-02T03:04:05.000Z',
@@ -45,7 +45,7 @@ describe('app config', () => {
     const config = await createAppConfig(appHome, { clock: fixedClock });
     const paths = getAppHomePaths(appHome);
 
-    expect(config.version).toBe(1);
+    expect(config.version).toBe(2);
     expect(await fs.pathExists(paths.configPath)).toBe(true);
     expect(await fs.pathExists(paths.profilesPath)).toBe(true);
     expect(await fs.pathExists(paths.backupsPath)).toBe(true);
@@ -57,9 +57,26 @@ describe('app config', () => {
     await createAppConfig(appHome, { clock: fixedClock });
 
     await expect(loadAppConfig(appHome)).resolves.toMatchObject({
-      version: 1,
+      version: 2,
       lastUsedProfile: null,
     });
+  });
+
+  it('migrates v1 config to v2 on load', async () => {
+    const appHome = await makeAppHome();
+    const paths = getAppHomePaths(appHome);
+
+    await fs.ensureDir(appHome);
+    await fs.writeJson(paths.configPath, {
+      version: 1,
+      lastUsedProfile: null,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    const config = await loadAppConfig(appHome);
+    expect(config.version).toBe(2);
+    expect(config.lastUsedProfile).toBeNull();
   });
 
   it('rejects invalid JSON when loading config', async () => {

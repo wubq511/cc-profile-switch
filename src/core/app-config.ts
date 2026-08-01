@@ -32,7 +32,7 @@ export function createInitialAppConfig(clock: Clock = () => new Date()): AppConf
   const timestamp = clock().toISOString();
 
   return {
-    version: 1,
+    version: 2,
     lastUsedProfile: null,
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -88,7 +88,9 @@ export async function loadAppConfig(appHomePath = getAppHomePath()): Promise<App
     });
   }
 
-  const parsedConfig = appConfigSchema.safeParse(parsedJson);
+  const migrated = migrateAppConfig(parsedJson);
+
+  const parsedConfig = appConfigSchema.safeParse(migrated);
   if (!parsedConfig.success) {
     throw new CcpsError('APP_CONFIG_INVALID', 'App config does not match the expected schema.', {
       guidance: 'Check config.json fields and profile names.',
@@ -139,4 +141,17 @@ export async function writeJsonFile(
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && 'code' in error;
+}
+
+function migrateAppConfig(raw: unknown): unknown {
+  if (typeof raw !== 'object' || raw === null) return raw;
+  const record = raw as Record<string, unknown>;
+
+  if (record.version === 1) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { version: _, ...rest } = record;
+    return { ...rest, version: 2 };
+  }
+
+  return raw;
 }
