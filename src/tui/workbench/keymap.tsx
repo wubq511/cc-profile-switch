@@ -16,8 +16,13 @@ const KEYBINDINGS = [
   { key: 'q/Ctrl+C', group: 'nav' as const, labelKey: 'keymap.quit' as const },
   { key: 'l', group: 'actions' as const, labelKey: 'keymap.launch' as const },
   { key: 'e', group: 'actions' as const, labelKey: 'keymap.edit' as const },
-  { key: 'b', group: 'actions' as const, labelKey: 'keymap.backup' as const },
-  { key: 'x', group: 'actions' as const, labelKey: 'keymap.remove' as const },
+  { key: 'n', group: 'actions' as const, labelKey: 'lifecycle.create' as const },
+  { key: 'c', group: 'actions' as const, labelKey: 'lifecycle.copy' as const },
+  { key: 'r', group: 'actions' as const, labelKey: 'lifecycle.rename' as const },
+  { key: 'd', group: 'actions' as const, labelKey: 'lifecycle.default' as const },
+  { key: 'v', group: 'actions' as const, labelKey: 'lifecycle.validate' as const },
+  { key: 'b', group: 'actions' as const, labelKey: 'lifecycle.backup' as const },
+  { key: 'x', group: 'actions' as const, labelKey: 'lifecycle.remove' as const },
 ];
 
 export function KeymapOverlay({ visible }: KeymapOverlayProps): React.ReactElement | null {
