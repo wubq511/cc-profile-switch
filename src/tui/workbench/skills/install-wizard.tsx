@@ -1,4 +1,4 @@
-import React, { useEffect, useReducer } from 'react';
+import React, { useEffect, useReducer, useRef } from 'react';
 import { Box, Text, useApp, useInput, useStdin } from 'ink';
 
 import { useI18n } from '../i18n/react';
@@ -12,6 +12,7 @@ import type {
   InstallPreview,
   LocalSkillSourceInfo,
 } from '../../../core/skills-install';
+import type { RemoteInstallPreview } from '../../../core/skills-remote-install';
 
 // The wizard is an overlay driven by a pure reducer. Async core-service work
 // runs in effects keyed on phase transitions; results come back as dispatches.
@@ -29,12 +30,22 @@ export type InstallWizardCallbacks = {
     name: string;
     collisionResolution?: 'rename' | 'replace';
   }) => Promise<{ name: string; mode: 'copy' | 'link' }>;
+  onAcquireRemote: (input: { rawSource: string }) => Promise<RemoteInstallPreview>;
+  onInstallRemote: (input: {
+    stagingRoot: string;
+    stagedName: string;
+    name: string;
+    provenanceSource: RemoteInstallPreview['provenanceSource'];
+    collisionResolution?: 'rename' | 'replace';
+  }) => Promise<{ name: string; mode: 'copy' }>;
+  onCleanupStaging?: (stagingRoot: string) => void;
   onClose: () => void;
   onInstalled: () => void;
 };
 
 type InstallWizardProps = {
   profileName: string;
+  profileRootPath: string;
   callbacks: InstallWizardCallbacks;
   width: number;
   height: number;
@@ -43,6 +54,7 @@ type InstallWizardProps = {
 
 export function InstallWizard({
   profileName,
+  profileRootPath,
   callbacks,
   width,
   height,
@@ -52,13 +64,14 @@ export function InstallWizard({
   const { exit } = useApp();
   const { stdin: inkStdin } = useStdin();
   const canUseInput = !headless && inkStdin.isTTY;
+  const cleanedStagingRef = useRef<string | null>(null);
 
   const [state, dispatch] = useReducer(installWizardReducer, initialInstallWizardState());
 
   // Open on mount.
   useEffect(() => {
-    dispatch({ type: 'START', profileName });
-  }, [profileName]);
+    dispatch({ type: 'START', profileName, profileRootPath });
+  }, [profileName, profileRootPath]);
 
   // Drive async work from phase transitions.
   useEffect(() => {
@@ -93,7 +106,7 @@ export function InstallWizard({
 
   useEffect(() => {
     let cancelled = false;
-    if (state.phase === 'confirming' && state.sourceInfo) {
+    if (state.phase === 'confirming' && state.kind === 'local' && state.sourceInfo) {
       callbacks
         .onComputePreview({
           sourcePath: state.sourceInfo.sourcePath,
@@ -115,37 +128,110 @@ export function InstallWizard({
     return () => {
       cancelled = true;
     };
-  }, [state.phase, state.sourceInfo, state.mode, state.name, callbacks]);
+  }, [state.phase, state.kind, state.sourceInfo, state.mode, state.name, callbacks]);
 
+  // Remote: acquire into staging via the pinned adapter, verify identity, preview.
   useEffect(() => {
     let cancelled = false;
-    if (state.phase === 'installing' && state.sourceInfo) {
+    if (state.phase === 'staging' && state.kind === 'remote') {
       callbacks
-        .onInstall({
-          sourcePath: state.sourceInfo.sourcePath,
-          mode: state.mode,
-          name: state.name,
-          collisionResolution: state.collisionResolution ?? undefined,
-        })
-        .then((result) => {
+        .onAcquireRemote({ rawSource: state.remoteSourceInput })
+        .then((preview) => {
           if (cancelled) return;
-          dispatch({
-            type: 'INSTALL_SUCCESS',
-            message: `${t('skill.install.success')}: ${result.name}`,
-          });
+          dispatch({ type: 'REMOTE_STAGED', preview });
         })
         .catch((error) => {
           if (cancelled) return;
           dispatch({
-            type: 'INSTALL_ERROR',
-            message: error instanceof Error ? error.message : String(error),
+            type: 'REMOTE_STAGING_FAILED',
+            message: formatWizardError(error),
           });
         });
     }
     return () => {
       cancelled = true;
     };
-  }, [state.phase, state.sourceInfo, state.mode, state.name, state.collisionResolution, callbacks, t]);
+  }, [state.phase, state.kind, state.remoteSourceInput, callbacks]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (state.phase === 'installing') {
+      if (state.kind === 'remote' && state.remotePreview && state.stagingRoot && state.stagedName) {
+        callbacks
+          .onInstallRemote({
+            stagingRoot: state.stagingRoot,
+            stagedName: state.stagedName,
+            name: state.name,
+            provenanceSource: state.remotePreview.provenanceSource,
+            collisionResolution: state.collisionResolution ?? undefined,
+          })
+          .then((result) => {
+            if (cancelled) return;
+            dispatch({
+              type: 'INSTALL_SUCCESS',
+              message: `${t('skill.install.success')}: ${result.name}`,
+            });
+          })
+          .catch((error) => {
+            if (cancelled) return;
+            dispatch({
+              type: 'INSTALL_ERROR',
+              message: formatWizardError(error),
+            });
+          });
+      } else if (state.kind === 'local' && state.sourceInfo) {
+        callbacks
+          .onInstall({
+            sourcePath: state.sourceInfo.sourcePath,
+            mode: state.mode,
+            name: state.name,
+            collisionResolution: state.collisionResolution ?? undefined,
+          })
+          .then((result) => {
+            if (cancelled) return;
+            dispatch({
+              type: 'INSTALL_SUCCESS',
+              message: `${t('skill.install.success')}: ${result.name}`,
+            });
+          })
+          .catch((error) => {
+            if (cancelled) return;
+            dispatch({
+              type: 'INSTALL_ERROR',
+              message: formatWizardError(error),
+            });
+          });
+      }
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    state.phase,
+    state.kind,
+    state.sourceInfo,
+    state.mode,
+    state.name,
+    state.collisionResolution,
+    state.remotePreview,
+    state.stagingRoot,
+    state.stagedName,
+    callbacks,
+    t,
+  ]);
+
+  // Clean up an orphaned remote staging root when the remote flow is abandoned
+  // (esc back to source-remote/kind) or the wizard closes. A successful install
+  // already removed its staging root and nulled the reference. Idempotent.
+  useEffect(() => {
+    const abandoned =
+      !state.open ||
+      ['source-remote', 'kind', 'success', 'error'].includes(state.phase);
+    if (abandoned && state.stagingRoot && state.stagingRoot !== cleanedStagingRef.current) {
+      cleanedStagingRef.current = state.stagingRoot;
+      callbacks.onCleanupStaging?.(state.stagingRoot);
+    }
+  }, [state.phase, state.stagingRoot, state.open, callbacks]);
 
   // Notify parent on success dismissal and on close.
   useEffect(() => {
@@ -170,7 +256,7 @@ export function InstallWizard({
       }
 
       if (key.escape) {
-        if (state.phase === 'source') {
+        if (state.phase === 'kind' || state.phase === 'source') {
           dispatch({ type: 'CANCEL' });
           callbacks.onClose();
         } else {
@@ -180,6 +266,25 @@ export function InstallWizard({
       }
 
       switch (state.phase) {
+        case 'kind': {
+          if (key.leftArrow || input === 'l') {
+            dispatch({ type: 'KIND_SELECT_LOCAL' });
+            return;
+          }
+          if (key.rightArrow || input === 'r') {
+            dispatch({ type: 'KIND_SELECT_REMOTE' });
+            return;
+          }
+          if (key.return) {
+            // Enter confirms the highlighted kind.
+            dispatch(
+              state.kind === 'remote'
+                ? { type: 'KIND_SELECT_REMOTE' }
+                : { type: 'KIND_SELECT_LOCAL' },
+            );
+          }
+          return;
+        }
         case 'source': {
           if (key.return) {
             dispatch({ type: 'SOURCE_SUBMIT' });
@@ -191,6 +296,20 @@ export function InstallWizard({
           }
           if (!key.ctrl && !key.meta && input.length === 1) {
             dispatch({ type: 'SOURCE_CHAR', char: input });
+          }
+          return;
+        }
+        case 'source-remote': {
+          if (key.return) {
+            dispatch({ type: 'REMOTE_SOURCE_SUBMIT' });
+            return;
+          }
+          if (key.backspace || key.delete) {
+            dispatch({ type: 'REMOTE_SOURCE_BACKSPACE' });
+            return;
+          }
+          if (!key.ctrl && !key.meta && input.length === 1) {
+            dispatch({ type: 'REMOTE_SOURCE_CHAR', char: input });
           }
           return;
         }
@@ -215,7 +334,7 @@ export function InstallWizard({
             return;
           }
           // Link-incapable fallback: [c] switches to Copy with the same source.
-          if (input === 'c' && linkIncapable(state)) {
+          if (input === 'c' && state.kind === 'local' && linkIncapable(state)) {
             dispatch({ type: 'FALLBACK_TO_COPY' });
             return;
           }
@@ -240,7 +359,7 @@ export function InstallWizard({
           return;
         }
         default:
-          // validating / confirming / installing: no input except esc (handled above)
+          // validating / confirming / staging / installing: no input except esc (handled above)
           return;
       }
     },
@@ -264,6 +383,18 @@ function linkIncapable(state: InstallWizardState): boolean {
   return state.preview.checks.some((c) => c.code === 'platform-can-link' && !c.ok);
 }
 
+// Render a CcpsError's numbered guidance across multiple lines; fall back to the
+// raw message for non-CcpsError throws.
+function formatWizardError(error: unknown): string {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const maybe = error as { code?: string; guidance?: string; message?: string };
+  if (maybe && typeof maybe.code === 'string' && typeof maybe.message === 'string') {
+    const guidance = typeof maybe.guidance === 'string' ? `\n${maybe.guidance}` : '';
+    return `${maybe.code}: ${maybe.message}${guidance}`;
+  }
+  return error instanceof Error ? error.message : String(error);
+}
+
 function renderStep(
   state: InstallWizardState,
   width: number,
@@ -272,6 +403,9 @@ function renderStep(
   const innerWidth = Math.max(40, width - 4);
 
   switch (state.phase) {
+    case 'kind':
+      return renderKind(state, innerWidth, t);
+
     case 'source':
     case 'validating':
       return React.createElement(
@@ -289,6 +423,25 @@ function renderStep(
         state.phase === 'validating'
           ? React.createElement(Text, { color: 'yellow' }, t('skill.install.source.validating'))
           : React.createElement(Text, { dimColor: true }, t('skill.install.source.hint')),
+      );
+
+    case 'source-remote':
+    case 'staging':
+      return React.createElement(
+        Box,
+        { flexDirection: 'column', width: innerWidth },
+        React.createElement(Text, { bold: true }, t('skill.install.remote.source.prompt')),
+        React.createElement(
+          Box,
+          null,
+          React.createElement(Text, { color: 'cyan' }, `${state.remoteSourceInput}█`),
+        ),
+        state.remoteSourceError.length > 0
+          ? renderErrorPanel(state.remoteSourceError)
+          : null,
+        state.phase === 'staging'
+          ? React.createElement(Text, { color: 'yellow' }, t('skill.install.remote.staging'))
+          : React.createElement(Text, { dimColor: true }, t('skill.install.remote.source.hint')),
       );
 
     case 'mode':
@@ -314,7 +467,9 @@ function renderStep(
       );
 
     case 'confirm':
-      return renderConfirm(state, innerWidth, t);
+      return state.kind === 'remote'
+        ? renderRemoteConfirm(state, innerWidth, t)
+        : renderConfirm(state, innerWidth, t);
 
     case 'collision':
       return React.createElement(
@@ -355,7 +510,7 @@ function renderStep(
         Box,
         { flexDirection: 'column', width: innerWidth },
         React.createElement(Text, { color: 'red', bold: true }, t('skill.install.error')),
-        React.createElement(Text, null, state.message),
+        renderErrorPanel(state.message),
         React.createElement(Text, { dimColor: true }, t('keymap.esc')),
       );
 
@@ -364,8 +519,27 @@ function renderStep(
   }
 }
 
+function renderKind(
+  state: InstallWizardState,
+  innerWidth: number,
+  t: (key: LocaleKey) => string,
+): React.ReactElement {
+  return React.createElement(
+    Box,
+    { flexDirection: 'column', width: innerWidth },
+    React.createElement(Text, { bold: true }, t('skill.install.kind.title')),
+    React.createElement(
+      Box,
+      { flexDirection: 'row', gap: 2, marginTop: 1 },
+      renderModeCard('local', state.kind === 'local', t('skill.install.kind.local'), t('skill.install.kind.local.desc'), Math.floor(innerWidth / 2)),
+      renderModeCard('remote', state.kind === 'remote', t('skill.install.kind.remote'), t('skill.install.kind.remote.desc'), Math.floor(innerWidth / 2)),
+    ),
+    React.createElement(Box, { marginTop: 1 }, React.createElement(Text, { dimColor: true }, t('skill.install.kind.hint'))),
+  );
+}
+
 function renderModeCard(
-  _mode: 'copy' | 'link',
+  _mode: string,
   selected: boolean,
   title: string,
   desc: string,
@@ -443,5 +617,80 @@ function renderConfirm(
           { marginTop: 1 },
           React.createElement(Text, { color: 'green' }, t('skill.install.confirm.install')),
         ),
+  );
+}
+
+function renderRemoteConfirm(
+  state: InstallWizardState,
+  innerWidth: number,
+  t: (key: LocaleKey) => string,
+): React.ReactElement {
+  const preview = state.remotePreview;
+  if (!preview) {
+    return React.createElement(Text, { color: 'yellow' }, t('skill.install.remote.staging'));
+  }
+
+  return React.createElement(
+    Box,
+    { flexDirection: 'column', width: innerWidth },
+    React.createElement(Text, { bold: true }, t('skill.install.step.confirm')),
+    React.createElement(
+      Box,
+      { flexDirection: 'column', marginTop: 1 },
+      React.createElement(Text, { dimColor: true, bold: true }, t('skill.install.confirm.preview')),
+      ...preview.previewLines.map((line, i) =>
+        React.createElement(Text, { key: `pv-${i}` }, `  ${line}`),
+      ),
+    ),
+    React.createElement(
+      Box,
+      { flexDirection: 'column', marginTop: 1 },
+      React.createElement(Text, { dimColor: true, bold: true }, t('skill.install.remote.confirm.identity')),
+      React.createElement(Text, null, `  name: ${preview.identity.name}`),
+      React.createElement(Text, null, `  description: ${preview.identity.description}`),
+    ),
+    React.createElement(
+      Box,
+      { flexDirection: 'column', marginTop: 1 },
+      React.createElement(Text, { dimColor: true, bold: true }, t('skill.install.remote.confirm.provenance')),
+      React.createElement(Text, null, `  source: ${preview.provenanceSource.kind}`),
+      preview.provenanceSource.url
+        ? React.createElement(Text, null, `  url: ${preview.provenanceSource.url}`)
+        : null,
+      preview.provenanceSource.ref
+        ? React.createElement(Text, null, `  ref: ${preview.provenanceSource.ref}`)
+        : null,
+      preview.provenanceSource.skillPath
+        ? React.createElement(Text, null, `  path: ${preview.provenanceSource.skillPath}`)
+        : null,
+    ),
+    preview.collides
+      ? React.createElement(
+          Box,
+          { marginTop: 1 },
+          React.createElement(Text, { color: 'yellow' }, t('skill.install.collision.title')),
+        )
+      : React.createElement(
+          Box,
+          { marginTop: 1 },
+          React.createElement(Text, { color: 'green' }, t('skill.install.confirm.install')),
+        ),
+  );
+}
+
+// Render a message that may carry a CcpsError's numbered guidance as subsequent
+// lines (the formatWizardError helper joins code+message+guidance with newlines).
+function renderErrorPanel(message: string): React.ReactElement {
+  const lines = message.split('\n');
+  return React.createElement(
+    Box,
+    { flexDirection: 'column' },
+    ...lines.map((line, i) =>
+      React.createElement(
+        Text,
+        { key: `er-${i}`, color: i === 0 ? 'red' : 'yellow' },
+        i === 0 ? `✗ ${line}` : line,
+      ),
+    ),
   );
 }

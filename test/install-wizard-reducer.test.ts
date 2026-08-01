@@ -5,14 +5,32 @@ import {
   installWizardReducer,
 } from '../src/tui/workbench/skills/install-wizard-reducer';
 import type { InstallPreview, LocalSkillSourceInfo } from '../src/core/skills-install';
+import type { RemoteInstallPreview } from '../src/core/skills-remote-install';
+
+// `startAtKind()` opens the wizard to the kind picker (spec §7.3: Local|Remote).
+// `start()` opens the wizard AND selects Local, landing on the Local source step
+// — this is what the bulk of the local-flow tests want, so they stay readable.
+function startAtKind(): ReturnType<typeof initialInstallWizardState> {
+  return installWizardReducer(initialInstallWizardState(), { type: 'START', profileName: 'coding' });
+}
 
 function start(): ReturnType<typeof initialInstallWizardState> {
-  return installWizardReducer(initialInstallWizardState(), { type: 'START', profileName: 'coding' });
+  return installWizardReducer(startAtKind(), { type: 'KIND_SELECT_LOCAL' });
+}
+
+function startRemote(): ReturnType<typeof initialInstallWizardState> {
+  return installWizardReducer(startAtKind(), { type: 'KIND_SELECT_REMOTE' });
 }
 
 function typeSource(state: ReturnType<typeof initialInstallWizardState>, text: string) {
   let s = state;
   for (const ch of text) s = installWizardReducer(s, { type: 'SOURCE_CHAR', char: ch });
+  return s;
+}
+
+function typeRemoteSource(state: ReturnType<typeof initialInstallWizardState>, text: string) {
+  let s = state;
+  for (const ch of text) s = installWizardReducer(s, { type: 'REMOTE_SOURCE_CHAR', char: ch });
   return s;
 }
 
@@ -54,13 +72,25 @@ function preview(overrides: Partial<InstallPreview> = {}): InstallPreview {
 }
 
 describe('install wizard reducer', () => {
-  it('starts closed and opens on START with Copy pre-selected', () => {
+  it('starts closed and opens on START at the kind picker with Copy pre-selected', () => {
     expect(initialInstallWizardState().open).toBe(false);
-    const s = start();
+    const s = startAtKind();
     expect(s.open).toBe(true);
-    expect(s.phase).toBe('source');
+    expect(s.phase).toBe('kind'); // §7.3: kind picker (Local|Remote) is the entry screen
     expect(s.profileName).toBe('coding');
     expect(s.mode).toBe('copy'); // Copy is the default per spec §7.2
+  });
+
+  it('KIND_SELECT_LOCAL lands on the Local source step', () => {
+    const s = start();
+    expect(s.phase).toBe('source');
+    expect(s.kind).toBe('local');
+  });
+
+  it('KIND_SELECT_REMOTE lands on the remote source step', () => {
+    const s = startRemote();
+    expect(s.phase).toBe('source-remote');
+    expect(s.kind).toBe('remote');
   });
 
   it('accumulates source input and submits to validating', () => {
@@ -269,11 +299,16 @@ describe('install wizard reducer', () => {
     expect(s.open).toBe(false);
   });
 
-  it('esc walks back one decision per screen and closes from source', () => {
-    // source → closed
-    let s = start();
+  it('esc walks back one decision per screen and closes from kind', () => {
+    // kind → closed (the kind picker is the wizard's entry screen)
+    let s = startAtKind();
     s = installWizardReducer(s, { type: 'CANCEL' });
     expect(s.open).toBe(false);
+
+    // source → kind (esc walks back to the kind picker, not closed)
+    s = start();
+    s = installWizardReducer(s, { type: 'CANCEL' });
+    expect(s.phase).toBe('kind');
 
     // mode → source
     s = start();
@@ -318,5 +353,211 @@ describe('install wizard reducer', () => {
     expect(s.phase).toBe('installing');
     s = installWizardReducer(s, { type: 'CANCEL' });
     expect(s.phase).toBe('installing');
+  });
+
+  // ─── Remote flow (spec §7.3) ──────────────────────────────────────────
+  describe('remote flow', () => {
+    function remotePreview(overrides: Partial<RemoteInstallPreview> = {}): RemoteInstallPreview {
+      return {
+        name: 'find-skills',
+        targetPath: '/profiles/coding/claude-home/skills/find-skills',
+        stagingRoot: '/profiles/coding/.ccps-remote-stage-abc123',
+        stagedName: 'find-skills',
+        identity: { name: 'find-skills', description: 'Locate skills.' },
+        provenanceSource: { kind: 'git-remote', url: 'vercel-labs/skills' },
+        previewLines: [
+          'acquire  vercel-labs/skills  →  staging',
+          'stage    find-skills/  (frontmatter name: find-skills)',
+          'create   /target/   (snapshot — Profile-owned)',
+          'record   skills-provenance.json  ← copy · source git-remote · sha256 fingerprint',
+        ],
+        collides: false,
+        existingIsLink: false,
+        existingNames: [],
+        ...overrides,
+      };
+    }
+
+    it('accumulates remote source input and submits to staging', () => {
+      let s = startRemote();
+      s = typeRemoteSource(s, 'vercel-labs/skills');
+      expect(s.remoteSourceInput).toBe('vercel-labs/skills');
+      s = installWizardReducer(s, { type: 'REMOTE_SOURCE_SUBMIT' });
+      expect(s.phase).toBe('staging');
+    });
+
+    it('ignores REMOTE_SOURCE_SUBMIT on empty input', () => {
+      let s = startRemote();
+      s = installWizardReducer(s, { type: 'REMOTE_SOURCE_SUBMIT' });
+      expect(s.phase).toBe('source-remote');
+    });
+
+    it('staging success without collision lands on confirm with stagingRoot + stagedName set', () => {
+      let s = startRemote();
+      s = typeRemoteSource(s, 'vercel-labs/skills');
+      s = installWizardReducer(s, { type: 'REMOTE_SOURCE_SUBMIT' });
+      s = installWizardReducer(s, { type: 'REMOTE_STAGED', preview: remotePreview() });
+      expect(s.phase).toBe('confirm');
+      expect(s.stagingRoot).toBe('/profiles/coding/.ccps-remote-stage-abc123');
+      expect(s.stagedName).toBe('find-skills');
+      expect(s.remotePreview?.identity.name).toBe('find-skills');
+      expect(s.collisionResolution).toBeNull();
+    });
+
+    it('staging success with collision lands on collision with a suggested rename', () => {
+      const p = remotePreview({ collides: true, existingNames: ['find-skills'] });
+      let s = startRemote();
+      s = typeRemoteSource(s, 'vercel-labs/skills');
+      s = installWizardReducer(s, { type: 'REMOTE_SOURCE_SUBMIT' });
+      s = installWizardReducer(s, { type: 'REMOTE_STAGED', preview: p });
+      expect(s.phase).toBe('collision');
+      expect(s.collisionInput).toBe('find-skills-2');
+      expect(s.stagingRoot).toBe(p.stagingRoot);
+    });
+
+    it('staging failure returns to source-remote with an error', () => {
+      let s = startRemote();
+      s = typeRemoteSource(s, 'vercel-labs/skills');
+      s = installWizardReducer(s, { type: 'REMOTE_SOURCE_SUBMIT' });
+      s = installWizardReducer(s, {
+        type: 'REMOTE_STAGING_FAILED',
+        message: 'SKILLS_ACQUISITION_OFFLINE: offline',
+      });
+      expect(s.phase).toBe('source-remote');
+      expect(s.remoteSourceError).toContain('SKILLS_ACQUISITION_OFFLINE');
+    });
+
+    it('confirm → installing when there is no collision', () => {
+      let s = startRemote();
+      s = typeRemoteSource(s, 'vercel-labs/skills');
+      s = installWizardReducer(s, { type: 'REMOTE_SOURCE_SUBMIT' });
+      s = installWizardReducer(s, { type: 'REMOTE_STAGED', preview: remotePreview() });
+      s = installWizardReducer(s, { type: 'CONFIRM_INSTALL' });
+      expect(s.phase).toBe('installing');
+      expect(s.collisionResolution).toBeNull();
+    });
+
+    it('confirm → collision when the staged name already exists', () => {
+      const p = remotePreview({ collides: true, existingNames: ['find-skills'] });
+      let s = startRemote();
+      s = typeRemoteSource(s, 'vercel-labs/skills');
+      s = installWizardReducer(s, { type: 'REMOTE_SOURCE_SUBMIT' });
+      s = installWizardReducer(s, { type: 'REMOTE_STAGED', preview: p });
+      // After REMOTE_STAGED with a collision, the wizard is already on collision.
+      // Walk back to confirm, then re-trigger CONFIRM_INSTALL to verify the gate.
+      s = installWizardReducer(s, { type: 'CANCEL' }); // collision → confirm
+      expect(s.phase).toBe('confirm');
+      s = installWizardReducer(s, { type: 'CONFIRM_INSTALL' });
+      expect(s.phase).toBe('collision');
+    });
+
+    it('collision replace installs with collisionResolution=replace', () => {
+      const p = remotePreview({ collides: true, existingNames: ['find-skills'] });
+      let s = startRemote();
+      s = typeRemoteSource(s, 'vercel-labs/skills');
+      s = installWizardReducer(s, { type: 'REMOTE_SOURCE_SUBMIT' });
+      s = installWizardReducer(s, { type: 'REMOTE_STAGED', preview: p });
+      expect(s.phase).toBe('collision');
+      s = installWizardReducer(s, { type: 'COLLISION_REPLACE' });
+      expect(s.phase).toBe('installing');
+      expect(s.collisionResolution).toBe('replace');
+    });
+
+    it('collision rename applies the typed name without re-acquiring (pure preview rebuild)', () => {
+      const p = remotePreview({
+        collides: true,
+        existingNames: ['find-skills'],
+        // The reducer uses profileRootPath to recompute the target on rename.
+      });
+      let s = installWizardReducer(startAtKind(), { type: 'KIND_SELECT_REMOTE' });
+      // Inject a profileRootPath so the rename path recomputation has a base.
+      s = { ...s, profileRootPath: '/profiles/coding' };
+      s = typeRemoteSource(s, 'vercel-labs/skills');
+      s = installWizardReducer(s, { type: 'REMOTE_SOURCE_SUBMIT' });
+      s = installWizardReducer(s, { type: 'REMOTE_STAGED', preview: p });
+      expect(s.phase).toBe('collision');
+      s = typeCollision(s, 'find-skills-renamed');
+      s = installWizardReducer(s, { type: 'COLLISION_RENAME' });
+      expect(s.phase).toBe('confirm');
+      expect(s.name).toBe('find-skills-renamed');
+      expect(s.collisionResolution).toBe('rename');
+      expect(s.remotePreview?.name).toBe('find-skills-renamed');
+      expect(s.remotePreview?.collides).toBe(false);
+      // The staged tree is unchanged; only the target/name recomputed.
+      expect(s.remotePreview?.stagedName).toBe('find-skills');
+    });
+
+    it('collision rename refuses an empty name', () => {
+      const p = remotePreview({ collides: true, existingNames: ['find-skills'] });
+      let s = startRemote();
+      s = typeRemoteSource(s, 'vercel-labs/skills');
+      s = installWizardReducer(s, { type: 'REMOTE_SOURCE_SUBMIT' });
+      s = installWizardReducer(s, { type: 'REMOTE_STAGED', preview: p });
+      // Clear the prefilled suggestion.
+      for (let i = 0; i < 'find-skills-2'.length; i++) {
+        s = installWizardReducer(s, { type: 'COLLISION_BACKSPACE' });
+      }
+      s = installWizardReducer(s, { type: 'COLLISION_RENAME' });
+      expect(s.phase).toBe('collision');
+      expect(s.collisionError.length).toBeGreaterThan(0);
+    });
+
+    it('install success clears the staging root reference', () => {
+      let s = startRemote();
+      s = typeRemoteSource(s, 'vercel-labs/skills');
+      s = installWizardReducer(s, { type: 'REMOTE_SOURCE_SUBMIT' });
+      s = installWizardReducer(s, { type: 'REMOTE_STAGED', preview: remotePreview() });
+      s = installWizardReducer(s, { type: 'CONFIRM_INSTALL' });
+      expect(s.stagingRoot).not.toBeNull();
+      s = installWizardReducer(s, { type: 'INSTALL_SUCCESS', message: 'installed' });
+      expect(s.phase).toBe('success');
+      expect(s.stagingRoot).toBeNull();
+    });
+
+    it('install error keeps the staging root reference (component cleans up)', () => {
+      let s = startRemote();
+      s = typeRemoteSource(s, 'vercel-labs/skills');
+      s = installWizardReducer(s, { type: 'REMOTE_SOURCE_SUBMIT' });
+      s = installWizardReducer(s, { type: 'REMOTE_STAGED', preview: remotePreview() });
+      s = installWizardReducer(s, { type: 'CONFIRM_INSTALL' });
+      s = installWizardReducer(s, { type: 'INSTALL_ERROR', message: 'boom' });
+      expect(s.phase).toBe('error');
+      // Staging root is preserved so the component's abandon-cleanup effect can remove it.
+      expect(s.stagingRoot).not.toBeNull();
+    });
+
+    it('esc walks back: source-remote → kind, staging → source-remote, confirm → source-remote', () => {
+      // source-remote → kind
+      let s = startRemote();
+      s = installWizardReducer(s, { type: 'CANCEL' });
+      expect(s.phase).toBe('kind');
+
+      // staging → source-remote
+      s = startRemote();
+      s = typeRemoteSource(s, 'vercel-labs/skills');
+      s = installWizardReducer(s, { type: 'REMOTE_SOURCE_SUBMIT' });
+      s = installWizardReducer(s, { type: 'CANCEL' });
+      expect(s.phase).toBe('source-remote');
+
+      // confirm → source-remote
+      s = startRemote();
+      s = typeRemoteSource(s, 'vercel-labs/skills');
+      s = installWizardReducer(s, { type: 'REMOTE_SOURCE_SUBMIT' });
+      s = installWizardReducer(s, { type: 'REMOTE_STAGED', preview: remotePreview() });
+      expect(s.phase).toBe('confirm');
+      s = installWizardReducer(s, { type: 'CANCEL' });
+      expect(s.phase).toBe('source-remote');
+    });
+
+    it('local-only actions are no-ops in remote phases', () => {
+      // SOURCE_CHAR / SELECT_MODE / FALLBACK_TO_COPY must not fire on remote phases.
+      let s = startRemote();
+      s = installWizardReducer(s, { type: 'SOURCE_CHAR', char: 'x' });
+      expect(s.sourceInput).toBe('');
+      s = installWizardReducer(s, { type: 'SELECT_MODE', mode: 'link' });
+      expect(s.mode).toBe('copy'); // unchanged
+      s = installWizardReducer(s, { type: 'FALLBACK_TO_COPY' });
+      expect(s.phase).toBe('source-remote'); // unchanged
+    });
   });
 });

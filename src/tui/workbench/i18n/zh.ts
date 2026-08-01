@@ -132,6 +132,18 @@ export const zh: Record<LocaleKey, string> = {
   'skill.install.installing': '正在安装…',
   'skill.install.success': '技能已安装',
   'skill.install.error': '安装失败',
+  // 安装向导：来源选择（本地 §7.2 / 远程 §7.3）+ 远程阶段
+  'skill.install.kind.title': '安装来源',
+  'skill.install.kind.local': '本地',
+  'skill.install.kind.remote': '远程',
+  'skill.install.kind.local.desc': '从本地目录安装。复制（快照）或链接（实时源）。',
+  'skill.install.kind.remote.desc': '通过固定适配器从 GitHub 简写/URL、.git URL、tree URL 或直接 SKILL.md URL 安装。',
+  'skill.install.kind.hint': '左/右选择 · Enter 继续 · Esc 取消',
+  'skill.install.remote.source.prompt': '远程技能源：',
+  'skill.install.remote.source.hint': 'owner/repo · GitHub URL · .git URL · tree URL · SKILL.md URL · Enter 暂存 · Esc 返回',
+  'skill.install.remote.staging': '通过固定适配器暂存中…',
+  'skill.install.remote.confirm.identity': '暂存身份',
+  'skill.install.remote.confirm.provenance': '来源记录',
   // Main-pane focus + category drill-down
   'main.focusHint': 'Tab 聚焦分类',
   'main.drillIn': 'Enter 进入',

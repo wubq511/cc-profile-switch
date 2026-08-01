@@ -374,7 +374,14 @@ export async function installLocalSkill(options: InstallOptions): Promise<Instal
         },
       );
     }
-    await replaceExistingEntry(options, targetPath, clock);
+    await binExistingSkillEntry({
+      appHomePath: options.appHomePath,
+      profileName: options.profileName,
+      profileRootPath: options.profileRootPath,
+      name: options.name,
+      targetPath,
+      clock,
+    });
   }
 
   if (options.mode === 'copy') {
@@ -448,14 +455,22 @@ async function installLink(options: InstallOptions, targetPath: string): Promise
   await createSkillLink({ targetPath: absoluteTarget, linkPath: targetPath });
 }
 
-async function replaceExistingEntry(
-  options: InstallOptions,
-  targetPath: string,
-  clock: Clock,
-): Promise<void> {
+// Bin an existing Skill entry (link or copy) as a Recovery Bin item and remove
+// it from the Profile, so a rename-swap install can land on an empty target.
+// Shared by the local install (§7.2) and the remote install (§7.3) collision
+// path. The caller writes the new provenance record after the swap.
+export async function binExistingSkillEntry(options: {
+  appHomePath: string;
+  profileName: string;
+  profileRootPath: string;
+  name: string;
+  targetPath: string;
+  clock: Clock;
+}): Promise<void> {
+  const { appHomePath, profileName, profileRootPath, name, targetPath, clock } = options;
   const isLink = await existingEntryIsLink(targetPath);
-  const { profilesPath } = getAppHomePaths(options.appHomePath);
-  const profileDir = path.join(profilesPath, options.profileName);
+  const { profilesPath } = getAppHomePaths(appHomePath);
+  const profileDir = path.join(profilesPath, profileName);
   const relativeTarget = path.relative(profileDir, targetPath);
   if (!isPathInside(profileDir, targetPath)) {
     throw new CcpsError('PATH_OUTSIDE_BASE', 'Collision target escapes the Profile directory.', {
@@ -466,16 +481,16 @@ async function replaceExistingEntry(
   if (isLink) {
     // Linked existing → bin as a fragment (link coords + provenance), delete link only.
     const linkTargetPath = (await readLinkTarget(targetPath)) ?? '';
-    const manifest = await loadSkillsProvenance(options.profileRootPath);
-    const existingRecord = manifest.skills[options.name];
+    const manifest = await loadSkillsProvenance(profileRootPath);
+    const existingRecord = manifest.skills[name];
     await createFragmentItem({
-      appHomePath: options.appHomePath,
+      appHomePath,
       origin: 'remove',
       kind: 'skill',
-      profile: options.profileName,
+      profile: profileName,
       coordinates: {
         file: 'claude-home/skills',
-        keyPath: options.name,
+        keyPath: name,
         value: {
           mode: 'link',
           linkTargetPath,
@@ -488,10 +503,10 @@ async function replaceExistingEntry(
   } else {
     // Copied existing → bin as a file-tree, remove the directory.
     await createFileTreeItem({
-      appHomePath: options.appHomePath,
+      appHomePath,
       origin: 'remove',
       kind: 'skill',
-      profile: options.profileName,
+      profile: profileName,
       coordinates: { targetRelativePath: relativeTarget },
       sourcePath: targetPath,
       clock,
@@ -499,10 +514,10 @@ async function replaceExistingEntry(
     await fs.remove(targetPath);
   }
 
-  // Drop the old provenance record; installLocalSkill writes the new one.
-  const manifest = await loadSkillsProvenance(options.profileRootPath);
-  delete manifest.skills[options.name];
-  await saveSkillsProvenance(options.profileRootPath, manifest);
+  // Drop the old provenance record; the caller writes the new one after the swap.
+  const manifest = await loadSkillsProvenance(profileRootPath);
+  delete manifest.skills[name];
+  await saveSkillsProvenance(profileRootPath, manifest);
 }
 
 // ─── Linked Skill removal + restore ─────────────────────────────────────

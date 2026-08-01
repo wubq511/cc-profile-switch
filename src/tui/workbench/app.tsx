@@ -25,6 +25,11 @@ import {
   previewInstall,
   validateLocalSkillSource,
 } from '../../core/skills-install';
+import {
+  acquireAndPreviewRemoteInstall,
+  installRemoteSkill,
+} from '../../core/skills-remote-install';
+import fs from 'fs-extra';
 import { resolveInside } from '../../platform/path';
 import { I18nProvider, useI18n } from './i18n/react';
 import type { Locale } from './i18n/react';
@@ -1119,6 +1124,45 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch }: { data: Workb
           mode: input.mode,
           name: input.name,
           collisionResolution: input.collisionResolution,
+        });
+      },
+      onAcquireRemote: async (input: { rawSource: string }) => {
+        const appHomePath = getAppHomePaths().appHomePath;
+        const { profilesPath } = getAppHomePaths(appHomePath);
+        const profileRootPath = path.join(profilesPath, wizardProfileName!);
+        return acquireAndPreviewRemoteInstall({
+          appHomePath,
+          profileName: wizardProfileName!,
+          profileRootPath,
+          rawSource: input.rawSource,
+          // name omitted: derived from the staged Skill's directory name
+          // (its frontmatter name) — the remote wizard has no name-input step.
+        });
+      },
+      onInstallRemote: async (input: {
+        stagingRoot: string;
+        stagedName: string;
+        name: string;
+        provenanceSource: RemoteInstallPreview['provenanceSource'];
+        collisionResolution?: 'rename' | 'replace';
+      }) => {
+        const appHomePath = getAppHomePaths().appHomePath;
+        const { profilesPath } = getAppHomePaths(appHomePath);
+        const profileRootPath = path.join(profilesPath, wizardProfileName!);
+        return installRemoteSkill({
+          appHomePath,
+          profileName: wizardProfileName!,
+          profileRootPath,
+          name: input.name,
+          stagingRoot: input.stagingRoot,
+          stagedName: input.stagedName,
+          provenanceSource: input.provenanceSource,
+          collisionResolution: input.collisionResolution,
+        });
+      },
+      onCleanupStaging: (stagingRoot: string) => {
+        fs.remove(stagingRoot).catch(() => {
+          // cleanup failure is non-fatal
         });
       },
       onClose: () => setWizardProfileName(null),

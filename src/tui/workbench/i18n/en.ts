@@ -131,6 +131,18 @@ export const en = {
   'skill.install.installing': 'Installing…',
   'skill.install.success': 'Skill installed',
   'skill.install.error': 'Install failed',
+  // Install wizard: kind picker (Local §7.2 / Remote §7.3) + remote phases
+  'skill.install.kind.title': 'Install source',
+  'skill.install.kind.local': 'Local',
+  'skill.install.kind.remote': 'Remote',
+  'skill.install.kind.local.desc': 'Install from a local directory. Copy (snapshot) or Link (live source).',
+  'skill.install.kind.remote.desc': 'Install from GitHub shorthand/URL, .git URL, tree URL, or direct SKILL.md URL via the pinned adapter.',
+  'skill.install.kind.hint': 'Left/Right to choose · Enter to continue · Esc cancel',
+  'skill.install.remote.source.prompt': 'Remote Skill source:',
+  'skill.install.remote.source.hint': 'owner/repo · GitHub URL · .git URL · tree URL · SKILL.md URL · Enter to stage · Esc back',
+  'skill.install.remote.staging': 'Staging via pinned adapter…',
+  'skill.install.remote.confirm.identity': 'Staged identity',
+  'skill.install.remote.confirm.provenance': 'Provenance record',
   // Main-pane focus + category drill-down
   'main.focusHint': 'Tab to focus categories',
   'main.drillIn': 'Enter to drill in',
