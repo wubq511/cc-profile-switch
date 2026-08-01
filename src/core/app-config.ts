@@ -1,8 +1,15 @@
 import fs from 'fs-extra';
 
 import { getAppHomePath, resolveInside } from '../platform/path';
-import { appConfigSchema, type AppConfig } from '../schemas/config';
+import { appConfigV2Schema, appConfigV1Schema, type AppConfig, type AppConfigV1 } from '../schemas/config';
 import { CcpsError } from '../utils/errors';
+import {
+  loadVersionedJson,
+  saveVersionedJson,
+  atomicWriteJson,
+  cleanupTmpResidue,
+  type VersionedJsonSpec,
+} from './versioned-json';
 
 export type Clock = () => Date;
 
@@ -10,6 +17,7 @@ export type AppHomePaths = {
   appHomePath: string;
   configPath: string;
   apiSettingsPath: string;
+  statePath: string;
   profilesPath: string;
   backupsPath: string;
 };
@@ -18,11 +26,47 @@ export type AppConfigWriteOptions = {
   clock?: Clock;
 };
 
+const appConfigSpec: VersionedJsonSpec<AppConfig, 2> = {
+  fileName: 'config.json',
+  currentVersion: 2,
+  currentSchema: appConfigV2Schema,
+  migrate: (raw: unknown, rawVersion: number): AppConfig => {
+    if (rawVersion === 1) {
+      const parsed = appConfigV1Schema.safeParse(raw);
+      if (!parsed.success) {
+        throw new CcpsError('APP_CONFIG_INVALID', 'v1 config does not match the v1 schema.', {
+          guidance: 'Check config.json fields and profile names.',
+          cause: parsed.error,
+        });
+      }
+      const v1 = parsed.data;
+      return {
+        version: 2,
+        defaultProfile: v1.defaultProfile,
+        lastUsedProfile: v1.lastUsedProfile,
+        createdAt: v1.createdAt,
+        updatedAt: v1.updatedAt,
+        recovery: { retentionDays: 30 },
+        workbench: { skillsDiscoveryExperimental: true },
+      };
+    }
+    throw new CcpsError(
+      'APP_CONFIG_INVALID_VERSION',
+      `Cannot migrate config.json from version ${rawVersion}.`,
+      {
+        guidance: 'Check the version field in config.json.',
+      },
+    );
+  },
+  errorPrefix: 'APP_CONFIG',
+};
+
 export function getAppHomePaths(appHomePath = getAppHomePath()): AppHomePaths {
   return {
     appHomePath,
     configPath: resolveInside(appHomePath, 'config.json'),
     apiSettingsPath: resolveInside(appHomePath, 'api-settings.json'),
+    statePath: resolveInside(appHomePath, 'state.json'),
     profilesPath: resolveInside(appHomePath, 'profiles'),
     backupsPath: resolveInside(appHomePath, 'backups'),
   };
@@ -32,10 +76,12 @@ export function createInitialAppConfig(clock: Clock = () => new Date()): AppConf
   const timestamp = clock().toISOString();
 
   return {
-    version: 1,
+    version: 2,
     lastUsedProfile: null,
     createdAt: timestamp,
     updatedAt: timestamp,
+    recovery: { retentionDays: 30 },
+    workbench: { skillsDiscoveryExperimental: true },
   };
 }
 
@@ -45,6 +91,7 @@ export async function ensureAppHomeStructure(appHomePath = getAppHomePath()): Pr
   await fs.ensureDir(paths.appHomePath);
   await fs.ensureDir(paths.profilesPath);
   await fs.ensureDir(paths.backupsPath);
+  await cleanupTmpResidue(paths.appHomePath);
 
   return paths;
 }
@@ -54,7 +101,7 @@ export async function createAppConfig(
   options: AppConfigWriteOptions = {},
 ): Promise<AppConfig> {
   const paths = await ensureAppHomeStructure(appHomePath);
-  const config = appConfigSchema.parse(createInitialAppConfig(options.clock));
+  const config = appConfigV2Schema.parse(createInitialAppConfig(options.clock));
 
   await writeJsonFile(paths.configPath, config, { overwrite: false });
 
@@ -63,40 +110,7 @@ export async function createAppConfig(
 
 export async function loadAppConfig(appHomePath = getAppHomePath()): Promise<AppConfig> {
   const { configPath } = getAppHomePaths(appHomePath);
-  let raw: string;
-
-  try {
-    raw = await fs.readFile(configPath, 'utf8');
-  } catch (error) {
-    if (isNodeError(error) && error.code === 'ENOENT') {
-      throw new CcpsError('APP_CONFIG_NOT_FOUND', 'App config does not exist.', {
-        guidance: 'Run ccps init before loading profiles.',
-        cause: error,
-      });
-    }
-
-    throw error;
-  }
-
-  let parsedJson: unknown;
-  try {
-    parsedJson = JSON.parse(raw);
-  } catch (error) {
-    throw new CcpsError('APP_CONFIG_INVALID_JSON', 'App config is not valid JSON.', {
-      guidance: 'Fix config.json or recreate it from a backup.',
-      cause: error,
-    });
-  }
-
-  const parsedConfig = appConfigSchema.safeParse(parsedJson);
-  if (!parsedConfig.success) {
-    throw new CcpsError('APP_CONFIG_INVALID', 'App config does not match the expected schema.', {
-      guidance: 'Check config.json fields and profile names.',
-      cause: parsedConfig.error,
-    });
-  }
-
-  return parsedConfig.data;
+  return loadVersionedJson(appConfigSpec, configPath);
 }
 
 export async function saveAppConfig(
@@ -105,12 +119,12 @@ export async function saveAppConfig(
   options: AppConfigWriteOptions = {},
 ): Promise<AppConfig> {
   const paths = await ensureAppHomeStructure(appHomePath);
-  const nextConfig = appConfigSchema.parse({
+  const nextConfig = appConfigV2Schema.parse({
     ...config,
     updatedAt: (options.clock ?? (() => new Date()))().toISOString(),
   });
 
-  await writeJsonFile(paths.configPath, nextConfig, { overwrite: true });
+  await saveVersionedJson(appConfigSpec, paths.configPath, nextConfig);
 
   return nextConfig;
 }
@@ -120,23 +134,14 @@ export async function writeJsonFile(
   value: unknown,
   options: { overwrite: boolean },
 ): Promise<void> {
-  try {
-    await fs.writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, {
-      encoding: 'utf8',
-      flag: options.overwrite ? 'w' : 'wx',
-    });
-  } catch (error) {
-    if (isNodeError(error) && error.code === 'EEXIST') {
+  if (!options.overwrite) {
+    const exists = await fs.pathExists(filePath);
+    if (exists) {
       throw new CcpsError('FILE_ALREADY_EXISTS', 'Refusing to overwrite an existing file.', {
         guidance: `Choose a new name or remove the existing file intentionally: ${filePath}`,
-        cause: error,
       });
     }
-
-    throw error;
   }
-}
 
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error;
+  await atomicWriteJson(filePath, value);
 }

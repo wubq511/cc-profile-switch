@@ -238,7 +238,7 @@ describe('saveVersionedJson', () => {
   it('validates and writes atomically', async () => {
     const dir = await makeTempDir();
     const filePath = join(dir, 'test.json');
-    const result = await saveVersionedJson(testSpec, filePath, { version: 2, name: 'saved' });
+    const result = await saveVersionedJson(testSpec, filePath, { version: 2, name: 'saved', addedField: true });
 
     expect(result).toEqual({ version: 2, name: 'saved', addedField: true });
     const onDisk = JSON.parse(await fs.readFile(filePath, 'utf8'));

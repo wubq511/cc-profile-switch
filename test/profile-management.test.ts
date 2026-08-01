@@ -141,7 +141,7 @@ describe('profile management services', () => {
     await saveAppConfig(
       appHome,
       {
-        version: 1,
+        version: 2,
         defaultProfile: 'coding',
         lastUsedProfile: 'coding',
       },
@@ -189,7 +189,7 @@ describe('profile management services', () => {
     await saveAppConfig(
       appHome,
       {
-        version: 1,
+        version: 2,
         defaultProfile: 'coding',
         lastUsedProfile: 'coding',
       },

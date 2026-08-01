@@ -31,35 +31,65 @@ describe('app config', () => {
     return join(root, '.cc-profile-switch');
   }
 
-  it('builds deterministic initial config', () => {
+  it('builds deterministic initial v2 config', () => {
     expect(createInitialAppConfig(fixedClock)).toEqual({
-      version: 1,
+      version: 2,
       lastUsedProfile: null,
       createdAt: '2026-01-02T03:04:05.000Z',
       updatedAt: '2026-01-02T03:04:05.000Z',
+      recovery: { retentionDays: 30 },
+      workbench: { skillsDiscoveryExperimental: true },
     });
   });
 
-  it('creates app home folders and config without touching the real app home', async () => {
+  it('creates app home folders and v2 config without touching the real app home', async () => {
     const appHome = await makeAppHome();
     const config = await createAppConfig(appHome, { clock: fixedClock });
     const paths = getAppHomePaths(appHome);
 
-    expect(config.version).toBe(1);
+    expect(config.version).toBe(2);
+    expect(config.recovery.retentionDays).toBe(30);
+    expect(config.workbench.skillsDiscoveryExperimental).toBe(true);
     expect(await fs.pathExists(paths.configPath)).toBe(true);
     expect(await fs.pathExists(paths.profilesPath)).toBe(true);
     expect(await fs.pathExists(paths.backupsPath)).toBe(true);
   });
 
-  it('loads and validates config.json', async () => {
+  it('loads and validates v2 config.json', async () => {
     const appHome = await makeAppHome();
-
     await createAppConfig(appHome, { clock: fixedClock });
 
-    await expect(loadAppConfig(appHome)).resolves.toMatchObject({
+    const config = await loadAppConfig(appHome);
+    expect(config.version).toBe(2);
+    expect(config.lastUsedProfile).toBeNull();
+    expect(config.recovery.retentionDays).toBe(30);
+    expect(config.workbench.skillsDiscoveryExperimental).toBe(true);
+  });
+
+  it('migrates a v1 config to v2 in memory without writing', async () => {
+    const appHome = await makeAppHome();
+    const paths = getAppHomePaths(appHome);
+    await fs.ensureDir(appHome);
+    await fs.ensureDir(paths.profilesPath);
+    await fs.ensureDir(paths.backupsPath);
+    // Write a v1 config directly
+    await fs.writeJson(paths.configPath, {
       version: 1,
+      defaultProfile: 'coding',
       lastUsedProfile: null,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
     });
+
+    const config = await loadAppConfig(appHome);
+    expect(config.version).toBe(2);
+    expect(config.defaultProfile).toBe('coding');
+    expect(config.recovery.retentionDays).toBe(30);
+    expect(config.workbench.skillsDiscoveryExperimental).toBe(true);
+
+    // Read path never writes — file on disk is still v1
+    const onDisk = await fs.readJson(paths.configPath);
+    expect(onDisk.version).toBe(1);
   });
 
   it('rejects invalid JSON when loading config', async () => {
@@ -71,6 +101,30 @@ describe('app config', () => {
 
     await expect(loadAppConfig(appHome)).rejects.toMatchObject({
       code: 'APP_CONFIG_INVALID_JSON',
+    });
+  });
+
+  it('rejects a future version config', async () => {
+    const appHome = await makeAppHome();
+    const paths = getAppHomePaths(appHome);
+
+    await fs.ensureDir(appHome);
+    await fs.writeJson(paths.configPath, { version: 99 });
+
+    await expect(loadAppConfig(appHome)).rejects.toMatchObject({
+      code: 'APP_CONFIG_FUTURE_VERSION',
+    });
+  });
+
+  it('rejects unknown fields in config', async () => {
+    const appHome = await makeAppHome();
+    const paths = getAppHomePaths(appHome);
+
+    await fs.ensureDir(appHome);
+    await fs.writeJson(paths.configPath, { version: 2, unknownField: true });
+
+    await expect(loadAppConfig(appHome)).rejects.toMatchObject({
+      code: 'APP_CONFIG_INVALID',
     });
   });
 
@@ -105,5 +159,41 @@ describe('app config', () => {
       updatedAt: '2026-01-02T04:05:06.000Z',
     });
     await expect(loadAppConfig(appHome)).resolves.toMatchObject(saved);
+  });
+
+  it('saves v2 config with recovery and workbench settings', async () => {
+    const appHome = await makeAppHome();
+    const config = await createAppConfig(appHome, { clock: fixedClock });
+
+    const saved = await saveAppConfig(
+      appHome,
+      {
+        ...config,
+        recovery: { retentionDays: 7 },
+        workbench: { skillsDiscoveryExperimental: false, language: 'zh' },
+      },
+      { clock: laterClock },
+    );
+
+    expect(saved.recovery.retentionDays).toBe(7);
+    expect(saved.workbench.skillsDiscoveryExperimental).toBe(false);
+    expect(saved.workbench.language).toBe('zh');
+  });
+
+  it('writes config atomically (no .tmp residue)', async () => {
+    const appHome = await makeAppHome();
+    const config = await createAppConfig(appHome, { clock: fixedClock });
+
+    await saveAppConfig(appHome, config, { clock: laterClock });
+
+    const files = await fs.readdir(appHome);
+    expect(files.some((f) => f.endsWith('.tmp'))).toBe(false);
+  });
+
+  it('exposes statePath in app home paths', () => {
+    const paths = getAppHomePaths('/fake/home/.cc-profile-switch');
+    expect(paths.statePath).toBe(
+      join('/fake/home/.cc-profile-switch', 'state.json'),
+    );
   });
 });
