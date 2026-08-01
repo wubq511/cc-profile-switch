@@ -368,8 +368,15 @@ export function canUpdate(record: SkillProvenanceRecord): CapabilityResult {
   if (record.source.kind === 'unknown') {
     return { enabled: false, reason: 'no-source' };
   }
-  if (record.source.kind === 'local' && !record.source.repo) {
-    return { enabled: false, reason: 'no-git-repo' };
+  if (record.source.kind === 'local') {
+    if (!record.source.repo) {
+      return { enabled: false, reason: 'no-git-repo' };
+    }
+    // A repo without an origin/upstream cannot be pulled — Update is disabled
+    // with a stated reason (spec §7.1 "missing remote/upstream disables with reason").
+    if (!record.source.repo.remoteUrl) {
+      return { enabled: false, reason: 'no-remote' };
+    }
   }
   return { enabled: true };
 }
@@ -377,6 +384,11 @@ export function canUpdate(record: SkillProvenanceRecord): CapabilityResult {
 export function canDiffVsSource(record: SkillProvenanceRecord): CapabilityResult {
   if (record.source.kind === 'unknown') {
     return { enabled: false, reason: 'no-source' };
+  }
+  // Diff-vs-source is Copied-only (spec §6.3): a Linked Skill's profile tree IS
+  // the source (through the link), so the comparison is always empty.
+  if (record.mode === 'link') {
+    return { enabled: false, reason: 'link-mode' };
   }
   // Diff-vs-source compares the profile tree against the recorded source path/URL
   // directly — it does not need git, so a local source without an enclosing repo
