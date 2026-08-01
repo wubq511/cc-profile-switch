@@ -22,6 +22,7 @@ export type LaunchPhase =
 export type LifecyclePhase =
   | 'idle'
   | 'prompting'
+  | 'confirm'   // destructive-action inline panel (§9.1)
   | 'executing'
   | 'success'
   | 'error';
@@ -39,6 +40,11 @@ export type LifecycleState = {
   step: number;
   selectedTemplate: ProfileTemplateName | null;
   message: string;
+  /** Monotonic counter carried by success/error flashes (generation guard). */
+  messageId: number;
+  /** Error context for the boxed error panel. */
+  errorCode?: string;
+  guidance?: string;
   findings: LifecycleFinding[] | null;
   // Launch flow state
   launch: LaunchState;
@@ -64,6 +70,8 @@ export type LifecycleFinding = {
 export type LifecycleAction =
   | { type: 'START_PROMPT'; kind: LifecyclePromptKind; profileName: string }
   | { type: 'START_IMMEDIATE'; kind: LifecyclePromptKind; profileName: string }
+  | { type: 'START_CONFIRM'; kind: LifecyclePromptKind; profileName: string }
+  | { type: 'CONFIRM_CHOICE' }
   | { type: 'INPUT_CHAR'; char: string }
   | { type: 'BACKSPACE' }
   | { type: 'SELECT_TEMPLATE'; templateName: ProfileTemplateName }
@@ -71,7 +79,7 @@ export type LifecycleAction =
   | { type: 'SUBMIT' }
   | { type: 'CANCEL' }
   | { type: 'EXECUTE_SUCCESS'; message: string }
-  | { type: 'EXECUTE_ERROR'; message: string }
+  | { type: 'EXECUTE_ERROR'; message: string; code?: string; guidance?: string }
   | { type: 'SET_FINDINGS'; findings: LifecycleFinding[] }
   | { type: 'DISMISS' }
   // Launch flow actions
@@ -98,6 +106,9 @@ export function initialLifecycleState(): LifecycleState {
     step: 1,
     selectedTemplate: null,
     message: '',
+    messageId: 0,
+    errorCode: undefined,
+    guidance: undefined,
     findings: null,
     launch: initialLaunchState(),
   };
@@ -137,6 +148,20 @@ export function lifecycleReducer(state: LifecycleState, action: LifecycleAction)
       };
     }
 
+    case 'START_CONFIRM': {
+      return {
+        ...initialLifecycleState(),
+        phase: 'confirm',
+        kind: action.kind,
+        profileName: action.profileName,
+      };
+    }
+
+    case 'CONFIRM_CHOICE': {
+      if (state.phase !== 'confirm') return state;
+      return { ...state, phase: 'executing' };
+    }
+
     case 'INPUT_CHAR': {
       if (state.phase !== 'prompting') return state;
       return { ...state, input: state.input + action.char };
@@ -171,12 +196,19 @@ export function lifecycleReducer(state: LifecycleState, action: LifecycleAction)
 
     case 'EXECUTE_SUCCESS': {
       if (state.phase !== 'executing') return state;
-      return { ...state, phase: 'success', message: action.message };
+      return { ...state, phase: 'success', message: action.message, messageId: state.messageId + 1 };
     }
 
     case 'EXECUTE_ERROR': {
       if (state.phase !== 'executing') return state;
-      return { ...state, phase: 'error', message: action.message };
+      return {
+        ...state,
+        phase: 'error',
+        message: action.message,
+        messageId: state.messageId + 1,
+        errorCode: action.code,
+        guidance: action.guidance,
+      };
     }
 
     case 'SET_FINDINGS': {

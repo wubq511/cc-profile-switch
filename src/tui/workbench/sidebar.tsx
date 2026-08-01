@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Box, Text, useInput, useStdin } from 'ink';
 
 import { useI18n } from './i18n/react';
 import type { LocaleKey } from './i18n/en';
+import { NoMatchEmptyState, useHints, ZeroProfilesEmptyState } from './guidance';
 import {
   LIFECYCLE_ACTIONS,
   LAUNCH_ACTIONS,
@@ -55,10 +56,15 @@ export function Sidebar({
   onAddSkill,
 }: SidebarProps): React.ReactElement {
   const { t } = useI18n();
+  const { markUsed, liveKeys } = useHints();
   const { stdin: inkStdin } = useStdin();
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
   const [templateIndex, setTemplateIndex] = useState(0);
+  // First-search-focus tip: shown only during the first search focus of the
+  // session, then gone for good (§5 discovery tips).
+  const searchTipShown = useRef(false);
+  const [searchTipVisible, setSearchTipVisible] = useState(false);
 
   const filtered = searchQuery
     ? profiles.filter((p) => p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.description.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -66,6 +72,7 @@ export function Sidebar({
 
   const filteredIndex = (originalIndex: number): number => {
     const profile = profiles[originalIndex];
+    if (!profile) return -1;
     return filtered.findIndex((f) => f.name === profile.name);
   };
 
@@ -75,6 +82,9 @@ export function Sidebar({
 
   useInput((input: string, key: Record<string, boolean>) => {
     if (capture || wizardOpen) return;
+
+    // Destructive-action panel input is owned by the app (full-width dialog).
+    if (lifecycle.phase === 'confirm') return;
 
     // Lifecycle prompt input handling (highest priority)
     if (lifecycle.phase === 'prompting') {
@@ -132,11 +142,13 @@ export function Sidebar({
     if (searchFocused) {
       if (key.escape) {
         setSearchFocused(false);
+        setSearchTipVisible(false);
         setSearchQuery('');
         return;
       }
       if (key.return) {
         setSearchFocused(false);
+        setSearchTipVisible(false);
         return;
       }
       if (key.backspace || key.delete) {
@@ -154,14 +166,17 @@ export function Sidebar({
       const profile = filtered[filteredIndex(selectedIndex)];
       if (profile) {
         if (input === 'l') {
+          markUsed('l');
           onLaunchBar(profile.name);
           return;
         }
         if (input === 'L') {
+          markUsed('L');
           onLaunchDirScreen(profile.name);
           return;
         }
         if (input === 'a' && onAddSkill) {
+          markUsed('a');
           onAddSkill(profile.name);
           return;
         }
@@ -174,6 +189,15 @@ export function Sidebar({
     if (lifecycle.phase === 'idle' && !launchActive && !resourceNavActive) {
       for (const act of LIFECYCLE_ACTIONS) {
         if (input === act.key) {
+          // Create works even with zero Profiles (the zero-Profile recipe
+          // offers [n] — no selected Profile is needed to create one).
+          if (act.kind === 'create') {
+            markUsed(act.key);
+            setTemplateIndex(0);
+            onLifecycleAction({ type: 'START_PROMPT', kind: 'create', profileName: '' });
+            return;
+          }
+
           const profile = filtered[filteredIndex(selectedIndex)];
           if (!profile) return;
 
@@ -183,17 +207,20 @@ export function Sidebar({
               kind: act.kind,
               profileName: profile.name,
             };
+            markUsed(act.key);
             onLifecycleAction(immediateAction);
             onAction(immediateAction, profile.name, '', null);
+          } else if (act.kind === 'remove') {
+            // Workbench removal opens the inline destructive panel (§9.1).
+            markUsed(act.key);
+            onLifecycleAction({ type: 'START_CONFIRM', kind: act.kind, profileName: profile.name });
           } else {
             onLifecycleAction({
               type: 'START_PROMPT',
               kind: act.kind,
               profileName: profile.name,
             });
-            if (act.kind === 'create') {
-              setTemplateIndex(0);
-            }
+            markUsed(act.key);
           }
           return;
         }
@@ -203,7 +230,12 @@ export function Sidebar({
     // Navigation (skipped entirely while a resource view owns the keys)
     if (resourceNavActive) return;
     if (input === '/') {
+      markUsed('/');
       setSearchFocused(true);
+      if (!searchTipShown.current) {
+        searchTipShown.current = true;
+        setSearchTipVisible(true);
+      }
       return;
     }
     if (key.upArrow) {
@@ -222,14 +254,15 @@ export function Sidebar({
     }
   }, { isActive: canUseInput && !capture && !wizardOpen });
 
-  // Auto-dismiss success after 1.5s
+  // Auto-dismiss success after 1.5s (generation counter: messageId, not message,
+  // so an identical repeat flash still resets its timer — issue #76).
   useEffect(() => {
     if (lifecycle.phase !== 'success') return;
     const timer = setTimeout(() => {
       onLifecycleAction({ type: 'DISMISS' });
     }, 1500);
     return () => clearTimeout(timer);
-  }, [lifecycle.phase, lifecycle.message]);
+  }, [lifecycle.phase, lifecycle.messageId]);
 
   // Auto-dismiss launch exit flash after 3s
   useEffect(() => {
@@ -239,6 +272,12 @@ export function Sidebar({
     }, 3000);
     return () => clearTimeout(timer);
   }, [lifecycle.launch.phase, lifecycle.launch.exitCode]);
+
+  // Retiring contextual hints: a key's hint drops after HINT_RETIRE_AFTER uses.
+  const lifecycleLive = liveKeys(LIFECYCLE_ACTIONS.map((a) => a.key));
+  const launchLive = liveKeys(LAUNCH_ACTIONS.map((a) => a.key));
+  const skillsLive = liveKeys(['a']);
+  const allHintsRetired = lifecycleLive.length === 0 && launchLive.length === 0;
 
   return React.createElement(
     Box,
@@ -250,21 +289,26 @@ export function Sidebar({
     ),
     React.createElement(
       Box,
-      { paddingX: 1 },
+      { paddingX: 1, flexDirection: 'column' },
       searchFocused
         ? React.createElement(Text, { color: 'cyan' }, `/${searchQuery}█`)
         : React.createElement(Text, { dimColor: true }, t('sidebar.search.placeholder')),
+      searchFocused && searchQuery === '' && searchTipVisible &&
+        React.createElement(Text, { dimColor: true, wrap: 'wrap' }, t('search.tip')),
     ),
     React.createElement(
       Box,
       { flexDirection: 'column', flexGrow: 1 },
       filtered.length === 0
-        ? React.createElement(
-            Box,
-            { paddingX: 1, flexDirection: 'column' },
-            React.createElement(Text, { dimColor: true }, t('sidebar.empty')),
-            React.createElement(Text, { color: 'green' }, t('sidebar.empty.hint')),
-          )
+        ? searchQuery
+          ? React.createElement(
+              NoMatchEmptyState,
+              { query: searchQuery },
+            )
+          : React.createElement(
+              ZeroProfilesEmptyState,
+              null,
+            )
         : React.createElement(
             Box,
             { flexDirection: 'column' },
@@ -294,16 +338,30 @@ export function Sidebar({
     lifecycle.phase === 'idle' && !launchActive && React.createElement(
       Box,
       { paddingX: 1, flexDirection: 'column' },
-      React.createElement(
-        Text,
-        { dimColor: true },
-        LIFECYCLE_ACTIONS.map((a) => `[${a.key}]${t(a.labelKey)}`).join(' '),
-      ),
-      React.createElement(
-        Text,
-        { dimColor: true },
-        `${LAUNCH_ACTIONS.map((a) => `[${a.key}]${t(a.labelKey)}`).join(' ')}[a]${t('skill.add')}`,
-      ),
+      allHintsRetired && skillsLive.length === 0
+        ? React.createElement(Text, { dimColor: true, wrap: 'wrap' }, t('guidance.hints.knowRopes'))
+        : React.createElement(
+            Box,
+            { flexDirection: 'column' },
+            lifecycleLive.length > 0 &&
+              React.createElement(
+                Text,
+                { dimColor: true, wrap: 'wrap' },
+                LIFECYCLE_ACTIONS.filter((a) => lifecycleLive.includes(a.key)).map((a) => `[${a.key}] ${t(a.labelKey)}`).join('  '),
+              ),
+            launchLive.length > 0 &&
+              React.createElement(
+                Text,
+                { dimColor: true, wrap: 'wrap' },
+                LAUNCH_ACTIONS.filter((a) => launchLive.includes(a.key)).map((a) => `[${a.key}] ${t(a.labelKey)}`).join('  '),
+              ),
+            skillsLive.length > 0 &&
+              React.createElement(
+                Text,
+                { dimColor: true, wrap: 'wrap' },
+                `[a] ${t('skill.add')}`,
+              ),
+          ),
     ),
     lifecycle.phase === 'prompting' && React.createElement(
       Box,
@@ -333,24 +391,13 @@ export function Sidebar({
       { paddingX: 1 },
       React.createElement(Text, { color: 'yellow' }, t('lifecycle.executing')),
     ),
-    lifecycle.phase === 'success' && React.createElement(
-      Box,
-      { paddingX: 1 },
-      React.createElement(Text, { color: 'green' }, `${t('lifecycle.success')} ${lifecycle.message}`),
-    ),
-    lifecycle.phase === 'error' && React.createElement(
-      Box,
-      { paddingX: 1, flexDirection: 'column' },
-      React.createElement(Text, { color: 'red' }, `${t('lifecycle.error')}: ${lifecycle.message}`),
-      React.createElement(Text, { dimColor: true }, t('keymap.esc')),
-    ),
     lifecycle.findings !== null && lifecycle.findings.length > 0 && React.createElement(
       Box,
       { paddingX: 1, flexDirection: 'column' },
       ...lifecycle.findings.map((f, i) =>
         React.createElement(
           Text,
-          { key: i, color: f.severity === 'error' ? 'red' : 'yellow' },
+          { key: i, color: f.severity === 'error' ? 'red' : 'yellow', wrap: 'wrap' },
           `[${f.severity}] ${f.code}: ${f.message}`,
         ),
       ),

@@ -2,6 +2,7 @@ import React from 'react';
 import { Box, Text } from 'ink';
 
 import { useI18n } from './i18n/react';
+import { useHints } from './guidance';
 import type { WorkbenchProfile, ResourceCounts } from './profile-data';
 import type { ResourceNavState } from './resource-nav';
 import type {
@@ -17,6 +18,8 @@ type MainPaneProps = {
   profile: WorkbenchProfile | undefined;
   profiles: WorkbenchProfile[];
   nav: ResourceNavState;
+  /** MCP servers that failed to connect — amber nudge (§5). */
+  mcpFailed?: string[];
   width: number;
   height: number;
   /** Whether the main pane holds keyboard focus (Tab-toggleable from sidebar). */
@@ -54,10 +57,19 @@ export function categoryKeyAt(index: number): (typeof CATEGORIES)[number]['key']
 type CategoryDef = (typeof CATEGORIES)[number];
 type CategoryKey = CategoryDef['key'];
 
+// Focused-element contextual hints (retire after HINT_RETIRE_AFTER uses).
+const PROFILE_HINTS = [
+  { key: 'l' as const, labelKey: 'lifecycle.launch' as const },
+  { key: 'b' as const, labelKey: 'lifecycle.backup' as const },
+  { key: 'x' as const, labelKey: 'lifecycle.remove' as const },
+  { key: 'n' as const, labelKey: 'lifecycle.create' as const },
+];
+
 export function MainPane({
   profile,
   profiles,
   nav,
+  mcpFailed,
   width,
   height,
   focused,
@@ -73,6 +85,7 @@ export function MainPane({
   hintLine,
 }: MainPaneProps): React.ReactElement {
   const { t } = useI18n();
+  const { liveKeys } = useHints();
 
   if (!profile) {
     return React.createElement(
@@ -104,6 +117,7 @@ export function MainPane({
 
   const colWidth = Math.floor((width - 4) / 2);
   const cursor = selectedCategoryIndex ?? 0;
+  const liveProfileHints = liveKeys(PROFILE_HINTS.map((h) => h.key));
 
   return React.createElement(
     Box,
@@ -119,15 +133,39 @@ export function MainPane({
       { marginBottom: 1 },
       React.createElement(Text, { dimColor: true }, profile.description),
     ),
+    // Just-in-time amber nudge: MCP servers that failed to connect (§5).
+    (mcpFailed?.length ?? 0) > 0 && React.createElement(
+      Box,
+      { marginBottom: 1 },
+      React.createElement(
+        Text,
+        { color: 'yellow', wrap: 'wrap' },
+        `⚠ ${t('mcp.failed').replace('{name}', mcpFailed.join(', '))}`,
+      ),
+    ),
     React.createElement(
       Box,
-      { flexDirection: 'column', gap: 1 },
+      { flexDirection: 'column', gap: 1, flexGrow: 1 },
       ...renderCategoryGrid(profile.resourceCounts, colWidth, cursor, focused ?? false),
     ),
     focused && React.createElement(
       Box,
       { marginTop: 1 },
       React.createElement(Text, { dimColor: true }, t('main.drillIn')),
+    ),
+    React.createElement(
+      Box,
+      { marginTop: 1 },
+      liveProfileHints.length > 0
+        ? React.createElement(
+            Text,
+            { color: 'cyan', wrap: 'wrap' },
+            liveProfileHints.map((k) => {
+              const hint = PROFILE_HINTS.find((h) => h.key === k);
+              return hint ? `[${hint.key}]${t(hint.labelKey)}` : '';
+            }).filter(Boolean).join(' '),
+          )
+        : React.createElement(Text, { dimColor: true, wrap: 'wrap' }, t('guidance.hints.knowRopes')),
     ),
   );
 
@@ -157,6 +195,14 @@ export function MainPane({
         ? ' [u]'
         : ' [a]'
       : '';
+    // Empty-category offer: `[a] add` (Skills also name the Copy/Link choice).
+    const emptyLabel =
+      count === 0
+        ? def.key === 'skills'
+          ? t('empty.category.skills')
+          : t('empty.category')
+        : null;
+
     return React.createElement(
       Box,
       {
@@ -167,11 +213,12 @@ export function MainPane({
       },
       React.createElement(
         Text,
-        { bold: true, inverse: highlighted, color: highlighted ? 'cyan' : undefined },
+        { bold: true, inverse: highlighted, color: highlighted ? 'cyan' : undefined, wrap: 'wrap' },
         `${highlighted ? '▸ ' : ''}${t(def.labelKey)}`,
       ),
       React.createElement(Text, null, `${count}`),
-      drillHint && React.createElement(Text, { dimColor: true }, drillHint),
+      drillHint && React.createElement(Text, { dimColor: true, wrap: 'wrap' }, drillHint),
+      emptyLabel && React.createElement(Text, { dimColor: true, wrap: 'wrap' }, emptyLabel),
     );
   }
 }

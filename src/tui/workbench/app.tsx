@@ -26,6 +26,8 @@ import {
   validateLocalSkillSource,
 } from '../../core/skills-install';
 import { resolveInside } from '../../platform/path';
+import { CcpsError } from '../../utils/errors';
+import { listMcpServers, type McpServerState } from '../../core/mcp-list';
 import { I18nProvider, useI18n } from './i18n/react';
 import type { Locale } from './i18n/react';
 import { CaptureProvider } from './capture-context';
@@ -73,8 +75,19 @@ import { DirectoryScreen } from './launch/directory-screen';
 import { DryRunPage } from './launch/dry-run-page';
 import { InstallWizard } from './skills/install-wizard';
 import { AutoMemoryView } from './resources/auto-memory-view';
+import { ErrorPanel, HintsProvider, RemoveProfilePanel, useHints } from './guidance';
 
 type DrillDown = { kind: 'none' } | { kind: 'autoMemory' };
+
+// The welcome card is once-per-session: this module-level flag survives the
+// unmount/remount cycle of a launch resume, so the card never reappears
+// mid-session (issue #76 §5).
+let sessionWelcomeShown = false;
+
+/** Test-only: reset the once-per-session welcome flag for a fresh render. */
+export function resetWelcomeSessionForTests(): void {
+  sessionWelcomeShown = false;
+}
 
 type WorkbenchAppProps = {
   data: WorkbenchData;
@@ -84,27 +97,35 @@ type WorkbenchAppProps = {
   skipWelcome?: boolean;
   /** Called when the Workbench needs to unmount, spawn Claude, and remount. */
   onLaunch?: (plan: LaunchPlan, appHomePath: string) => number | null;
+  /** Override the MCP connection-state probe (tests). */
+  mcpProbe?: (appHomePath: string, profileName: string) => Promise<McpServerState[]>;
 };
 
-export function WorkbenchApp({ data, onLocaleChange, initialLocale, headless, skipWelcome, onLaunch }: WorkbenchAppProps): React.ReactElement {
-  const inner = React.createElement(WorkbenchInner, { data, headless, skipWelcome, onLaunch });
+export function WorkbenchApp({ data, onLocaleChange, initialLocale, headless, skipWelcome, onLaunch, mcpProbe }: WorkbenchAppProps): React.ReactElement {
+  const inner = React.createElement(WorkbenchInner, { data, headless, skipWelcome, onLaunch, mcpProbe });
   return React.createElement(
     I18nProvider,
     { initialLocale, onLocaleChange },
-    inner,
+    React.createElement(HintsProvider, null, inner),
   );
 }
 
-function WorkbenchInner({ data, headless, skipWelcome, onLaunch }: { data: WorkbenchData; headless?: boolean; skipWelcome?: boolean; onLaunch?: (plan: LaunchPlan, appHomePath: string) => number | null }): React.ReactElement {
+function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe }: { data: WorkbenchData; headless?: boolean; skipWelcome?: boolean; onLaunch?: (plan: LaunchPlan, appHomePath: string) => number | null; mcpProbe?: (appHomePath: string, profileName: string) => Promise<McpServerState[]> }): React.ReactElement {
   const { t, locale } = useI18n();
   const { exit } = useApp();
   const { stdout } = useStdout();
   const { stdin: inkStdin } = useStdin();
+  const { markUsed } = useHints();
 
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [helpVisible, setHelpVisible] = useState(false);
   const [capture, setCapture] = useState(false);
-  const [welcomeVisible, setWelcomeVisible] = useState(!skipWelcome);
+  const [welcomeVisible, setWelcomeVisible] = useState(() => {
+    if (skipWelcome) return false;
+    if (sessionWelcomeShown) return false;
+    sessionWelcomeShown = true;
+    return true;
+  });
   const [, forceRerender] = useState(0);
   const [workbenchData, setWorkbenchData] = useState(data);
   const [lifecycle, setLifecycle] = useState(initialLifecycleState);
@@ -122,6 +143,7 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch }: { data: Workb
   const [agentFrontmatter, setAgentFrontmatter] = useState<AgentFrontmatter | null>(null);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [flashMessage, setFlashMessage] = useState('');
+  const [mcpFailedByProfile, setMcpFailedByProfile] = useState<Record<string, string[]>>({});
   // Persisted selection across launch remount
   const persistedSelection = useRef(selectedIndex);
   const sessionManagerRef = useRef(
@@ -165,6 +187,30 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch }: { data: Workb
   const launchActive = lifecycle.launch.phase !== 'idle';
   const wizardOpen = wizardProfileName !== null;
 
+  // Just-in-time MCP nudge: probe the selected Profile's MCP connection state
+  // once per session (cached by profile name), fail closed on any error.
+  useEffect(() => {
+    const profile = workbenchData.profiles[selectedIndex];
+    if (!profile || (profile.mcpServers?.length ?? 0) === 0) return;
+    if (mcpFailedByProfile[profile.name]) return; // already probed this session
+
+    let cancelled = false;
+    const probe = mcpProbe ?? ((appHomePath: string, name: string) => listMcpServers({ appHomePath, profileName: name }));
+    (async () => {
+      try {
+        const states = await probe(getAppHomePaths().appHomePath, profile.name);
+        if (cancelled) return;
+        const failed = states.filter((s) => s.failed).map((s) => s.name);
+        setMcpFailedByProfile((prev) => ({ ...prev, [profile.name]: failed }));
+      } catch {
+        // fail closed — no nudge
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedIndex, workbenchData.profiles, mcpFailedByProfile, mcpProbe]);
+
   useInput((input: string, key: Record<string, boolean>) => {
     if (key.ctrl && input === 'c') {
       exit();
@@ -179,6 +225,7 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch }: { data: Workb
     if (helpVisible) {
       if (key.escape || input === '?') {
         setHelpVisible(false);
+        setCapture(false);
       }
       return;
     }
@@ -212,11 +259,19 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch }: { data: Workb
       return;
     }
 
+    // Destructive-action panel input (§9.1)
+    if (lifecycle.phase === 'confirm') {
+      handleConfirmInput(input, key);
+      return;
+    }
+
     if (input === 'q') {
       exit();
       return;
     }
     if (input === '?') {
+      markUsed('?');
+      setCapture(true); // the full-pane help sheet owns all input while open
       setHelpVisible(true);
       return;
     }
@@ -926,7 +981,7 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch }: { data: Workb
     input: string,
     selectedTemplate: string | null,
   ) => {
-    if (action.type !== 'SUBMIT' && action.type !== 'START_IMMEDIATE') return;
+    if (action.type !== 'SUBMIT' && action.type !== 'START_IMMEDIATE' && action.type !== 'CONFIRM_CHOICE') return;
 
     const appHomePath = getAppHomePaths().appHomePath;
     // For SUBMIT actions, kind comes from the current lifecycle state
@@ -947,7 +1002,10 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch }: { data: Workb
         await renameProfile({ appHomePath, oldName: profileName, newName: input });
         setLifecycle((prev) => lifecycleReducer(prev, { type: 'EXECUTE_SUCCESS', message: `${t('lifecycle.success.renamedTo')} "${input}"` }));
       } else if (kind === 'remove') {
-        await removeProfile({ appHomePath, name: profileName, confirmation: input });
+        // Workbench removal follows §9.1 (graduated options, no exact-name
+        // typing): [y] backup default, [u] no-backup → Recovery Bin.
+        const noBackup = input === 'u';
+        await removeProfile({ appHomePath, name: profileName, confirmation: profileName, noBackup });
         setLifecycle((prev) => lifecycleReducer(prev, { type: 'EXECUTE_SUCCESS', message: `"${profileName}" ${t('lifecycle.success.removed')}` }));
       } else if (kind === 'default') {
         const profile = workbenchData.profiles.find((p) => p.name === profileName);
@@ -982,7 +1040,9 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch }: { data: Workb
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      setLifecycle((prev) => lifecycleReducer(prev, { type: 'EXECUTE_ERROR', message }));
+      const code = error instanceof CcpsError ? error.code : undefined;
+      const guidance = error instanceof CcpsError ? error.guidance : undefined;
+      setLifecycle((prev) => lifecycleReducer(prev, { type: 'EXECUTE_ERROR', message, code, guidance }));
       return;
     }
 
@@ -998,6 +1058,31 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch }: { data: Workb
       }
     }
   }, [workbenchData, t, lifecycle.kind]);
+
+  const handleConfirmInput = useCallback((input: string, key: Record<string, boolean>) => {
+    if (key.escape) {
+      setLifecycle((prev) => lifecycleReducer(prev, { type: 'CANCEL' }));
+      return;
+    }
+    if (input === 'y') {
+      confirmRemove(false);
+      return;
+    }
+    if (input === 'u') {
+      confirmRemove(true);
+      return;
+    }
+  }, [lifecycle, handleLifecycleAction]);
+
+  const confirmRemove = useCallback((noBackup: boolean) => {
+    setLifecycle((prev) => lifecycleReducer(prev, { type: 'CONFIRM_CHOICE' }));
+    void handleLifecycleAction(
+      { type: 'CONFIRM_CHOICE' },
+      lifecycle.profileName,
+      noBackup ? 'u' : 'y',
+      null,
+    );
+  }, [lifecycle, handleLifecycleAction]);
 
   // Launch action handlers
   const handleLaunchBar = useCallback(async (profileName: string) => {
@@ -1158,6 +1243,8 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch }: { data: Workb
       ? t('resource.list.hint')
       : '';
 
+  const mcpFailed = selectedProfile ? (mcpFailedByProfile[selectedProfile.name] ?? []) : [];
+
   // Render launch overlays
   const launchOverlay = renderLaunchOverlay(lifecycle.launch, width, height);
 
@@ -1182,58 +1269,66 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch }: { data: Workb
       { flexDirection: 'column', width, height },
       welcomeVisible
         ? React.createElement(WelcomeCard, { width, height })
-        : wizardOverlay
-          ? wizardOverlay
+        : helpVisible
+          ? React.createElement(KeymapOverlay, { visible: true })
+          : wizardOverlay
+            ? wizardOverlay
           : launchOverlay
             ? launchOverlay
             : React.createElement(
                 Box,
-                { flexDirection: 'row', flexGrow: 1 },
-                React.createElement(Sidebar, {
-                  profiles: workbenchData.profiles,
-                  selectedIndex,
-                  onSelect: setSelectedIndex,
-                  width: sidebarWidth,
-                  height: height - 1,
-                  capture: capture || mainPaneFocus,
-                  headless,
-                  lifecycle,
-                  wizardOpen,
-                  resourceNavActive: resourceNav.phase !== 'idle',
-                  onLifecycleAction,
-                  onAction: handleLifecycleAction,
-                  onLaunchBar: handleLaunchBar,
-                  onLaunchDirScreen: handleLaunchDirScreen,
-                  onAddSkill: handleAddSkill,
-                }),
-                drillDown.kind === 'autoMemory' && selectedProfile
-                  ? React.createElement(AutoMemoryView, {
-                      profile: selectedProfile,
-                      appHomePath: getAppHomePaths().appHomePath,
-                      profileNames: workbenchData.profiles.map((p) => p.name),
-                      width: mainWidth,
-                      height: height - 1,
-                      editSessionManager,
-                      onBack: handleExitDrillDown,
-                    })
-                  : React.createElement(MainPane, {
-                      profile: selectedProfile,
-                      profiles: workbenchData.profiles,
-                      nav: resourceNav,
-                      width: mainWidth,
-                      height: height - 1,
-                      focused: mainPaneFocus,
-                      selectedCategoryIndex,
-                      sessionFor,
-                      content: resourceContent,
-                      diff: diffResult,
-                      drilledAgent,
-                      agentFrontmatter,
-                      searchResults,
-                      onSaveFrontmatter: saveAgentFrontmatter,
-                      onBack: () => setResourceNav((prev) => resourceNavReducer(prev, { type: 'BACK' })),
-                      hintLine: resourceHintLine,
-                    }),
+                { flexDirection: 'column', flexGrow: 1 },
+                React.createElement(
+                  Box,
+                  { flexDirection: 'row', flexGrow: 1 },
+                  React.createElement(Sidebar, {
+                    profiles: workbenchData.profiles,
+                    selectedIndex,
+                    onSelect: setSelectedIndex,
+                    width: sidebarWidth,
+                    height: height - 1,
+                    capture: capture || mainPaneFocus,
+                    headless,
+                    lifecycle,
+                    wizardOpen,
+                    resourceNavActive: resourceNav.phase !== 'idle',
+                    onLifecycleAction,
+                    onAction: handleLifecycleAction,
+                    onLaunchBar: handleLaunchBar,
+                    onLaunchDirScreen: handleLaunchDirScreen,
+                    onAddSkill: handleAddSkill,
+                  }),
+                  drillDown.kind === 'autoMemory' && selectedProfile
+                    ? React.createElement(AutoMemoryView, {
+                        profile: selectedProfile,
+                        appHomePath: getAppHomePaths().appHomePath,
+                        profileNames: workbenchData.profiles.map((p) => p.name),
+                        width: mainWidth,
+                        height: height - 1,
+                        editSessionManager,
+                        onBack: handleExitDrillDown,
+                      })
+                    : React.createElement(MainPane, {
+                        profile: selectedProfile,
+                        profiles: workbenchData.profiles,
+                        nav: resourceNav,
+                        mcpFailed,
+                        width: mainWidth,
+                        height: height - 1,
+                        focused: mainPaneFocus,
+                        selectedCategoryIndex,
+                        sessionFor,
+                        content: resourceContent,
+                        diff: diffResult,
+                        drilledAgent,
+                        agentFrontmatter,
+                        searchResults,
+                        onSaveFrontmatter: saveAgentFrontmatter,
+                        onBack: () => setResourceNav((prev) => resourceNavReducer(prev, { type: 'BACK' })),
+                        hintLine: resourceHintLine,
+                      }),
+                ),
+                renderGuidanceDialogs(),
               ),
       React.createElement(
         Box,
@@ -1249,10 +1344,31 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch }: { data: Workb
           : React.createElement(Text, { dimColor: true }, `${width}×${height} `),
       ),
     ),
-    helpVisible && React.createElement(KeymapOverlay, { visible: true }),
   );
 
   return React.createElement(ResizeGuard, { width, height, children: inner });
+
+  // Guidance dialogs: full-width, flexShrink=0 so they never shrink-clip (#29).
+  function renderGuidanceDialogs(): React.ReactElement | null {
+    if (lifecycle.phase === 'confirm' && selectedProfile) {
+      return React.createElement(RemoveProfilePanel, { profile: selectedProfile });
+    }
+    if (lifecycle.phase === 'error') {
+      return React.createElement(ErrorPanel, {
+        message: lifecycle.message,
+        code: lifecycle.errorCode,
+        guidance: lifecycle.guidance,
+      });
+    }
+    if (lifecycle.phase === 'success') {
+      return React.createElement(
+        Box,
+        { flexShrink: 0, paddingX: 1 },
+        React.createElement(Text, { color: 'green' }, `✓ ${lifecycle.message}`),
+      );
+    }
+    return null;
+  }
 
   function renderLaunchOverlay(launch: LaunchState, w: number, h: number): React.ReactElement | null {
     if (launch.phase === 'idle' || launch.phase === 'launching') return null;
@@ -1305,8 +1421,12 @@ function WelcomeCard({ width, height }: { width: number; height: number }): Reac
       React.createElement(Box, { marginTop: 1 },
         React.createElement(Text, null, t('welcome.line1')),
       ),
-      React.createElement(Text, null, t('welcome.line2')),
-      React.createElement(Text, null, t('welcome.line3')),
+      React.createElement(Box, { marginTop: 1 },
+        React.createElement(Text, { bold: true }, t('welcome.keys')),
+      ),
+      React.createElement(Text, null, t('welcome.key.navigate')),
+      React.createElement(Text, null, t('welcome.key.search')),
+      React.createElement(Text, null, t('welcome.key.help')),
       React.createElement(Box, { marginTop: 1 },
         React.createElement(Text, { dimColor: true }, t('welcome.dismiss')),
       ),

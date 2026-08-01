@@ -2,37 +2,56 @@ import React from 'react';
 import { Box, Text } from 'ink';
 
 import { useI18n } from './i18n/react';
+import type { LocaleKey } from './i18n/en';
 
 type KeymapOverlayProps = {
   visible: boolean;
 };
 
-const KEYBINDINGS = [
-  { key: '↑/↓', group: 'nav' as const, labelKey: 'keymap.up' as const },
-  { key: 'Enter', group: 'nav' as const, labelKey: 'keymap.enter' as const },
-  { key: 'Esc', group: 'nav' as const, labelKey: 'keymap.esc' as const },
-  { key: '/', group: 'nav' as const, labelKey: 'keymap.search' as const },
-  { key: '?', group: 'nav' as const, labelKey: 'keymap.help' as const },
-  { key: 'q/Ctrl+C', group: 'nav' as const, labelKey: 'keymap.quit' as const },
-  { key: 'l', group: 'actions' as const, labelKey: 'keymap.launch' as const },
-  { key: 'a', group: 'actions' as const, labelKey: 'skill.add' as const },
-  { key: 'e', group: 'actions' as const, labelKey: 'keymap.edit' as const },
-  { key: 'n', group: 'actions' as const, labelKey: 'lifecycle.create' as const },
-  { key: 'c', group: 'actions' as const, labelKey: 'lifecycle.copy' as const },
-  { key: 'r', group: 'actions' as const, labelKey: 'lifecycle.rename' as const },
-  { key: 'd', group: 'actions' as const, labelKey: 'lifecycle.default' as const },
-  { key: 'v', group: 'actions' as const, labelKey: 'lifecycle.validate' as const },
-  { key: 'b', group: 'actions' as const, labelKey: 'lifecycle.backup' as const },
-  { key: 'x', group: 'actions' as const, labelKey: 'lifecycle.remove' as const },
+type Binding = {
+  key: string;
+  group: 'nav' | 'actions' | 'resource';
+  labelKey: LocaleKey;
+};
+
+const KEYBINDINGS: Binding[] = [
+  // Navigation
+  { key: '↑/↓', group: 'nav', labelKey: 'keymap.up' },
+  { key: 'Enter', group: 'nav', labelKey: 'keymap.enter' },
+  { key: 'Esc', group: 'nav', labelKey: 'keymap.esc' },
+  { key: '/', group: 'nav', labelKey: 'keymap.search' },
+  { key: '?', group: 'nav', labelKey: 'keymap.help' },
+  { key: 'q/Ctrl+C', group: 'nav', labelKey: 'keymap.quit' },
+  // Profile lifecycle actions
+  { key: 'l', group: 'actions', labelKey: 'keymap.launch' },
+  { key: 'L', group: 'actions', labelKey: 'lifecycle.launchDir' },
+  { key: 'a', group: 'actions', labelKey: 'skill.add' },
+  { key: 'e', group: 'actions', labelKey: 'keymap.edit' },
+  { key: 'n', group: 'actions', labelKey: 'lifecycle.create' },
+  { key: 'c', group: 'actions', labelKey: 'lifecycle.copy' },
+  { key: 'r', group: 'actions', labelKey: 'lifecycle.rename' },
+  { key: 'd', group: 'actions', labelKey: 'lifecycle.default' },
+  { key: 'v', group: 'actions', labelKey: 'lifecycle.validate' },
+  { key: 'b', group: 'actions', labelKey: 'lifecycle.backup' },
+  { key: 'x', group: 'actions', labelKey: 'lifecycle.remove' },
   // Resource rows (User Memory / Agents)
-  { key: 'u', group: 'resource' as const, labelKey: 'main.category.userMemory' as const },
-  { key: 'a', group: 'resource' as const, labelKey: 'main.category.agents' as const },
-  { key: 'Enter', group: 'resource' as const, labelKey: 'keymap.enter' as const },
-  { key: 'e', group: 'resource' as const, labelKey: 'resource.edit' as const },
-  { key: 'x', group: 'resource' as const, labelKey: 'resource.remove' as const },
-  { key: 'c', group: 'resource' as const, labelKey: 'resource.copy' as const },
-  { key: 'd', group: 'resource' as const, labelKey: 'resource.diff.title' as const },
-  { key: 'f', group: 'resource' as const, labelKey: 'resource.agent.frontmatter.edit' as const },
+  { key: 'u', group: 'resource', labelKey: 'main.category.userMemory' },
+  { key: 'a', group: 'resource', labelKey: 'main.category.agents' },
+  { key: 'Enter', group: 'resource', labelKey: 'keymap.enter' },
+  { key: 'e', group: 'resource', labelKey: 'resource.edit' },
+  { key: 'x', group: 'resource', labelKey: 'resource.remove' },
+  { key: 'c', group: 'resource', labelKey: 'resource.copy' },
+  { key: 'd', group: 'resource', labelKey: 'resource.diff.title' },
+  { key: 'f', group: 'resource', labelKey: 'resource.agent.frontmatter.edit' },
+];
+
+const CONCEPTS: Array<{ term: LocaleKey; definition: LocaleKey }> = [
+  { term: 'keymap.concept.profile.term', definition: 'keymap.concept.profile.def' },
+  { term: 'keymap.concept.copied.term', definition: 'keymap.concept.copied.def' },
+  { term: 'keymap.concept.linked.term', definition: 'keymap.concept.linked.def' },
+  { term: 'keymap.concept.backup.term', definition: 'keymap.concept.backup.def' },
+  { term: 'keymap.concept.bin.term', definition: 'keymap.concept.bin.def' },
+  { term: 'keymap.concept.plugins.term', definition: 'keymap.concept.plugins.def' },
 ];
 
 export function KeymapOverlay({ visible }: KeymapOverlayProps): React.ReactElement | null {
@@ -44,32 +63,32 @@ export function KeymapOverlay({ visible }: KeymapOverlayProps): React.ReactEleme
   const actionBindings = KEYBINDINGS.filter((b) => b.group === 'actions');
   const resourceBindings = KEYBINDINGS.filter((b) => b.group === 'resource');
 
+  const renderRow = (bindings: Binding[]): React.ReactElement =>
+    React.createElement(
+      Box,
+      { paddingX: 2, flexWrap: 'wrap' },
+      ...bindings.map((b) =>
+        React.createElement(
+          Box,
+          { key: b.key, marginRight: 2 },
+          React.createElement(Text, { color: 'cyan' }, `[${b.key}]`),
+          React.createElement(Text, { dimColor: true }, ` ${t(b.labelKey)}`),
+        ),
+      ),
+    );
+
   return React.createElement(
     Box,
-    { flexDirection: 'column', borderStyle: 'round', paddingX: 1, paddingY: 0 },
+    { flexDirection: 'column', flexGrow: 1, paddingX: 1 },
     React.createElement(Text, { bold: true }, t('keymap.title')),
     React.createElement(Box, { marginTop: 1 },
       React.createElement(Text, { bold: true }, t('keymap.nav')),
     ),
-    ...navBindings.map((b) =>
-      React.createElement(
-        Box,
-        { key: b.key },
-        React.createElement(Text, { color: 'cyan' }, `  ${b.key.padEnd(10)}`),
-        React.createElement(Text, null, t(b.labelKey)),
-      ),
-    ),
+    renderRow(navBindings),
     React.createElement(Box, { marginTop: 1 },
       React.createElement(Text, { bold: true }, t('keymap.actions')),
     ),
-    ...actionBindings.map((b) =>
-      React.createElement(
-        Box,
-        { key: b.key },
-        React.createElement(Text, { color: 'cyan' }, `  ${b.key.padEnd(10)}`),
-        React.createElement(Text, null, t(b.labelKey)),
-      ),
-    ),
+    renderRow(actionBindings),
     React.createElement(Box, { marginTop: 1 },
       React.createElement(Text, { bold: true }, t('keymap.resources')),
     ),
@@ -82,7 +101,23 @@ export function KeymapOverlay({ visible }: KeymapOverlayProps): React.ReactEleme
       ),
     ),
     React.createElement(Box, { marginTop: 1 },
-      React.createElement(Text, { dimColor: true }, `${t('keymap.esc')} ${t('keymap.help')}`),
+      React.createElement(Text, { bold: true }, t('keymap.concepts')),
+    ),
+    ...CONCEPTS.map((concept) =>
+      React.createElement(
+        Box,
+        { key: concept.term, paddingX: 2 },
+        React.createElement(Text, { wrap: 'wrap' },
+          React.createElement(Text, { bold: true }, t(concept.term)),
+          React.createElement(Text, null, ' — '),
+          React.createElement(Text, null, t(concept.definition)),
+        ),
+      ),
+    ),
+    React.createElement(Box, { marginTop: 1 },
+      React.createElement(Text, { dimColor: true, wrap: 'wrap' },
+        `${t('guidance.hints.fade')} · [esc] ${t('keymap.esc')}`,
+      ),
     ),
   );
 }

@@ -54,6 +54,7 @@ const sampleData: WorkbenchData = {
         settings: 1,
         launchConfig: 1,
       },
+      mcpServers: ['filesystem'],
       validation: null,
     },
     {
@@ -72,6 +73,7 @@ const sampleData: WorkbenchData = {
         settings: 1,
         launchConfig: 1,
       },
+      mcpServers: [],
       validation: null,
     },
   ],
