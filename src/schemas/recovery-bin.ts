@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { profileNameSchema } from './config';
+import { pluginCoordinatesSchema } from './plugins';
 
 // ─── Recovery Item origin ───────────────────────────────────────────────
 // "remove" follows the global retention setting; "update" has a fixed 3-day TTL.
@@ -10,7 +11,9 @@ export type RecoveryItemOrigin = z.infer<typeof recoveryItemOriginSchema>;
 // ─── Recovery Item shape ────────────────────────────────────────────────
 // file-tree: payload is a subdirectory alongside item.json
 // fragment: value is stored inside coordinates (file + keyPath + value)
-export const recoveryItemShapeSchema = z.enum(['file-tree', 'fragment']);
+// plugin: coordinates carry plugin@marketplace, enable state, and userConfig
+//         key names; restore delegates a reinstall (no payload directory)
+export const recoveryItemShapeSchema = z.enum(['file-tree', 'fragment', 'plugin']);
 export type RecoveryItemShape = z.infer<typeof recoveryItemShapeSchema>;
 
 // ─── Recovery Item kind ─────────────────────────────────────────────────
@@ -30,6 +33,7 @@ export type RecoveryItemKind = z.infer<typeof recoveryItemKindSchema>;
 // ─── Coordinates ────────────────────────────────────────────────────────
 // File-tree items carry a targetRelativePath pointing at the payload directory.
 // Fragment items carry file + keyPath + value for write-back on restore.
+// Plugin items carry plugin@marketplace coordinates for delegated reinstall.
 export const fileTreeCoordinatesSchema = z
   .object({
     targetRelativePath: z.string().min(1),
@@ -56,7 +60,11 @@ export const recoveryItemSchema = z
     kind: recoveryItemKindSchema,
     shape: recoveryItemShapeSchema,
     profile: profileNameSchema,
-    coordinates: z.union([fileTreeCoordinatesSchema, fragmentCoordinatesSchema]),
+    coordinates: z.union([
+      fileTreeCoordinatesSchema,
+      fragmentCoordinatesSchema,
+      pluginCoordinatesSchema,
+    ]),
     removedAt: z.string().min(1),
     sizeBytes: z.number().int().nonnegative(),
     secretBearing: z.boolean(),

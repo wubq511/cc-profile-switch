@@ -16,10 +16,36 @@ import {
   setDefaultProfile,
 } from '../core/profile-management';
 import { getProfileTemplatePaths } from '../core/profile-template';
+import {
+  addMarketplace,
+  disablePlugin,
+  enablePlugin,
+  getPluginDetails,
+  installPlugin,
+  listAvailablePlugins,
+  listMarketplaces,
+  listPlugins,
+  removeMarketplace,
+  restorePluginItem,
+  uninstallPlugin,
+  updateMarketplace,
+  updatePlugin,
+} from '../core/plugins';
+import {
+  listRecoveryBinItems,
+  restoreRecoveryItem,
+  type CollisionResolution,
+} from '../core/recovery-bin';
 import { validateProfile, type ValidationFinding } from '../core/validator';
 import { openWithDefaultEditor, type OpenTarget } from '../platform/editor';
-import { spawnProcess, type SpawnProcess } from '../platform/process';
+import {
+  captureProcess as defaultCaptureProcess,
+  spawnProcess,
+  type CaptureProcess,
+  type SpawnProcess,
+} from '../platform/process';
 import { isPathInside, relativeFilesystemPath, resolveFilesystemPath } from '../platform/path';
+import type { PluginCoordinates } from '../schemas/plugins';
 import {
   profileConfigSchema,
   profileTemplateSchema,
@@ -34,6 +60,7 @@ export type CommandRuntime = {
   runTui: (options: Pick<RunTerminalTuiOptions, 'appHomePath'>) => Promise<void>;
   openTarget: OpenTarget;
   spawnProcess: SpawnProcess;
+  captureProcess: CaptureProcess;
   clock: Clock;
 };
 
@@ -439,6 +466,230 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
 
       runtime.writeOut(`Claude Code exited. Profile creator session complete.\n`);
     });
+
+  const plugin = program
+    .command('plugin')
+    .description('Manage plugins for a profile through the delegated claude plugin CLI.');
+
+  plugin
+    .command('list <profile>')
+    .description('List installed plugins with enable state, or marketplace-available entries with --available.')
+    .option('--available', 'List plugins available from the profile\'s configured marketplaces.')
+    .action(async (profile: string, options: { available?: boolean }) => {
+      const appHomePath = getAppHomePaths().appHomePath;
+
+      if (options.available) {
+        const result = await listAvailablePlugins({ appHomePath, profileName: profile, captureProcess: runtime.captureProcess });
+        if (result.available.length === 0) {
+          runtime.writeOut(`No plugins available for profile "${profile}".\n`);
+          return;
+        }
+        runtime.writeOut(`Available plugins for "${profile}":\n`);
+        for (const entry of result.available) {
+          runtime.writeOut(`  ${entry.pluginId}\t(${entry.marketplaceName})\n`);
+        }
+        return;
+      }
+
+      const plugins = await listPlugins({ appHomePath, profileName: profile, captureProcess: runtime.captureProcess });
+      if (plugins.length === 0) {
+        runtime.writeOut(`No plugins installed for profile "${profile}".\n`);
+        return;
+      }
+      runtime.writeOut(`Installed plugins for "${profile}":\n`);
+      for (const entry of plugins) {
+        const state = entry.enabled ? 'enabled' : 'disabled';
+        runtime.writeOut(`  ${entry.id}\t${entry.version}\t${state}\n`);
+      }
+    });
+
+  plugin
+    .command('details <profile> <plugin>')
+    .description('Show the component inventory for an installed plugin.')
+    .action(async (profile: string, selector: string) => {
+      const appHomePath = getAppHomePaths().appHomePath;
+      const details = await getPluginDetails({ appHomePath, profileName: profile, selector, captureProcess: runtime.captureProcess });
+      runtime.writeOut(details.raw);
+      if (!details.raw.endsWith('\n')) {
+        runtime.writeOut('\n');
+      }
+    });
+
+  plugin
+    .command('install <profile> <plugin>')
+    .description('Install a plugin at user scope.')
+    .option('--config <key=value>', 'Set a plugin config value (repeatable).', collectOption, [])
+    .action(async (profile: string, selector: string, options: { config: string[] }) => {
+      const appHomePath = getAppHomePaths().appHomePath;
+      const config: Record<string, string> = {};
+      for (const pair of options.config) {
+        const eq = pair.indexOf('=');
+        if (eq <= 0) {
+          throw new CcpsError('PLUGIN_INVALID_CONFIG', `Plugin config must be key=value: "${pair}".`, {
+            guidance: 'Use --config key=value, for example: --config model=fast',
+          });
+        }
+        config[pair.slice(0, eq)] = pair.slice(eq + 1);
+      }
+      await installPlugin({ appHomePath, profileName: profile, selector, config, captureProcess: runtime.captureProcess });
+      runtime.writeOut(`Installed ${selector} for profile "${profile}".\n`);
+    });
+
+  plugin
+    .command('enable <profile> <plugin>')
+    .description('Enable an installed plugin.')
+    .action(async (profile: string, selector: string) => {
+      const appHomePath = getAppHomePaths().appHomePath;
+      await enablePlugin({ appHomePath, profileName: profile, selector, captureProcess: runtime.captureProcess });
+      runtime.writeOut(`Enabled ${selector} for profile "${profile}".\n`);
+    });
+
+  plugin
+    .command('disable <profile> <plugin>')
+    .description('Disable an installed plugin.')
+    .action(async (profile: string, selector: string) => {
+      const appHomePath = getAppHomePaths().appHomePath;
+      await disablePlugin({ appHomePath, profileName: profile, selector, captureProcess: runtime.captureProcess });
+      runtime.writeOut(`Disabled ${selector} for profile "${profile}".\n`);
+    });
+
+  plugin
+    .command('update <profile> <plugin>')
+    .description('Update an installed plugin; prints a restart notice when one is required.')
+    .action(async (profile: string, selector: string) => {
+      const appHomePath = getAppHomePaths().appHomePath;
+      const result = await updatePlugin({ appHomePath, profileName: profile, selector, captureProcess: runtime.captureProcess });
+      runtime.writeOut(`Updated ${selector} for profile "${profile}".\n`);
+      if (result.restartRequired) {
+        runtime.writeOut('Restart to apply changes.\n');
+      }
+    });
+
+  plugin
+    .command('uninstall <profile> <plugin>')
+    .description('Uninstall a plugin and create a Recovery Bin item that restores it.')
+    .option('--config-key <name>', 'Record a userConfig key name on the Recovery item (repeatable).', collectOption, [])
+    .action(async (profile: string, selector: string, options: { configKey: string[] }) => {
+      const appHomePath = getAppHomePaths().appHomePath;
+      const result = await uninstallPlugin({
+        appHomePath,
+        profileName: profile,
+        selector,
+        userConfigKeys: options.configKey,
+        captureProcess: runtime.captureProcess,
+      });
+      runtime.writeOut(`Uninstalled ${selector} for profile "${profile}".\n`);
+      runtime.writeOut(`Recovery item: ${result.binItem.id}\n`);
+      if (options.configKey.length > 0) {
+        runtime.writeOut(
+          `Config keys to re-enter after restore: ${options.configKey.join(', ')}\n`,
+        );
+      }
+    });
+
+  const marketplace = plugin
+    .command('marketplace')
+    .description('Manage marketplaces for a profile.');
+
+  marketplace
+    .command('list <profile>')
+    .description('List configured marketplaces from profile settings and the resolved cache.')
+    .action(async (profile: string) => {
+      const appHomePath = getAppHomePaths().appHomePath;
+      const entries = await listMarketplaces({ appHomePath, profileName: profile });
+      if (entries.length === 0) {
+        runtime.writeOut(`No marketplaces configured for profile "${profile}".\n`);
+        return;
+      }
+      runtime.writeOut(`Marketplaces for "${profile}":\n`);
+      for (const entry of entries) {
+        const source =
+          entry.sourceKind === 'directory' && entry.sourcePath
+            ? entry.sourcePath
+            : entry.sourceUrl ?? entry.sourceKind;
+        runtime.writeOut(`  ${entry.name}\t${source}\n`);
+      }
+    });
+
+  marketplace
+    .command('add <profile> <source>')
+    .description('Add a marketplace: owner/repo, https://…, or a local directory path.')
+    .action(async (profile: string, source: string) => {
+      const appHomePath = getAppHomePaths().appHomePath;
+      await addMarketplace({ appHomePath, profileName: profile, source, captureProcess: runtime.captureProcess });
+      runtime.writeOut(`Added marketplace from "${source}" for profile "${profile}".\n`);
+    });
+
+  marketplace
+    .command('update <profile> <name>')
+    .description('Refresh a configured marketplace.')
+    .action(async (profile: string, name: string) => {
+      const appHomePath = getAppHomePaths().appHomePath;
+      await updateMarketplace({ appHomePath, profileName: profile, name, captureProcess: runtime.captureProcess });
+      runtime.writeOut(`Updated marketplace "${name}" for profile "${profile}".\n`);
+    });
+
+  marketplace
+    .command('remove <profile> <name>')
+    .description('Remove a configured marketplace.')
+    .action(async (profile: string, name: string) => {
+      const appHomePath = getAppHomePaths().appHomePath;
+      await removeMarketplace({ appHomePath, profileName: profile, name, captureProcess: runtime.captureProcess });
+      runtime.writeOut(`Removed marketplace "${name}" for profile "${profile}".\n`);
+    });
+
+  const bin = program.command('bin').description('Inspect and restore Recovery Bin items.');
+
+  bin
+    .command('list')
+    .description('List Recovery Bin items.')
+    .action(async () => {
+      const appHomePath = getAppHomePaths().appHomePath;
+      const items = await listRecoveryBinItems(appHomePath);
+      if (items.length === 0) {
+        runtime.writeOut('Recovery Bin is empty.\n');
+        return;
+      }
+      runtime.writeOut('Recovery Bin items:\n');
+      for (const item of items) {
+        runtime.writeOut(`  ${item.id}\t${item.profile}\t${item.kind}\n`);
+      }
+    });
+
+  bin
+    .command('restore <item-id>')
+    .description('Restore a Recovery Bin item; consumes it on success. Plugin items reinstall from their marketplace.')
+    .option(
+      '--resolve <mode>',
+      'Collision resolution for file-tree/fragment items: refuse, restore-as-new-name, delete-and-restore.',
+      'refuse',
+    )
+    .option('--new-name <name>', 'New profile name when --resolve restore-as-new-name.')
+    .action(async (itemId: string, options: { resolve?: string; newName?: string }) => {
+      const appHomePath = getAppHomePaths().appHomePath;
+      const result = await restoreRecoveryItem({
+        appHomePath,
+        itemId,
+        collisionResolution: parseCollisionResolution(options.resolve),
+        newName: options.newName,
+        pluginRestore: async (item) => {
+          const coords = item.coordinates as PluginCoordinates;
+          const outcome = await restorePluginItem({ item, appHomePath, captureProcess: runtime.captureProcess });
+          runtime.writeOut(
+            `Restored ${coords.plugin}@${coords.marketplace} version ${outcome.installedVersion} (marketplace current).\n`,
+          );
+          if (outcome.reenabled) {
+            runtime.writeOut('Re-enabled plugin.\n');
+          }
+          if (outcome.userConfigKeys.length > 0) {
+            runtime.writeOut(
+              `Re-enter these config keys: ${outcome.userConfigKeys.join(', ')}\n`,
+            );
+          }
+        },
+      });
+      runtime.writeOut(`Restored item for profile "${result.restoredProfile}".\n`);
+    });
 }
 
 export const registerPlaceholderCommands = registerCommands;
@@ -462,6 +713,7 @@ const defaultRuntime: CommandRuntime = {
   runTui: runTerminalTui,
   openTarget: openWithDefaultEditor,
   spawnProcess,
+  captureProcess: defaultCaptureProcess,
   clock: () => new Date(),
 };
 
@@ -480,6 +732,21 @@ function parseTemplateName(value: string | undefined): ProfileTemplateName | und
   }
 
   return parsed.data;
+}
+
+function collectOption(value: string, previous: string[]): string[] {
+  previous.push(value);
+  return previous;
+}
+
+function parseCollisionResolution(value: string | undefined): CollisionResolution {
+  if (value === 'refuse' || value === 'restore-as-new-name' || value === 'delete-and-restore') {
+    return value;
+  }
+
+  throw new CcpsError('INVALID_COLLISION_RESOLUTION', 'Unknown collision resolution mode.', {
+    guidance: 'Use one of: refuse, restore-as-new-name, delete-and-restore.',
+  });
 }
 
 function resolveEditTarget(appHomePath: string, name: string, file?: string): string {

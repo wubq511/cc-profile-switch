@@ -11,6 +11,7 @@ import {
   type FileTreeCoordinates,
   type FragmentCoordinates,
 } from '../schemas/recovery-bin';
+import type { PluginCoordinates } from '../schemas/plugins';
 import { resolveInside, validateProfileName } from '../platform/path';
 import { CcpsError } from '../utils/errors';
 import { atomicWriteJson } from './versioned-json';
@@ -39,6 +40,14 @@ export type CreateFragmentItemOptions = {
   clock?: Clock;
 };
 
+export type CreatePluginItemOptions = {
+  appHomePath?: string;
+  origin: RecoveryItemOrigin;
+  profile: string;
+  coordinates: PluginCoordinates;
+  clock?: Clock;
+};
+
 export type RecoveryBinItem = RecoveryItem & {
   /** Absolute path to the item directory inside recovery-bin/. */
   itemDirPath: string;
@@ -52,12 +61,20 @@ export type RestoreResult = {
 
 export type CollisionResolution = 'refuse' | 'restore-as-new-name' | 'delete-and-restore';
 
+/**
+ * Restores a plugin-item by delegated reinstall. Injected so recovery-bin
+ * stays free of the claude-plugin delegation service (no circular import).
+ */
+export type PluginRestoreHandler = (item: RecoveryBinItem) => Promise<void>;
+
 export type RestoreOptions = {
   appHomePath?: string;
   itemId: string;
   collisionResolution?: CollisionResolution;
   /** Required when collisionResolution is 'restore-as-new-name'. */
   newName?: string;
+  /** Required to restore plugin-shape items; reinstall + re-apply state. */
+  pluginRestore?: PluginRestoreHandler;
   clock?: Clock;
 };
 
@@ -223,6 +240,38 @@ export async function createFragmentItem(options: CreateFragmentItemOptions): Pr
   return { ...item, itemDirPath: itemDir };
 }
 
+export async function createPluginItem(options: CreatePluginItemOptions): Promise<RecoveryBinItem> {
+  const appHomePath = options.appHomePath ?? getAppHomePaths().appHomePath;
+  const { recoveryBinPath } = getAppHomePaths(appHomePath);
+  const clock = options.clock ?? (() => new Date());
+  const now = clock();
+  const profileName = validateProfileName(options.profile);
+
+  const slug = deriveSlug(`${options.coordinates.plugin}@${options.coordinates.marketplace}`);
+  const baseId = formatItemId(now, profileName, slug);
+  const itemId = await resolveIdCollision(recoveryBinPath, baseId);
+  const itemDir = resolveInside(recoveryBinPath, itemId);
+
+  await fs.ensureDir(itemDir);
+
+  const item: RecoveryItem = {
+    version: 1,
+    id: itemId,
+    origin: options.origin,
+    kind: 'plugin',
+    shape: 'plugin',
+    profile: profileName,
+    coordinates: options.coordinates,
+    removedAt: now.toISOString(),
+    sizeBytes: 0,
+    secretBearing: false,
+  };
+
+  await writeItemJson(itemDir, item);
+
+  return { ...item, itemDirPath: itemDir };
+}
+
 export async function listRecoveryBinItems(appHomePath?: string): Promise<RecoveryBinItem[]> {
   const resolved = appHomePath ?? getAppHomePaths().appHomePath;
   const { recoveryBinPath } = getAppHomePaths(resolved);
@@ -287,6 +336,8 @@ export async function restoreRecoveryItem(options: RestoreOptions): Promise<Rest
 
   if (item.shape === 'file-tree') {
     await restoreFileTreeItem(item, profilesPath, appHomePath, options, clock);
+  } else if (item.shape === 'plugin') {
+    await restorePluginItem(item, options.pluginRestore);
   } else {
     await restoreFragmentItem(item, profilesPath, appHomePath, options, clock);
   }
@@ -523,6 +574,23 @@ async function restoreFragmentItem(
 
   setNestedValue(target, coords.keyPath, coords.value);
   await atomicWriteJson(targetFilePath, target);
+}
+
+async function restorePluginItem(
+  item: RecoveryBinItem,
+  pluginRestore: PluginRestoreHandler | undefined,
+): Promise<void> {
+  if (!pluginRestore) {
+    throw new CcpsError(
+      'PLUGIN_RESTORE_UNAVAILABLE',
+      'No plugin restore handler is wired for this Recovery Item.',
+      {
+        guidance: 'Restore a plugin item through the CLI or Workbench surface that provides it.',
+      },
+    );
+  }
+
+  await pluginRestore(item);
 }
 
 async function autoBinExistingPath(
