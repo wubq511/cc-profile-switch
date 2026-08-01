@@ -17,6 +17,7 @@ import {
 import { listRecoveryBinItems, restoreRecoveryItem } from '../../../core/recovery-bin';
 import { CollisionDialog, type CollisionResolutionChoice } from './collision-dialog';
 import { suggestNewName } from './collision-dialog-reducer';
+import { formatBytes, formatDate } from '../format';
 
 type Mode = 'list' | 'copy' | 'restore' | 'restore-collision';
 
@@ -516,15 +517,4 @@ function truncatePreview(content: string, maxLines: number, maxWidth: number): s
   const lines = content.split('\n');
   const slice = lines.slice(0, Math.max(1, maxLines));
   return slice.map((line) => (line.length > maxWidth ? line.slice(0, maxWidth - 1) + '…' : line)).join('\n');
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function formatDate(iso: string): string {
-  // ISO 8601 → compact YYYY-MM-DD for the list row.
-  return iso.slice(0, 10);
 }

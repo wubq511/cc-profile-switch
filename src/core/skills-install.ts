@@ -3,6 +3,7 @@ import fs from 'fs-extra';
 import path from 'node:path';
 
 import { getAppHomePaths } from './app-config';
+import { getProfileTemplatePaths } from './profile-template';
 import {
   createFileTreeItem,
   createFragmentItem,
@@ -518,6 +519,105 @@ export async function binExistingSkillEntry(options: {
   const manifest = await loadSkillsProvenance(profileRootPath);
   delete manifest.skills[name];
   await saveSkillsProvenance(profileRootPath, manifest);
+}
+
+// ─── Cross-Profile Skill copy (spec §11.1 fan-out) ──────────────────────
+// Copies an installed Skill from one Profile into another as a Profile-owned
+// snapshot, carrying over the source's provenance identity so Update and
+// Diff-vs-source keep working in the target exactly as at the source. A linked
+// source lands in the target as a real directory (fs.copy dereferences the
+// symlink) — the "equip a new Profile" semantic.
+
+export type CopySkillToProfileOptions = {
+  appHomePath: string;
+  fromProfile: string;
+  toProfile: string;
+  skillName: string;
+  /** Optional rename in the target; defaults to the source name. */
+  targetName?: string;
+  clock?: Clock;
+};
+
+export type CopySkillToProfileResult = {
+  /** Absolute path of the new entry in the target: claude-home/skills/<name>. */
+  targetPath: string;
+  record: SkillProvenanceRecord;
+};
+
+export async function copySkillToProfile(
+  options: CopySkillToProfileOptions,
+): Promise<CopySkillToProfileResult> {
+  validateSkillDirectoryName(options.skillName);
+  const clock = options.clock ?? (() => new Date());
+  const targetName = options.targetName ?? options.skillName;
+  if (options.targetName) validateSkillDirectoryName(options.targetName);
+
+  // getProfileTemplatePaths validates both profile names.
+  const sourceRoot = getProfileTemplatePaths(options.appHomePath, options.fromProfile).profileRootPath;
+  const targetRoot = getProfileTemplatePaths(options.appHomePath, options.toProfile);
+  if (!(await fs.pathExists(targetRoot.profileRootPath))) {
+    throw new CcpsError(
+      'PROFILE_NOT_FOUND',
+      'Target profile does not exist.',
+      { guidance: `Create the target profile first: ccps create ${options.toProfile}` },
+    );
+  }
+
+  // Load the source record and verify the physical tree exists.
+  const manifest = await loadSkillsProvenance(sourceRoot);
+  const record = manifest.skills[options.skillName];
+  const sourceDir = resolveInside(getSkillsDirectoryPath(sourceRoot), options.skillName);
+  if (!record || !(await fs.pathExists(sourceDir))) {
+    throw new CcpsError(
+      'SKILL_NOT_FOUND',
+      `Skill "${options.skillName}" does not exist in profile "${options.fromProfile}".`,
+      { guidance: 'List skills first to see what is available.' },
+    );
+  }
+
+  const targetDir = resolveInside(getSkillsDirectoryPath(targetRoot.profileRootPath), targetName);
+  if (await fs.pathExists(targetDir)) {
+    throw new CcpsError(
+      'SKILL_INSTALL_COLLISION',
+      `A Skill named "${targetName}" already exists in the target profile.`,
+      { guidance: 'Choose a different target profile or remove the existing Skill there first.' },
+    );
+  }
+
+  // Snapshot the tree — dereference so a linked source lands as a real
+  // directory in the target (the "equip a new Profile" semantic). Stage under
+  // the target Profile root (same filesystem as the target, so the rename is
+  // atomic) then rename into place, mirroring installCopy's rename-swap so a
+  // mid-copy failure never leaves a partial `skills/<name>` tree.
+  const stageId = randomBytes(6).toString('hex');
+  const stagePath = resolveInside(targetRoot.profileRootPath, `.ccps-skill-copy-${stageId}`);
+  try {
+    await fs.ensureDir(getSkillsDirectoryPath(targetRoot.profileRootPath));
+    await fs.copy(sourceDir, stagePath, { overwrite: false, errorOnExist: true, dereference: true });
+    await fs.rename(stagePath, targetDir);
+  } catch (error) {
+    await fs.remove(stagePath).catch(() => {});
+    if (isNodeError(error) && error.code === 'ENOTEMPTY') {
+      throw new CcpsError(
+        'SKILL_INSTALL_COLLISION',
+        `A Skill named "${targetName}" already exists in the target profile.`,
+        { guidance: 'Choose a different target profile or remove the existing Skill there first.' },
+      );
+    }
+    throw error;
+  }
+  const newRecord = await createRecordForInstall({
+    skillDirPath: targetDir,
+    mode: 'copy',
+    source: record.source,
+    clock,
+  });
+
+  const targetManifest = await loadSkillsProvenance(targetRoot.profileRootPath);
+  targetManifest.skills[targetName] = newRecord;
+  await saveSkillsProvenance(targetRoot.profileRootPath, targetManifest);
+
+  return { targetPath: targetDir, record: newRecord };
 }
 
 // ─── Linked Skill removal + restore ─────────────────────────────────────
