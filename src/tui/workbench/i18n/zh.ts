@@ -179,6 +179,7 @@ export const zh: Record<LocaleKey, string> = {
   'main.focusHint': 'Tab 聚焦分类',
   'main.drillIn': 'Enter 进入',
   'main.backToList': 'Esc 返回分类列表',
+  'main.edit.missing': '用户记忆（CLAUDE.md）缺失 —— 先按 [u]，再在用户记忆视图中按 [n] 重建',
   // Auto Memory resource row
   'autoMemory.title': '自动记忆',
   'autoMemory.empty': '暂无自动记忆条目。Claude 在会话中自动创建。',

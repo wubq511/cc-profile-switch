@@ -178,6 +178,7 @@ export const en = {
   'main.focusHint': 'Tab to focus categories',
   'main.drillIn': 'Enter to drill in',
   'main.backToList': 'Esc to return to categories',
+  'main.edit.missing': 'User Memory (CLAUDE.md) is missing — press [u], then [n] in the User Memory view to recreate it',
   // Auto Memory resource row
   'autoMemory.title': 'Auto Memory',
   'autoMemory.empty': 'No Auto Memory entries yet. Claude creates them during sessions.',
