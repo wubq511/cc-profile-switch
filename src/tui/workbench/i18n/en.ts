@@ -42,6 +42,17 @@ export const en = {
   'welcome.dismiss': 'Press any key to dismiss',
   'error.ttyRequired': 'Workbench requires an interactive terminal (TTY).',
   'error.ttyRequired.hint': 'Run ccps tui in a terminal, or use ccps <command> for scripting.',
+  'editSession.banner': 'Editing {count} file(s) in VS Code — Workbench is watching',
+  'editSession.watching': 'watching',
+  'editSession.watching.changeCount': '(#{count})',
+  'editSession.watching.updated': 'updated {time}',
+  'editSession.missing.title': 'File deleted or renamed — tracking paused',
+  'editSession.missing.hint': 'Preview shows last known content. Watching resumes when the file reappears.',
+  'editSession.fallback.title': 'VS Code unavailable',
+  'editSession.fallback.systemEditor': 'Open in system editor',
+  'editSession.fallback.copyPath': 'Copy path to clipboard',
+  'editSession.fallback.retry': 'Retry VS Code',
+  'editSession.writeBlocked': 'Finish in VS Code first',
 } as const;
 
 export type LocaleKey = keyof typeof en;
