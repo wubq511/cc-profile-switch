@@ -10,7 +10,7 @@ type KeymapOverlayProps = {
 
 type Binding = {
   key: string;
-  group: 'nav' | 'actions' | 'resource';
+  group: 'nav' | 'actions' | 'resource' | 'discover';
   labelKey: LocaleKey;
 };
 
@@ -47,6 +47,12 @@ const KEYBINDINGS: Binding[] = [
   { key: 'c', group: 'resource', labelKey: 'resource.copy' },
   { key: 'd', group: 'resource', labelKey: 'resource.diff.title' },
   { key: 'f', group: 'resource', labelKey: 'resource.agent.frontmatter.edit' },
+  // Discover surface (spec §7.4)
+  { key: '/', group: 'discover', labelKey: 'keymap.discover.search' },
+  { key: 'Enter', group: 'discover', labelKey: 'keymap.discover.install' },
+  { key: 's', group: 'discover', labelKey: 'keymap.discover.source' },
+  { key: 'b', group: 'discover', labelKey: 'keymap.discover.browser' },
+  { key: 'r', group: 'discover', labelKey: 'keymap.discover.refresh' },
 ];
 
 const CONCEPTS: Array<{ term: LocaleKey; definition: LocaleKey }> = [
@@ -66,6 +72,7 @@ export function KeymapOverlay({ visible }: KeymapOverlayProps): React.ReactEleme
   const navBindings = KEYBINDINGS.filter((b) => b.group === 'nav');
   const actionBindings = KEYBINDINGS.filter((b) => b.group === 'actions');
   const resourceBindings = KEYBINDINGS.filter((b) => b.group === 'resource');
+  const discoverBindings = KEYBINDINGS.filter((b) => b.group === 'discover');
 
   const renderRow = (bindings: Binding[]): React.ReactElement =>
     React.createElement(
@@ -104,6 +111,10 @@ export function KeymapOverlay({ visible }: KeymapOverlayProps): React.ReactEleme
         React.createElement(Text, null, t(b.labelKey)),
       ),
     ),
+    React.createElement(Box, { marginTop: 1 },
+      React.createElement(Text, { bold: true }, t('keymap.discover')),
+    ),
+    renderRow(discoverBindings),
     React.createElement(Box, { marginTop: 1 },
       React.createElement(Text, { bold: true }, t('keymap.concepts')),
     ),

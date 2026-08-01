@@ -87,6 +87,47 @@ export function buildEditorSpawnCommand(
   });
 }
 
+export type BrowserOpenCommand = {
+  command: string;
+  args: string[];
+  options: { stdio: 'ignore'; windowsHide?: true };
+};
+
+/** The platform command that opens a URL in the default browser (spec §7.4
+ * "browser handoff": the Discover surface opens skills.sh so the user can paste
+ * a source back). */
+export function buildBrowserOpenCommand(
+  url: string,
+  platform: NodeJS.Platform = process.platform,
+): BrowserOpenCommand {
+  if (platform === 'win32') {
+    return {
+      command: 'powershell.exe',
+      args: ['-NoProfile', '-NonInteractive', '-Command', `Start-Process ${quotePowerShellString(url)}`],
+      options: { stdio: 'ignore', windowsHide: true },
+    };
+  }
+  if (platform === 'darwin') {
+    return { command: 'open', args: [url], options: { stdio: 'ignore' } };
+  }
+  if (platform === 'linux') {
+    return { command: 'xdg-open', args: [url], options: { stdio: 'ignore' } };
+  }
+  throw new CcpsError('PLATFORM_NOT_SUPPORTED', 'ccps supports Windows, macOS, and Linux only.', {
+    guidance: 'Run ccps on Windows, macOS, or Linux.',
+  });
+}
+
+/** Open a URL in the default browser (non-blocking, ignores the exit code). */
+export function openUrlInBrowser(url: string): Promise<void> {
+  const plan = buildBrowserOpenCommand(url);
+  return new Promise<void>((resolve) => {
+    const child = spawn(plan.command, plan.args, plan.options);
+    child.once('error', () => resolve());
+    child.once('close', () => resolve());
+  });
+}
+
 function buildVsCodeOpenCommand(targetPath: string): string {
   const target = quotePowerShellString(targetPath);
 

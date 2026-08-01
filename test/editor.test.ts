@@ -3,7 +3,7 @@ import { EventEmitter } from 'node:events';
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { buildEditorSpawnCommand, openWithDefaultEditor } from '../src/platform/editor';
+import { buildBrowserOpenCommand, buildEditorSpawnCommand, openUrlInBrowser, openWithDefaultEditor } from '../src/platform/editor';
 
 vi.mock('node:child_process', () => ({
   spawn: vi.fn(),
@@ -77,5 +77,61 @@ describe('editor integration', () => {
     expect(command.failureGuidance).toBe(
       'Install the VS Code "code" command or open the path manually: C:\\Users\\h\\.cc-profile-switch\\profiles\\coding',
     );
+  });
+});
+
+describe('browser handoff (spec §7.4)', () => {
+  it('builds a macOS open command for a URL', () => {
+    expect(buildBrowserOpenCommand('https://skills.sh', 'darwin')).toEqual({
+      command: 'open',
+      args: ['https://skills.sh'],
+      options: { stdio: 'ignore' },
+    });
+  });
+
+  it('builds a Linux xdg-open command for a URL', () => {
+    expect(buildBrowserOpenCommand('https://skills.sh', 'linux')).toEqual({
+      command: 'xdg-open',
+      args: ['https://skills.sh'],
+      options: { stdio: 'ignore' },
+    });
+  });
+
+  it('builds a Windows Start-Process command that quotes the URL', () => {
+    expect(buildBrowserOpenCommand('https://skills.sh', 'win32')).toEqual({
+      command: 'powershell.exe',
+      args: [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        "Start-Process 'https://skills.sh'",
+      ],
+      options: { stdio: 'ignore', windowsHide: true },
+    });
+  });
+
+  it('escapes an embedded quote in a Windows URL', () => {
+    const command = buildBrowserOpenCommand("https://skills.sh/skill?q=it's", 'win32');
+    expect(command.args[3]).toBe("Start-Process 'https://skills.sh/skill?q=it''s'");
+  });
+
+  it('rejects an unsupported platform', () => {
+    expect(() => buildBrowserOpenCommand('https://skills.sh', 'sunos' as never)).toThrow(
+      /Windows, macOS, and Linux/,
+    );
+  });
+
+  it('opens a URL via the platform command, ignoring the exit code', async () => {
+    const child = new EventEmitter() as EventEmitter & { unref: () => void };
+    child.unref = vi.fn();
+    vi.mocked(spawn).mockReturnValue(child as never);
+
+    const opening = openUrlInBrowser('https://skills.sh');
+    child.emit('spawn');
+    child.emit('close', 1); // browsers may exit non-zero; the handoff still succeeds
+    await opening;
+
+    const expected = buildBrowserOpenCommand('https://skills.sh');
+    expect(spawn).toHaveBeenCalledWith(expected.command, expected.args, expected.options);
   });
 });

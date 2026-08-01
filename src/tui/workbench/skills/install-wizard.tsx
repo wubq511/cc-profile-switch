@@ -6,6 +6,7 @@ import type { LocaleKey } from '../i18n/en';
 import {
   initialInstallWizardState,
   installWizardReducer,
+  type InstallSourceRef,
   type InstallWizardState,
 } from './install-wizard-reducer';
 import type {
@@ -30,7 +31,11 @@ export type InstallWizardCallbacks = {
     name: string;
     collisionResolution?: 'rename' | 'replace';
   }) => Promise<{ name: string; mode: 'copy' | 'link' }>;
-  onAcquireRemote: (input: { rawSource: string }) => Promise<RemoteInstallPreview>;
+  onAcquireRemote: (input: {
+    rawSource: string;
+    /** Optional `--skill` selection for a multi-Skill source (skills.sh result). */
+    skill?: string;
+  }) => Promise<RemoteInstallPreview>;
   onInstallRemote: (input: {
     stagingRoot: string;
     stagedName: string;
@@ -50,6 +55,9 @@ type InstallWizardProps = {
   width: number;
   height: number;
   headless?: boolean;
+  /** Discover-surface entry (spec §7.4): stage a known remote source directly,
+   * skipping the kind picker. */
+  initialRemote?: InstallSourceRef;
 };
 
 export function InstallWizard({
@@ -59,6 +67,7 @@ export function InstallWizard({
   width,
   height,
   headless,
+  initialRemote,
 }: InstallWizardProps): React.ReactElement {
   const { t } = useI18n();
   const { exit } = useApp();
@@ -68,10 +77,14 @@ export function InstallWizard({
 
   const [state, dispatch] = useReducer(installWizardReducer, initialInstallWizardState());
 
-  // Open on mount.
+  // Open on mount. A pre-seeded remote source (Discover) skips the kind picker.
   useEffect(() => {
-    dispatch({ type: 'START', profileName, profileRootPath });
-  }, [profileName, profileRootPath]);
+    if (initialRemote) {
+      dispatch({ type: 'START_REMOTE', profileName, profileRootPath, source: initialRemote.source, skill: initialRemote.skill });
+    } else {
+      dispatch({ type: 'START', profileName, profileRootPath });
+    }
+  }, [profileName, profileRootPath, initialRemote]);
 
   // Drive async work from phase transitions.
   useEffect(() => {
@@ -135,7 +148,10 @@ export function InstallWizard({
     let cancelled = false;
     if (state.phase === 'staging' && state.kind === 'remote') {
       callbacks
-        .onAcquireRemote({ rawSource: state.remoteSourceInput })
+        .onAcquireRemote({
+          rawSource: state.remoteSourceInput,
+          skill: state.remoteSkill ?? undefined,
+        })
         .then((preview) => {
           if (cancelled) return;
           dispatch({ type: 'REMOTE_STAGED', preview });
@@ -151,7 +167,7 @@ export function InstallWizard({
     return () => {
       cancelled = true;
     };
-  }, [state.phase, state.kind, state.remoteSourceInput, callbacks]);
+  }, [state.phase, state.kind, state.remoteSourceInput, state.remoteSkill, callbacks]);
 
   useEffect(() => {
     let cancelled = false;

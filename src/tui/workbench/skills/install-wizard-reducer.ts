@@ -19,6 +19,13 @@ import { suggestCollisionName } from '../../../core/skills-install';
 
 export type InstallWizardKind = 'local' | 'remote';
 
+/** A remote source plus an optional `--skill` selection — travels together from
+ * the Discover surface through the wizard's remote staging phase (§7.4/§7.3). */
+export type InstallSourceRef = {
+  source: string;
+  skill?: string;
+};
+
 export type InstallWizardPhase =
   | 'kind' // pick Local (§7.2) or Remote (§7.3)
   | 'source' // typing the Local Skill Source path
@@ -48,6 +55,9 @@ export type InstallWizardState = {
   // Remote flow
   remoteSourceInput: string;
   remoteSourceError: string;
+  /** Optional `--skill` selection for a multi-Skill remote source (a skills.sh
+   * owner/repo shorthand; the Discover surface sets it). */
+  remoteSkill: string | null;
   stagingRoot: string | null; // set after a successful staging phase; cleaned up on abandon
   stagedName: string | null;
   remotePreview: RemoteInstallPreview | null;
@@ -61,6 +71,7 @@ export type InstallWizardState = {
 
 export type InstallWizardAction =
   | { type: 'START'; profileName: string; profileRootPath?: string }
+  | { type: 'START_REMOTE'; profileName: string; profileRootPath?: string } & InstallSourceRef
   | { type: 'KIND_SELECT_LOCAL' } // → source
   | { type: 'KIND_SELECT_REMOTE' } // → source-remote
   | { type: 'SOURCE_CHAR'; char: string }
@@ -102,6 +113,7 @@ export function initialInstallWizardState(): InstallWizardState {
     preview: null,
     remoteSourceInput: '',
     remoteSourceError: '',
+    remoteSkill: null,
     stagingRoot: null,
     stagedName: null,
     remotePreview: null,
@@ -126,6 +138,23 @@ export function installWizardReducer(
         profileName: action.profileName,
         profileRootPath: action.profileRootPath ?? null,
         mode: 'copy', // Copy pre-selected (spec §7.2)
+      };
+    }
+
+    // Discover-surface entry (spec §7.4): stage a known remote source directly,
+    // skipping the kind picker. `skill` carries a `--skill` selection for a
+    // multi-Skill owner/repo shorthand (a skills.sh result).
+    case 'START_REMOTE': {
+      return {
+        ...initialInstallWizardState(),
+        open: true,
+        phase: 'staging',
+        profileName: action.profileName,
+        profileRootPath: action.profileRootPath ?? null,
+        kind: 'remote',
+        remoteSourceInput: action.source,
+        remoteSkill: action.skill ?? null,
+        remoteSourceError: '',
       };
     }
 

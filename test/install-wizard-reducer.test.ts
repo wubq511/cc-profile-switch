@@ -22,6 +22,16 @@ function startRemote(): ReturnType<typeof initialInstallWizardState> {
   return installWizardReducer(startAtKind(), { type: 'KIND_SELECT_REMOTE' });
 }
 
+// The Discover-surface entry (spec §7.4): stage a known remote source directly.
+function startRemoteSeeded(source: string, skill?: string): ReturnType<typeof initialInstallWizardState> {
+  return installWizardReducer(initialInstallWizardState(), {
+    type: 'START_REMOTE',
+    profileName: 'coding',
+    source,
+    skill,
+  });
+}
+
 function typeSource(state: ReturnType<typeof initialInstallWizardState>, text: string) {
   let s = state;
   for (const ch of text) s = installWizardReducer(s, { type: 'SOURCE_CHAR', char: ch });
@@ -384,6 +394,28 @@ describe('install wizard reducer', () => {
       expect(s.remoteSourceInput).toBe('vercel-labs/skills');
       s = installWizardReducer(s, { type: 'REMOTE_SOURCE_SUBMIT' });
       expect(s.phase).toBe('staging');
+    });
+
+    it('START_REMOTE stages a pre-seeded source directly (Discover entry)', () => {
+      const s = startRemoteSeeded('github/awesome-copilot', 'git-commit');
+      expect(s.open).toBe(true);
+      expect(s.phase).toBe('staging');
+      expect(s.kind).toBe('remote');
+      expect(s.remoteSourceInput).toBe('github/awesome-copilot');
+      expect(s.remoteSkill).toBe('git-commit');
+    });
+
+    it('START_REMOTE without a skill stages the source with no --skill selection', () => {
+      const s = startRemoteSeeded('https://github.com/vercel-labs/skills/tree/main/skills/find-skills');
+      expect(s.phase).toBe('staging');
+      expect(s.remoteSkill).toBeNull();
+    });
+
+    it('esc from a Discover-seeded staging returns to the remote source step', () => {
+      let s = startRemoteSeeded('github/awesome-copilot', 'git-commit');
+      s = installWizardReducer(s, { type: 'CANCEL' });
+      expect(s.phase).toBe('source-remote');
+      expect(s.remoteSourceInput).toBe('github/awesome-copilot');
     });
 
     it('ignores REMOTE_SOURCE_SUBMIT on empty input', () => {
