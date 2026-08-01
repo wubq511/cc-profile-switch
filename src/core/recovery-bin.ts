@@ -288,6 +288,20 @@ export async function restoreRecoveryItem(options: RestoreOptions): Promise<Rest
   if (item.shape === 'file-tree') {
     await restoreFileTreeItem(item, profilesPath, appHomePath, options, clock);
   } else {
+    // Linked Skill removals land as kind='skill' fragments carrying link
+    // coordinates + provenance (spec §7.2/§9). Restoring them re-creates a
+    // link, not a JSON value, so they route through the dedicated skills
+    // restore path — refuse here to avoid writing a fragment value into a
+    // directory and corrupting the Profile.
+    if (item.kind === 'skill') {
+      throw new CcpsError(
+        'RECOVERY_ITEM_RESTORE_ROUTE',
+        'This Recovery Item is a Linked Skill fragment and must be restored through the Skills restore path.',
+        {
+          guidance: 'Use restoreLinkedSkillItem from the Skills module to re-create the link.',
+        },
+      );
+    }
     await restoreFragmentItem(item, profilesPath, appHomePath, options, clock);
   }
 

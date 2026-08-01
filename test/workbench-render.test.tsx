@@ -122,6 +122,8 @@ describe('Workbench render', () => {
       },
     );
     await instance.waitUntilRenderFlush();
+    instance.unmount();
+    await instance.waitUntilExit();
     const output = stripAnsi(stdout.output);
     expect(output).toContain('[n]');
     expect(output).toContain('[c]');
@@ -130,8 +132,8 @@ describe('Workbench render', () => {
     expect(output).toContain('[v]');
     expect(output).toContain('[b]');
     expect(output).toContain('[x]');
-    instance.unmount();
-    await instance.waitUntilExit();
+    // Skill install entry point (issue #64, spec §7.2)
+    expect(output).toContain('[a]');
   });
 });
 
