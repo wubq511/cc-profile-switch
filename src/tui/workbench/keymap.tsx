@@ -17,6 +17,7 @@ type Binding = {
 const KEYBINDINGS: Binding[] = [
   // Navigation
   { key: '↑/↓', group: 'nav', labelKey: 'keymap.up' },
+  { key: '←/→', group: 'nav', labelKey: 'keymap.tree' },
   { key: 'Enter', group: 'nav', labelKey: 'keymap.enter' },
   { key: 'Esc', group: 'nav', labelKey: 'keymap.esc' },
   { key: '/', group: 'nav', labelKey: 'keymap.search' },
@@ -38,6 +39,9 @@ const KEYBINDINGS: Binding[] = [
   { key: 'u', group: 'resource', labelKey: 'main.category.userMemory' },
   { key: 'a', group: 'resource', labelKey: 'main.category.agents' },
   { key: 'Enter', group: 'resource', labelKey: 'keymap.enter' },
+  // Split per #83: sidebar `/` filters the tree cross-Profile; this `/`
+  // searches content inside the current resource list only.
+  { key: '/', group: 'resource', labelKey: 'keymap.searchResource' },
   { key: 'e', group: 'resource', labelKey: 'resource.edit' },
   { key: 'x', group: 'resource', labelKey: 'resource.remove' },
   { key: 'c', group: 'resource', labelKey: 'resource.copy' },

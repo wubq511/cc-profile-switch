@@ -41,7 +41,7 @@ type MainPaneProps = {
   hintLine: string;
 };
 
-const CATEGORIES = [
+export const CATEGORIES = [
   { key: 'userMemory' as const, labelKey: 'main.category.userMemory' as const, drillable: true as const, resourceCategory: 'user-memory' as const },
   { key: 'autoMemory' as const, labelKey: 'main.category.autoMemory' as const, drillable: false as const },
   { key: 'skills' as const, labelKey: 'main.category.skills' as const, drillable: false as const },

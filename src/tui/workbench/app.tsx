@@ -54,6 +54,7 @@ import {
   type AgentsDiff,
   type AgentFrontmatter,
   type SearchResult,
+  type ResourceCategory,
 } from '../../core/resource';
 import {
   initialResourceNavState,
@@ -75,6 +76,7 @@ import type { WorkbenchProfile, WorkbenchData } from './profile-data';
 import { loadWorkbenchData } from './profile-data';
 import { ResizeGuard } from './resize-guard';
 import { Sidebar } from './sidebar';
+import { SIDEBAR_CATEGORY_KEYS, type CategoryKey } from './sidebar-tree';
 import { PreLaunchBar } from './launch/pre-launch-bar';
 import { DirectoryScreen } from './launch/directory-screen';
 import { DryRunPage } from './launch/dry-run-page';
@@ -104,10 +106,12 @@ type WorkbenchAppProps = {
   onLaunch?: (plan: LaunchPlan, appHomePath: string) => number | null;
   /** Override the MCP connection-state probe (tests). */
   mcpProbe?: (appHomePath: string, profileName: string) => Promise<McpServerState[]>;
+  /** Override the sidebar cross-Profile content search (tests, #83). */
+  searchContent?: (query: string) => Promise<SearchResult[]>;
 };
 
-export function WorkbenchApp({ data, onLocaleChange, initialLocale, headless, skipWelcome, onLaunch, mcpProbe }: WorkbenchAppProps): React.ReactElement {
-  const inner = React.createElement(WorkbenchInner, { data, headless, skipWelcome, onLaunch, mcpProbe });
+export function WorkbenchApp({ data, onLocaleChange, initialLocale, headless, skipWelcome, onLaunch, mcpProbe, searchContent }: WorkbenchAppProps): React.ReactElement {
+  const inner = React.createElement(WorkbenchInner, { data, headless, skipWelcome, onLaunch, mcpProbe, searchContent });
   return React.createElement(
     I18nProvider,
     { initialLocale, onLocaleChange },
@@ -115,7 +119,7 @@ export function WorkbenchApp({ data, onLocaleChange, initialLocale, headless, sk
   );
 }
 
-function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe }: { data: WorkbenchData; headless?: boolean; skipWelcome?: boolean; onLaunch?: (plan: LaunchPlan, appHomePath: string) => number | null; mcpProbe?: (appHomePath: string, profileName: string) => Promise<McpServerState[]> }): React.ReactElement {
+function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searchContent }: { data: WorkbenchData; headless?: boolean; skipWelcome?: boolean; onLaunch?: (plan: LaunchPlan, appHomePath: string) => number | null; mcpProbe?: (appHomePath: string, profileName: string) => Promise<McpServerState[]>; searchContent?: (query: string) => Promise<SearchResult[]> }): React.ReactElement {
   const { t, locale } = useI18n();
   const { exit } = useApp();
   const { stdout } = useStdout();
@@ -719,6 +723,66 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe }: { d
 
     setResourceNav((prev) => resourceNavReducer(prev, { type: 'OPEN_PREVIEW' }));
   }, [workbenchData]);
+
+  // Sidebar tree drill-down (issue #83): Enter on a category or item row opens
+  // the category's existing surface — resource list/preview for User Memory and
+  // Agents (#60), the Auto Memory view (#69), or the main-pane category grid.
+  const handleDrillCategory = useCallback(async (profileName: string, categoryKey: CategoryKey, itemName?: string) => {
+    const profileIndex = workbenchData.profiles.findIndex((p) => p.name === profileName);
+    if (profileIndex < 0) return;
+    setSelectedIndex(profileIndex);
+
+    if (categoryKey === 'userMemory' || categoryKey === 'agents') {
+      const category: ResourceCategory = categoryKey === 'userMemory' ? 'user-memory' : 'agents';
+      const profile = workbenchData.profiles[profileIndex];
+      setResourceNav((prev) => resourceNavReducer(prev, { type: 'CLOSE' }));
+      setResourceNav((prev) => resourceNavReducer(prev, { type: 'OPEN_CATEGORY', category }));
+      setDiffResult(null);
+      setDrilledAgent(null);
+      setAgentFrontmatter(null);
+      if (!itemName) {
+        setResourceContent(null);
+        return;
+      }
+      const appHome = getAppHomePaths().appHomePath;
+      let content: string | null;
+      if (category === 'agents') {
+        const itemIndex = profile.resourceDetails.agents.findIndex((a) => a.name === itemName);
+        if (itemIndex < 0) {
+          setResourceContent(null);
+          return;
+        }
+        setResourceNav((prev) => resourceNavReducer(prev, { type: 'SET_SELECTED_INDEX', index: itemIndex }));
+        content = await readAgentContent(appHome, profileName, itemName);
+      } else {
+        content = await readUserMemoryContent(appHome, profileName);
+      }
+      setResourceContent(content);
+      setResourceNav((prev) => resourceNavReducer(prev, { type: 'OPEN_PREVIEW' }));
+      return;
+    }
+
+    if (categoryKey === 'autoMemory') {
+      setDrillDown({ kind: 'autoMemory' });
+      setCapture(true);
+      return;
+    }
+
+    // skills / mcp / settings / launchConfig have no dedicated drill surface:
+    // focus the matching card in the main-pane category grid instead.
+    const categoryIndex = SIDEBAR_CATEGORY_KEYS.indexOf(categoryKey);
+    if (categoryIndex >= 0) {
+      setSelectedCategoryIndex(categoryIndex);
+      setMainPaneFocus(true);
+    }
+  }, [workbenchData]);
+
+  // Cross-Profile content search backing the sidebar search box (§4.2, #83).
+  const handleSearchContent = useCallback(
+    (query: string): Promise<SearchResult[]> =>
+      searchContent ? searchContent(query) : searchAllResources({ appHomePath: getAppHomePaths().appHomePath, query }),
+    [searchContent],
+  );
 
   const handleResourceInput = useCallback((input: string, key: Record<string, boolean>) => {
     const profile = currentProfile();
@@ -1380,6 +1444,9 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe }: { d
                     onLaunchBar: handleLaunchBar,
                     onLaunchDirScreen: handleLaunchDirScreen,
                     onAddSkill: handleAddSkill,
+                    onDrillCategory: handleDrillCategory,
+                    onJumpContentHit: jumpToSearchHit,
+                    onSearchContent: handleSearchContent,
                   }),
                   drillDown.kind === 'autoMemory' && selectedProfile
                     ? React.createElement(AutoMemoryView, {
