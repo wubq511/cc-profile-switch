@@ -146,4 +146,4 @@ Do not commit, push, merge, release, or publish unless the user requested that a
 
 ## Scope
 
-Current CLI includes init, list, create, show, validate, backup, copy, rename, remove, default, launch, create-profile, edit, and TUI. GUI, cloud sync, multi-account/OAuth migration, plugin marketplace, and runtime project isolation remain out of scope.
+Current CLI includes init, list, create, show, validate, backup, export, import, copy, rename, remove, default, launch, create-profile, edit, plugin, bin, and TUI. GUI, cloud sync, multi-account/OAuth migration, plugin marketplace, and runtime project isolation remain out of scope.

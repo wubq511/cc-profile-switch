@@ -115,7 +115,7 @@ export function KeymapOverlay({ visible }: KeymapOverlayProps): React.ReactEleme
     ...resourceBindings.map((b) =>
       React.createElement(
         Box,
-        { key: b.key },
+        { key: `resource-${b.key}` },
         React.createElement(Text, { color: 'cyan' }, `  ${b.key.padEnd(10)}`),
         React.createElement(Text, null, t(b.labelKey)),
       ),
@@ -126,7 +126,7 @@ export function KeymapOverlay({ visible }: KeymapOverlayProps): React.ReactEleme
     ...bulkBindings.map((b) =>
       React.createElement(
         Box,
-        { key: b.key },
+        { key: `bulk-${b.key}` },
         React.createElement(Text, { color: 'cyan' }, `  ${b.key.padEnd(10)}`),
         React.createElement(Text, null, t(b.labelKey)),
       ),
