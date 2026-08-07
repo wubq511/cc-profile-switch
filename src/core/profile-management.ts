@@ -3,6 +3,7 @@ import fs from 'fs-extra';
 import { type AppConfig } from '../schemas/config';
 import { profileConfigSchema, type ProfileConfig } from '../schemas/profile';
 import { CcpsError } from '../utils/errors';
+import { isRecord } from '../utils/type-guards';
 import { validateProfileName } from '../platform/path';
 import {
   createFileTreeItem,
@@ -67,6 +68,12 @@ export type RenameProfileResult = {
   newName: string;
   oldPath: string;
   newPath: string;
+};
+
+export type UpdateProfileDescriptionOptions = ProfileManagementOptions & {
+  name: string;
+  description: string;
+  clock?: Clock;
 };
 
 export type RemoveProfileOptions = ProfileManagementOptions & {
@@ -204,6 +211,26 @@ export async function renameProfile(options: RenameProfileOptions): Promise<Rena
     oldPath: source.profileRootPath,
     newPath: newPaths.profileRootPath,
   };
+}
+
+/**
+ * Edit metadata (Workbench S5): update the Profile's `description` in
+ * profile.json. Same read-validate-atomic-write path as Rename — the result
+ * is parsed against profileConfigSchema and written via the temp+rename
+ * atomic write, never a raw overwrite.
+ */
+export async function updateProfileDescription(
+  options: UpdateProfileDescriptionOptions,
+): Promise<void> {
+  const appHomePath = resolveAppHomePath(options.appHomePath);
+  const source = await validateExistingProfile(appHomePath, options.name);
+  const paths = getProfileTemplatePaths(appHomePath, source.profileName);
+
+  await writeProfileManifest(paths.profileConfigPath, {
+    ...requireProfileConfig(source),
+    description: options.description,
+    updatedAt: resolveTimestamp(options.clock),
+  });
 }
 
 export async function removeProfile(options: RemoveProfileOptions): Promise<RemoveProfileResult> {
@@ -437,8 +464,4 @@ function clearDefaultReference(config: AppConfig): AppConfig {
 
 function resolveTimestamp(clock: Clock = () => new Date()): string {
   return clock().toISOString();
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

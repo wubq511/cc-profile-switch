@@ -20,8 +20,15 @@ export function resolveLocale(configLanguage?: Locale): Locale {
   return detectSystemLocale();
 }
 
-export function translate(locale: Locale, key: LocaleKey): string {
-  return ALL_LOCALES[locale][key] ?? en[key];
+/** Interpolation values for `{placeholder}` tokens in locale strings. */
+export type I18nParams = Record<string, string | number>;
+
+export function translate(locale: Locale, key: LocaleKey, params?: I18nParams): string {
+  const template = ALL_LOCALES[locale][key] ?? en[key];
+  if (!params) return template;
+  return template.replace(/\{(\w+)\}/g, (match, name: string) =>
+    name in params ? String(params[name]) : match,
+  );
 }
 
 // React-dependent provider — imported separately by components that need it.
@@ -32,13 +39,13 @@ export function createI18nProvider(React: typeof import('react')) {
 
   type I18nContextValue = {
     locale: Locale;
-    t: (key: LocaleKey) => string;
+    t: (key: LocaleKey, params?: I18nParams) => string;
     switchLocale: (locale: Locale) => void;
   };
 
   const I18nContext = createContext<I18nContextValue>({
     locale: 'en',
-    t: (key) => en[key],
+    t: (key, params) => translate('en', key, params),
     switchLocale: () => {},
   });
 
@@ -52,11 +59,15 @@ export function createI18nProvider(React: typeof import('react')) {
     children: React.ReactNode;
   };
 
-  function I18nProvider({ initialLocale, onLocaleChange, children }: I18nProviderProps): React.ReactElement {
+  function I18nProvider({
+    initialLocale,
+    onLocaleChange,
+    children,
+  }: I18nProviderProps): React.ReactElement {
     const [locale, setLocale] = useState<Locale>(() => initialLocale ?? resolveLocale());
 
     const t = useCallback(
-      (key: LocaleKey): string => translate(locale, key),
+      (key: LocaleKey, params?: I18nParams): string => translate(locale, key, params),
       [locale],
     );
 

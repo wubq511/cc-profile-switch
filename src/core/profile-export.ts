@@ -15,6 +15,7 @@ import {
   type BundleStrippedKeys,
 } from '../schemas/profile-bundle';
 import { CcpsError } from '../utils/errors';
+import { isNodeError, isRecord } from '../utils/type-guards';
 
 /**
  * Profile export — packages one Profile as a single portable `.tar.gz` file.
@@ -414,12 +415,4 @@ async function readMcpServerNames(stagingProfile: string): Promise<string[]> {
     return [];
   }
   return Object.keys(value.mcpServers).sort((left, right) => left.localeCompare(right));
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error;
 }

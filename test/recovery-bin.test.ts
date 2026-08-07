@@ -10,6 +10,7 @@ import {
   createFileTreeItem,
   createFragmentItem,
   listRecoveryBinItems,
+  listRecoveryBinWithSizes,
   getRecoveryItem,
   restoreRecoveryItem,
   permanentlyDeleteItem,
@@ -19,6 +20,7 @@ import {
   changeRetentionSetting,
   getBinSummary,
   performStartupSweep,
+  runStartupSweep,
   getLastSweepResult,
   formatSweepSummary,
   formatItemId,
@@ -1199,6 +1201,136 @@ describe('Recovery Bin service', () => {
         expiresAt: '2026-08-30T16:13:29.000Z', // no expiry stored per spec
       });
       expect(result.success).toBe(false);
+    });
+  });
+
+  // ─── Startup sweep orchestration (§9.4) ───────────────────────────────
+
+  describe('runStartupSweep', () => {
+    it('sweeps expired items and reports the summary only on the next run', async () => {
+      const appHome = await makeAppHome();
+      const profileDir = await makeProfile(appHome, 'coding');
+      const skillDir = join(profileDir, 'claude-home', 'skills', 'pdf');
+      await fs.ensureDir(skillDir);
+      await fs.writeFile(join(skillDir, 'SKILL.md'), 'x'.repeat(2048), 'utf8');
+
+      // Removed 2026-06-01; swept 2026-07-31 — past the default 30-day retention.
+      await createFileTreeItem({
+        appHomePath: appHome,
+        origin: 'remove',
+        kind: 'skill',
+        profile: 'coding',
+        coordinates: { targetRelativePath: 'claude-home/skills/pdf' },
+        sourcePath: skillDir,
+        clock: () => new Date('2026-06-01T10:00:00Z'),
+      });
+      const now = () => new Date('2026-07-31T16:00:00Z');
+
+      // First run: the sweep deletes the expired item; nothing to report yet.
+      const first = await runStartupSweep(appHome, now);
+      expect(first.pendingSummary).toBeNull();
+      expect(first.sweepResult).not.toBeNull();
+      expect(first.sweepResult?.deletedCount).toBe(1);
+      expect(first.sweepResult?.reclaimedBytes).toBeGreaterThan(0);
+      expect(await listRecoveryBinItems(appHome)).toHaveLength(0);
+
+      // Next run (the "next launch"): the one-line summary surfaces once.
+      const second = await runStartupSweep(appHome, now);
+      expect(second.pendingSummary).toContain('1 expired item(s) swept');
+      expect(second.pendingSummary).toContain('reclaimed');
+      expect(second.sweepResult?.deletedCount).toBe(0);
+
+      // Third run: the marker was consumed — the line never repeats.
+      const third = await runStartupSweep(appHome, now);
+      expect(third.pendingSummary).toBeNull();
+    });
+
+    it('records no pending summary when a sweep deletes nothing', async () => {
+      const appHome = await makeAppHome();
+      const now = () => new Date('2026-07-31T16:00:00Z');
+
+      const first = await runStartupSweep(appHome, now);
+      expect(first.sweepResult?.deletedCount).toBe(0);
+
+      const second = await runStartupSweep(appHome, now);
+      expect(second.pendingSummary).toBeNull();
+    });
+
+    it('is failure-isolated on an uninitialized app home and creates nothing', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'ccps-recovery-bin-'));
+      tempRoots.push(root);
+      const appHome = join(root, '.cc-profile-switch');
+
+      const report = await runStartupSweep(appHome);
+
+      expect(report).toEqual({ pendingSummary: null, sweepResult: null });
+      expect(await fs.pathExists(appHome)).toBe(false);
+    });
+
+    it('ignores and clears a corrupt pending-summary marker', async () => {
+      const appHome = await makeAppHome();
+      const markerPath = join(appHome, 'pending-sweep-summary.json');
+      await fs.writeFile(markerPath, '{ not json', 'utf8');
+
+      const report = await runStartupSweep(appHome, () => new Date('2026-07-31T16:00:00Z'));
+
+      expect(report.pendingSummary).toBeNull();
+      expect(report.sweepResult?.deletedCount).toBe(0);
+      expect(await fs.pathExists(markerPath)).toBe(false);
+    });
+  });
+
+  // ─── Bin listing with sizes (§9.5) ────────────────────────────────────
+
+  describe('listRecoveryBinWithSizes', () => {
+    it('returns per-entry live sizes and a total', async () => {
+      const appHome = await makeAppHome();
+      const profileDir = await makeProfile(appHome, 'coding');
+      const skillDir = join(profileDir, 'claude-home', 'skills', 'pdf');
+      await fs.ensureDir(skillDir);
+      await fs.writeFile(join(skillDir, 'SKILL.md'), 'x'.repeat(1000), 'utf8');
+
+      const item = await createFileTreeItem({
+        appHomePath: appHome,
+        origin: 'remove',
+        kind: 'skill',
+        profile: 'coding',
+        coordinates: { targetRelativePath: 'claude-home/skills/pdf' },
+        sourcePath: skillDir,
+        clock: fixedClock,
+      });
+      await createFragmentItem({
+        appHomePath: appHome,
+        origin: 'remove',
+        kind: 'mcp-server',
+        profile: 'coding',
+        coordinates: { file: 'claude-home/.claude.json', keyPath: 'mcpServers.x', value: {} },
+        clock: fixedClock,
+      });
+
+      const list = await listRecoveryBinWithSizes(appHome);
+
+      expect(list.entries).toHaveLength(2);
+      const treeEntry = list.entries.find((entry) => entry.item.id === item.id);
+      const fragmentEntry = list.entries.find((entry) => entry.item.kind === 'mcp-server');
+      // The file-tree entry reports at least its payload size live.
+      expect(treeEntry?.sizeBytes).toBeGreaterThanOrEqual(1000);
+      // The fragment entry records 0 payload bytes but its item directory
+      // still occupies space — the live du reports it.
+      expect(fragmentEntry?.item.sizeBytes).toBe(0);
+      expect(fragmentEntry?.sizeBytes).toBeGreaterThan(0);
+      expect(list.totalSizeBytes).toBe(
+        list.entries.reduce((sum, entry) => sum + entry.sizeBytes, 0),
+      );
+    });
+
+    it('returns zeros for an empty bin', async () => {
+      const appHome = await makeAppHome();
+
+      const list = await listRecoveryBinWithSizes(appHome);
+
+      expect(list.entries).toEqual([]);
+      expect(list.totalSizeBytes).toBe(0);
     });
   });
 

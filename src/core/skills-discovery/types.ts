@@ -84,10 +84,8 @@ export function discoveryDedupeKey(repository: string, directory: string): strin
   return `${repository}:${directory}`;
 }
 
-/** Narrow an unknown value to a plain object. */
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
+/** Canonical implementation lives in utils; re-exported for discovery consumers. */
+export { isRecord } from '../../utils/type-guards';
 
 /** The final `/`-separated segment of a path/slug. */
 export function lastSegment(value: string): string {

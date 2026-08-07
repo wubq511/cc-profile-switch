@@ -7,6 +7,7 @@ import type { ResourceCategory } from '../../core/resource';
 import type { EditSession } from '../../core/edit-session';
 import { WatchingBadge } from './edit-session/WatchingBadge';
 import { MissingOverlay } from './edit-session/MissingOverlay';
+import { FallbackMenu, type EditFallbackHandlers } from './edit-session/FallbackMenu';
 
 type ResourcePreviewProps = {
   profile: WorkbenchProfile;
@@ -17,6 +18,8 @@ type ResourcePreviewProps = {
   session: EditSession | undefined;
   width: number;
   height: number;
+  /** §8 editor-unavailable fallback actions for a failed edit session. */
+  editFallback: EditFallbackHandlers;
 };
 
 const CONTENT_AREA_HEIGHT = 12;
@@ -30,6 +33,7 @@ export function ResourcePreview({
   session,
   width,
   height,
+  editFallback,
 }: ResourcePreviewProps): React.ReactElement {
   const { t } = useI18n();
 
@@ -52,6 +56,18 @@ export function ResourcePreview({
         phase: session.phase,
         changeCount: session.changeCount,
         lastUpdated: session.lastUpdated,
+      }),
+    ),
+    // §8 VS Code unavailable: surface the failure with its fallback actions.
+    session?.openFailedReason && React.createElement(
+      Box,
+      { marginTop: 1 },
+      React.createElement(FallbackMenu, {
+        reason: session.openFailedReason,
+        filePath: session.filePath,
+        onSystemEditor: () => editFallback.systemEditor(session.filePath),
+        onRetry: () => editFallback.retry(session.filePath),
+        onDismiss: () => editFallback.dismiss(session.filePath),
       }),
     ),
     React.createElement(Box, { marginTop: 1, flexDirection: 'column' },

@@ -161,6 +161,81 @@ describe('Workbench render', () => {
   });
 });
 
+describe('launch resume (spec §10)', () => {
+  it('shows the exit flash with a non-zero code when resumed after a launch', async () => {
+    const stdout = new FakeTtyStdout();
+    const instance = render(
+      React.createElement(WorkbenchApp, {
+        data: sampleData,
+        initialLocale: 'en',
+        headless: true,
+        skipWelcome: true,
+        resumeState: { selectedIndex: 1, profileName: 'study', dir: '/project', exitCode: 42 },
+      }),
+      {
+        stdout: stdout as unknown as NodeJS.WriteStream,
+        stdin: dummyStdin() as unknown as NodeJS.ReadStream,
+        exitOnCtrlC: false,
+        patchConsole: false,
+      },
+    );
+    await instance.waitUntilRenderFlush();
+    instance.unmount();
+    await instance.waitUntilExit();
+    const output = stripAnsi(stdout.output);
+    expect(output).toContain('Claude exited (42)');
+  });
+
+  it('shows the success flash when resumed after exit code 0', async () => {
+    const stdout = new FakeTtyStdout();
+    const instance = render(
+      React.createElement(WorkbenchApp, {
+        data: sampleData,
+        initialLocale: 'en',
+        headless: true,
+        skipWelcome: true,
+        resumeState: { selectedIndex: 0, profileName: 'coding', dir: '/project', exitCode: 0 },
+      }),
+      {
+        stdout: stdout as unknown as NodeJS.WriteStream,
+        stdin: dummyStdin() as unknown as NodeJS.ReadStream,
+        exitOnCtrlC: false,
+        patchConsole: false,
+      },
+    );
+    await instance.waitUntilRenderFlush();
+    instance.unmount();
+    await instance.waitUntilExit();
+    const output = stripAnsi(stdout.output);
+    expect(output).toContain('Claude exited successfully');
+  });
+
+  it('clamps an out-of-range resumed selection to the profile list', async () => {
+    const stdout = new FakeTtyStdout();
+    const instance = render(
+      React.createElement(WorkbenchApp, {
+        data: sampleData,
+        initialLocale: 'en',
+        headless: true,
+        skipWelcome: true,
+        // Selection captured before launch; the profile list may have shrunk
+        // while Claude ran — the mount must not crash on the stale index.
+        resumeState: { selectedIndex: 99, profileName: 'gone', dir: '/project', exitCode: 0 },
+      }),
+      {
+        stdout: stdout as unknown as NodeJS.WriteStream,
+        stdin: dummyStdin() as unknown as NodeJS.ReadStream,
+        exitOnCtrlC: false,
+        patchConsole: false,
+      },
+    );
+    await instance.waitUntilRenderFlush();
+    instance.unmount();
+    await instance.waitUntilExit();
+    expect(stripAnsi(stdout.output)).toContain('Claude exited successfully');
+  });
+});
+
 describe('resize guard', () => {
   it('detects below-minimum terminal sizes', () => {
     expect(isBelowMinimum(79, 24)).toBe(true);

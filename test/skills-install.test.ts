@@ -10,6 +10,7 @@ import {
   checkInstallHealth,
   copySkillToProfile,
   installLocalSkill,
+  listLocalSkillSources,
   previewInstall,
   removeLinkedSkill,
   restoreLinkedSkillItem,
@@ -17,7 +18,8 @@ import {
   validateLocalSkillSource,
   validateSkillDirectoryName,
 } from '../src/core/skills-install';
-import { loadSkillsProvenance, saveSkillsProvenance } from '../src/core/skills-provenance';
+import { loadSkillsProvenance, saveSkillsProvenance, computeDrift } from '../src/core/skills-provenance';
+import { reconcileSkillTransactionCrashStates } from '../src/core/skills-transaction';
 import { listRecoveryBinItems, restoreRecoveryItem } from '../src/core/recovery-bin';
 import { createSkillLink } from '../src/platform/link';
 import { type CaptureProcess } from '../src/platform/process';
@@ -927,5 +929,379 @@ describe('copySkillToProfile', () => {
         clock: fixedClock,
       }),
     ).rejects.toMatchObject({ code: 'PROFILE_NOT_FOUND' });
+  });
+});
+
+// ─── installLocalSkill replace — crash reconciliation (spec §7.1, #65) ────
+// The install replace path runs through the transaction engine's rename-swap,
+// so a crash leaves sidecar + .ccps-tmp/.ccps-old residue that the startup
+// sweep reconciles. Fault injection mirrors skills-transaction.test.ts.
+
+async function listTxResidue(skillsDir: string): Promise<string[]> {
+  if (!(await fs.pathExists(skillsDir))) return [];
+  return (await fs.readdir(skillsDir)).filter((n) => n.startsWith('.ccps-'));
+}
+
+describe('installLocalSkill — replace crash reconciliation (copy)', () => {
+  async function installOld(appHome: string, profileDir: string, root: string): Promise<void> {
+    const sourceA = await makeSourceSkill(root, 'old-skill', '# OLD\n');
+    await installLocalSkill({
+      appHomePath: appHome,
+      profileName: 'coding',
+      profileRootPath: profileDir,
+      sourcePath: sourceA,
+      mode: 'copy',
+      name: 'shared',
+      clock: fixedClock,
+    });
+  }
+
+  function skillsDirOf(profileDir: string): string {
+    return path.join(profileDir, 'claude-home', 'skills');
+  }
+
+  it('crash after rename-old → sweep renames the old tree back, no Bin item', async () => {
+    const root = await makeTempRoot('ccps-install-crash-');
+    const appHome = await makeAppHome();
+    const profileDir = await makeProfile(appHome, 'coding');
+    await installOld(appHome, profileDir, root);
+    const sourceB = await makeSourceSkill(root, 'new-skill', '# NEW\n');
+
+    await expect(
+      installLocalSkill({
+        appHomePath: appHome,
+        profileName: 'coding',
+        profileRootPath: profileDir,
+        sourcePath: sourceB,
+        mode: 'copy',
+        name: 'shared',
+        collisionResolution: 'replace',
+        clock: fixedClock,
+        __fault: 'after-rename-old',
+      }),
+    ).rejects.toMatchObject({ code: 'SKILL_TX_FAULT_INJECTED' });
+
+    // <name> is gone (renamed to .ccps-old), sidecar present — pre-sweep state.
+    expect(await fs.pathExists(path.join(skillsDirOf(profileDir), 'shared'))).toBe(false);
+    expect((await listTxResidue(skillsDirOf(profileDir))).length).toBeGreaterThan(0);
+
+    const result = await reconcileSkillTransactionCrashStates(profileDir);
+
+    expect(result.entries).toHaveLength(1);
+    expect(result.entries[0].action).toBe('renamed-old-back');
+    // Old tree is restored; nothing was binned; no residue remains.
+    expect(
+      await fs.readFile(path.join(skillsDirOf(profileDir), 'shared', 'SKILL.md'), 'utf8'),
+    ).toContain('# OLD');
+    expect(await listTxResidue(skillsDirOf(profileDir))).toEqual([]);
+    expect((await listRecoveryBinItems(appHome)).length).toBe(0);
+  });
+
+  it('crash after rename-new → sweep deletes old; new tree live; stale manifest drifts', async () => {
+    const root = await makeTempRoot('ccps-install-crash-');
+    const appHome = await makeAppHome();
+    const profileDir = await makeProfile(appHome, 'coding');
+    await installOld(appHome, profileDir, root);
+    const recordedHash = (await loadSkillsProvenance(profileDir)).skills['shared'].contentHash;
+    const sourceB = await makeSourceSkill(root, 'new-skill', '# NEW\n');
+
+    await expect(
+      installLocalSkill({
+        appHomePath: appHome,
+        profileName: 'coding',
+        profileRootPath: profileDir,
+        sourcePath: sourceB,
+        mode: 'copy',
+        name: 'shared',
+        collisionResolution: 'replace',
+        clock: fixedClock,
+        __fault: 'after-rename-new',
+      }),
+    ).rejects.toMatchObject({ code: 'SKILL_TX_FAULT_INJECTED' });
+
+    const result = await reconcileSkillTransactionCrashStates(profileDir);
+
+    expect(result.entries).toHaveLength(1);
+    expect(result.entries[0].action).toBe('deleted-old');
+    // New tree is live; the swap had succeeded.
+    expect(
+      await fs.readFile(path.join(skillsDirOf(profileDir), 'shared', 'SKILL.md'), 'utf8'),
+    ).toContain('# NEW');
+    expect(await listTxResidue(skillsDirOf(profileDir))).toEqual([]);
+    // Manifest was not written → live hash diverges from the OLD record →
+    // local drift, exactly the manual-edit path (spec §7.1, deliberately).
+    const manifest = await loadSkillsProvenance(profileDir);
+    expect(manifest.skills['shared'].contentHash).toBe(recordedHash);
+    const drift = await computeDrift(
+      path.join(skillsDirOf(profileDir), 'shared'),
+      manifest.skills['shared'],
+    );
+    expect(drift).toBe('local-drift');
+  });
+
+  it('crash before manifest write → stale sidecar only → sweep drops it, drift remains', async () => {
+    const root = await makeTempRoot('ccps-install-crash-');
+    const appHome = await makeAppHome();
+    const profileDir = await makeProfile(appHome, 'coding');
+    await installOld(appHome, profileDir, root);
+    const recordedHash = (await loadSkillsProvenance(profileDir)).skills['shared'].contentHash;
+    const sourceB = await makeSourceSkill(root, 'new-skill', '# NEW\n');
+
+    await expect(
+      installLocalSkill({
+        appHomePath: appHome,
+        profileName: 'coding',
+        profileRootPath: profileDir,
+        sourcePath: sourceB,
+        mode: 'copy',
+        name: 'shared',
+        collisionResolution: 'replace',
+        clock: fixedClock,
+        __fault: 'before-manifest',
+      }),
+    ).rejects.toMatchObject({ code: 'SKILL_TX_FAULT_INJECTED' });
+
+    // No tmp/old residue — the swap and the bin disposal completed.
+    expect(
+      (await listTxResidue(skillsDirOf(profileDir))).every((n) => n.startsWith('.ccps-tx-')),
+    ).toBe(true);
+
+    const result = await reconcileSkillTransactionCrashStates(profileDir);
+
+    expect(result.entries).toHaveLength(1);
+    expect(result.entries[0].action).toBe('deleted-stale-sidecar');
+    expect(
+      await fs.readFile(path.join(skillsDirOf(profileDir), 'shared', 'SKILL.md'), 'utf8'),
+    ).toContain('# NEW');
+    expect(await listTxResidue(skillsDirOf(profileDir))).toEqual([]);
+    const manifest = await loadSkillsProvenance(profileDir);
+    expect(manifest.skills['shared'].contentHash).toBe(recordedHash);
+    const drift = await computeDrift(
+      path.join(skillsDirOf(profileDir), 'shared'),
+      manifest.skills['shared'],
+    );
+    expect(drift).toBe('local-drift');
+  });
+});
+
+describe.skipIf(!canCreateSymlink)('installLocalSkill — replace crash reconciliation (link)', () => {
+  it('crash after rename-new → sweep deletes old; the live link shows as drift', async () => {
+    const root = await makeTempRoot('ccps-install-link-crash-');
+    const appHome = await makeAppHome();
+    const profileDir = await makeProfile(appHome, 'coding');
+    const skillsDir = path.join(profileDir, 'claude-home', 'skills');
+
+    const sourceA = await makeSourceSkill(root, 'old-skill', '# OLD\n');
+    await installLocalSkill({
+      appHomePath: appHome,
+      profileName: 'coding',
+      profileRootPath: profileDir,
+      sourcePath: sourceA,
+      mode: 'copy',
+      name: 'shared',
+      clock: fixedClock,
+    });
+    const recordedHash = (await loadSkillsProvenance(profileDir)).skills['shared'].contentHash;
+
+    const sourceB = await makeSourceSkill(root, 'new-live', '# NEW\n');
+    await expect(
+      installLocalSkill({
+        appHomePath: appHome,
+        profileName: 'coding',
+        profileRootPath: profileDir,
+        sourcePath: sourceB,
+        mode: 'link',
+        name: 'shared',
+        collisionResolution: 'replace',
+        clock: fixedClock,
+        __fault: 'after-rename-new',
+      }),
+    ).rejects.toMatchObject({ code: 'SKILL_TX_FAULT_INJECTED' });
+
+    const result = await reconcileSkillTransactionCrashStates(profileDir);
+
+    expect(result.entries).toHaveLength(1);
+    expect(result.entries[0].action).toBe('deleted-old');
+    // The new entry is the live link; the old copy is gone.
+    const linkPath = path.join(skillsDir, 'shared');
+    expect((await fs.lstat(linkPath)).isSymbolicLink()).toBe(true);
+    expect(await listTxResidue(skillsDir)).toEqual([]);
+    // Manifest stale → drift on the link content (manual-edit path).
+    const manifest = await loadSkillsProvenance(profileDir);
+    expect(manifest.skills['shared'].contentHash).toBe(recordedHash);
+    const drift = await computeDrift(linkPath, manifest.skills['shared']);
+    expect(drift).toBe('local-drift');
+  });
+
+  it('replacing a copied entry lands the link and bins the old copy (file-tree)', async () => {
+    const root = await makeTempRoot('ccps-install-link-replace-');
+    const appHome = await makeAppHome();
+    const profileDir = await makeProfile(appHome, 'coding');
+    const skillsDir = path.join(profileDir, 'claude-home', 'skills');
+
+    const sourceA = await makeSourceSkill(root, 'old-skill', '# OLD\n');
+    await installLocalSkill({
+      appHomePath: appHome,
+      profileName: 'coding',
+      profileRootPath: profileDir,
+      sourcePath: sourceA,
+      mode: 'copy',
+      name: 'shared',
+      clock: fixedClock,
+    });
+
+    const sourceB = await makeSourceSkill(root, 'new-live', '# NEW\n');
+    const result = await installLocalSkill({
+      appHomePath: appHome,
+      profileName: 'coding',
+      profileRootPath: profileDir,
+      sourcePath: sourceB,
+      mode: 'link',
+      name: 'shared',
+      collisionResolution: 'replace',
+      clock: fixedClock,
+    });
+
+    expect(result.mode).toBe('link');
+    const linkPath = path.join(skillsDir, 'shared');
+    expect((await fs.lstat(linkPath)).isSymbolicLink()).toBe(true);
+    expect(path.resolve(await fs.readlink(linkPath))).toBe(path.resolve(sourceB));
+    const binItems = await listRecoveryBinItems(appHome);
+    expect(binItems.length).toBe(1);
+    expect(binItems[0].shape).toBe('file-tree');
+    expect(binItems[0].origin).toBe('remove');
+    // The manifest carries the link-mode record with the resolved target.
+    const manifest = await loadSkillsProvenance(profileDir);
+    expect(manifest.skills['shared'].mode).toBe('link');
+    expect(manifest.skills['shared'].link?.targetPath).toBe(path.resolve(sourceB));
+  });
+
+  it('replacing a linked entry bins it as a fragment with link coordinates + provenance', async () => {
+    const root = await makeTempRoot('ccps-install-link-frag-');
+    const appHome = await makeAppHome();
+    const profileDir = await makeProfile(appHome, 'coding');
+    const skillsDir = path.join(profileDir, 'claude-home', 'skills');
+
+    const sourceA = await makeSourceSkill(root, 'old-live', '# OLD LIVE\n');
+    await installLocalSkill({
+      appHomePath: appHome,
+      profileName: 'coding',
+      profileRootPath: profileDir,
+      sourcePath: sourceA,
+      mode: 'link',
+      name: 'shared',
+      clock: fixedClock,
+    });
+
+    const sourceB = await makeSourceSkill(root, 'new-skill', '# NEW\n');
+    await installLocalSkill({
+      appHomePath: appHome,
+      profileName: 'coding',
+      profileRootPath: profileDir,
+      sourcePath: sourceB,
+      mode: 'copy',
+      name: 'shared',
+      collisionResolution: 'replace',
+      clock: fixedClock,
+    });
+
+    expect(
+      await fs.readFile(path.join(skillsDir, 'shared', 'SKILL.md'), 'utf8'),
+    ).toContain('# NEW');
+    const binItems = await listRecoveryBinItems(appHome);
+    expect(binItems.length).toBe(1);
+    expect(binItems[0].shape).toBe('fragment');
+    const coords = binItems[0].coordinates as {
+      file: string;
+      keyPath: string;
+      value: { mode: string; linkTargetPath: string; provenance?: { mode: string } };
+    };
+    expect(coords.keyPath).toBe('shared');
+    expect(coords.value.mode).toBe('link');
+    expect(path.resolve(coords.value.linkTargetPath)).toBe(path.resolve(sourceA));
+    expect(coords.value.provenance?.mode).toBe('link');
+  });
+});
+
+// ─── listLocalSkillSources (install wizard step-1 catalog, spec §7.2) ─────
+
+describe('listLocalSkillSources', () => {
+  it('catalogs Skills from other Profiles, excluding the install target', async () => {
+    const root = await makeTempRoot('ccps-local-sources-');
+    const appHome = await makeAppHome();
+    const codingDir = await makeProfile(appHome, 'coding');
+    const notesDir = await makeProfile(appHome, 'notes');
+
+    // Install a Skill into each Profile.
+    const sourceA = await makeSourceSkill(root, 'grilling', '# GRILL\n');
+    await installLocalSkill({
+      appHomePath: appHome,
+      profileName: 'notes',
+      profileRootPath: notesDir,
+      sourcePath: sourceA,
+      mode: 'copy',
+      name: 'grilling',
+      clock: fixedClock,
+    });
+    const sourceB = await makeSourceSkill(root, 'tdd', '# TDD\n');
+    await installLocalSkill({
+      appHomePath: appHome,
+      profileName: 'coding',
+      profileRootPath: codingDir,
+      sourcePath: sourceB,
+      mode: 'copy',
+      name: 'tdd',
+      clock: fixedClock,
+    });
+
+    const sources = await listLocalSkillSources({
+      appHomePath: appHome,
+      excludeProfileName: 'coding',
+    });
+
+    // Only the notes Profile's Skill is offered — never the target's own.
+    expect(sources.length).toBe(1);
+    expect(sources[0].suggestedName).toBe('grilling');
+    expect(sources[0].originProfile).toBe('notes');
+    expect(sources[0].readable).toBe(true);
+    expect(sources[0].skillMdPresent).toBe(true);
+    expect(sources[0].sourcePath).toBe(
+      path.join(notesDir, 'claude-home', 'skills', 'grilling'),
+    );
+  });
+
+  it('marks sources without a SKILL.md and skips transaction residue', async () => {
+    const root = await makeTempRoot('ccps-local-sources-');
+    const appHome = await makeAppHome();
+    await makeProfile(appHome, 'coding');
+    const notesDir = await makeProfile(appHome, 'notes');
+    const skillsDir = path.join(notesDir, 'claude-home', 'skills');
+
+    // A broken source (no SKILL.md) — must arrive pre-marked, not hidden.
+    await fs.ensureDir(path.join(skillsDir, 'scratch'));
+    // Transaction residue must never appear as a source.
+    await fs.ensureDir(path.join(skillsDir, '.ccps-old-deadbeef'));
+    await fs.writeFile(path.join(skillsDir, '.ccps-tx-deadbeef.json'), '{}', 'utf8');
+    void root;
+
+    const sources = await listLocalSkillSources({
+      appHomePath: appHome,
+      excludeProfileName: 'coding',
+    });
+
+    expect(sources.length).toBe(1);
+    expect(sources[0].suggestedName).toBe('scratch');
+    expect(sources[0].skillMdPresent).toBe(false);
+  });
+
+  it('returns an empty list when no other Profile has Skills', async () => {
+    const appHome = await makeAppHome();
+    await makeProfile(appHome, 'coding');
+
+    const sources = await listLocalSkillSources({
+      appHomePath: appHome,
+      excludeProfileName: 'coding',
+    });
+    expect(sources).toEqual([]);
   });
 });

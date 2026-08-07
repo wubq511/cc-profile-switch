@@ -15,8 +15,10 @@ import {
   type AutoMemoryEntry,
 } from '../../../core/auto-memory';
 import { listRecoveryBinItems, restoreRecoveryItem } from '../../../core/recovery-bin';
+import { openWithSystemEditor } from '../../../platform/editor';
 import { CollisionDialog, type CollisionResolutionChoice } from './collision-dialog';
 import { suggestNewName } from './collision-dialog-reducer';
+import { FallbackMenu } from '../edit-session/FallbackMenu';
 import { formatBytes, formatDate } from '../format';
 
 type Mode = 'list' | 'copy' | 'restore' | 'restore-collision';
@@ -77,7 +79,11 @@ export function AutoMemoryView({
     let cancelled = false;
     void (async () => {
       try {
-        const matches = await searchAutoMemory({ appHomePath, profileName: profile.name, query: q });
+        const matches = await searchAutoMemory({
+          appHomePath,
+          profileName: profile.name,
+          query: q,
+        });
         if (!cancelled) setSearchMatches(new Set(matches.map((m) => m.entryName)));
       } catch {
         if (!cancelled) setSearchMatches(new Set());
@@ -91,13 +97,18 @@ export function AutoMemoryView({
   const needle = searchQuery.trim().toLowerCase();
   const filtered = searchMatches
     ? entries.filter(
-        (e) => searchMatches.has(e.name) || (needle !== '' && e.name.toLowerCase().includes(needle)),
+        (e) =>
+          searchMatches.has(e.name) || (needle !== '' && e.name.toLowerCase().includes(needle)),
       )
     : entries;
 
   const selectedEntry = filtered[selectedIndex] ?? undefined;
   const selectedPath = selectedEntry
-    ? getAutoMemoryEntryPath({ appHomePath, profileName: profile.name, entryName: selectedEntry.name })
+    ? getAutoMemoryEntryPath({
+        appHomePath,
+        profileName: profile.name,
+        entryName: selectedEntry.name,
+      })
     : null;
   const session: EditSession | undefined = selectedPath
     ? editSessionManager.getSession(selectedPath)
@@ -105,6 +116,9 @@ export function AutoMemoryView({
   const editActive = session !== undefined && session.phase !== 'idle';
   // Bump when VS Code reports an external save so the preview effect re-reads.
   const sessionChangeCount = session?.changeCount ?? 0;
+  // §8 VS Code unavailable: the failed handoff surfaces as a modal fallback
+  // menu (system editor / show path / retry), never a silent dead-end.
+  const failedSession = session?.openFailedReason ? session : null;
 
   const reload = useCallback(async () => {
     try {
@@ -148,122 +162,140 @@ export function AutoMemoryView({
     };
   }, [appHomePath, profile.name, selectedIndex, entries, searchQuery, sessionChangeCount]);
 
-  useInput((input: string, key: Record<string, boolean>) => {
-    if (key.ctrl && input === 'c') return; // app-level exit handles this
+  useInput(
+    (input: string, key: Record<string, boolean>) => {
+      if (key.ctrl && input === 'c') return; // app-level exit handles this
 
-    // The collision dialog owns its own input while it is open.
-    if (mode === 'restore-collision') return;
+      // The collision dialog owns its own input while it is open.
+      if (mode === 'restore-collision') return;
 
-    // Search mode
-    if (searchFocused) {
+      // The editor-failure fallback menu owns its input while visible.
+      if (failedSession) return;
+
+      // Search mode
+      if (searchFocused) {
+        if (key.escape) {
+          setSearchFocused(false);
+          setSearchQuery('');
+          return;
+        }
+        if (key.return) {
+          setSearchFocused(false);
+          return;
+        }
+        if (key.backspace || key.delete) {
+          setSearchQuery((q) => q.slice(0, -1));
+          setSelectedIndex(0);
+          return;
+        }
+        if (!key.ctrl && !key.meta && input.length === 1) {
+          setSearchQuery((q) => q + input);
+          setSelectedIndex(0);
+        }
+        return;
+      }
+
+      // Copy prompt mode
+      if (mode === 'copy') {
+        if (key.escape) {
+          setMode('list');
+          setCopyInput('');
+          return;
+        }
+        if (key.return) {
+          void confirmCopy();
+          return;
+        }
+        if (key.backspace || key.delete) {
+          setCopyInput((s) => s.slice(0, -1));
+          return;
+        }
+        if (!key.ctrl && !key.meta && input.length === 1) {
+          setCopyInput((s) => s + input);
+        }
+        return;
+      }
+
+      // Restore picker mode
+      if (mode === 'restore') {
+        if (key.escape) {
+          setMode('list');
+          return;
+        }
+        if (restoreItems.length === 0) return;
+        if (key.upArrow) {
+          setRestoreIndex((i) => (i > 0 ? i - 1 : restoreItems.length - 1));
+          return;
+        }
+        if (key.downArrow) {
+          setRestoreIndex((i) => (i < restoreItems.length - 1 ? i + 1 : 0));
+          return;
+        }
+        if (key.return) {
+          void confirmRestore();
+        }
+        return;
+      }
+
+      // List mode
       if (key.escape) {
-        setSearchFocused(false);
-        setSearchQuery('');
+        onBack();
         return;
       }
-      if (key.return) {
-        setSearchFocused(false);
-        return;
-      }
-      if (key.backspace || key.delete) {
-        setSearchQuery((q) => q.slice(0, -1));
-        setSelectedIndex(0);
-        return;
-      }
-      if (!key.ctrl && !key.meta && input.length === 1) {
-        setSearchQuery((q) => q + input);
-        setSelectedIndex(0);
-      }
-      return;
-    }
-
-    // Copy prompt mode
-    if (mode === 'copy') {
-      if (key.escape) {
-        setMode('list');
-        setCopyInput('');
-        return;
-      }
-      if (key.return) {
-        void confirmCopy();
-        return;
-      }
-      if (key.backspace || key.delete) {
-        setCopyInput((s) => s.slice(0, -1));
-        return;
-      }
-      if (!key.ctrl && !key.meta && input.length === 1) {
-        setCopyInput((s) => s + input);
-      }
-      return;
-    }
-
-    // Restore picker mode
-    if (mode === 'restore') {
-      if (key.escape) {
-        setMode('list');
-        return;
-      }
-      if (restoreItems.length === 0) return;
       if (key.upArrow) {
-        setRestoreIndex((i) => (i > 0 ? i - 1 : restoreItems.length - 1));
+        setSelectedIndex((i) => (i > 0 ? i - 1 : filtered.length - 1));
         return;
       }
       if (key.downArrow) {
-        setRestoreIndex((i) => (i < restoreItems.length - 1 ? i + 1 : 0));
+        setSelectedIndex((i) => (i < filtered.length - 1 ? i + 1 : 0));
         return;
       }
-      if (key.return) {
-        void confirmRestore();
+      if (input === '/') {
+        setSearchFocused(true);
+        return;
       }
-      return;
-    }
-
-    // List mode
-    if (key.escape) {
-      onBack();
-      return;
-    }
-    if (key.upArrow) {
-      setSelectedIndex((i) => (i > 0 ? i - 1 : filtered.length - 1));
-      return;
-    }
-    if (key.downArrow) {
-      setSelectedIndex((i) => (i < filtered.length - 1 ? i + 1 : 0));
-      return;
-    }
-    if (input === '/') {
-      setSearchFocused(true);
-      return;
-    }
-    if (input === 'e') {
-      void openEditor();
-      return;
-    }
-    if (input === 'c') {
-      setMode('copy');
-      setCopyInput('');
-      setStatus(null);
-      return;
-    }
-    if (input === 'x') {
-      void removeSelected();
-      return;
-    }
-    if (input === 'u') {
-      void openRestorePicker();
-      return;
-    }
-  }, { isActive: canUseInput });
+      if (input === 'e') {
+        void openEditor();
+        return;
+      }
+      if (input === 'c') {
+        setMode('copy');
+        setCopyInput('');
+        setStatus(null);
+        return;
+      }
+      if (input === 'x') {
+        void removeSelected();
+        return;
+      }
+      if (input === 'u') {
+        void openRestorePicker();
+        return;
+      }
+    },
+    { isActive: canUseInput },
+  );
 
   async function openEditor(): Promise<void> {
     if (!selectedEntry || !selectedPath) return;
-    setStatus(t('autoMemory.edit.opening').replace('{entry}', selectedEntry.name));
+    setStatus(t('autoMemory.edit.opening', { entry: selectedEntry.name }));
     try {
       await editSessionManager.open(selectedPath);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      setStatus(t('autoMemory.edit.failed').replace('{message}', message));
+      setStatus(t('autoMemory.edit.failed', { message }));
+    }
+  }
+
+  /** §8 fallback [1]: hand the file to the OS default editor, then end the
+   *  failed session so the menu dismisses (no watcher outside VS Code). */
+  async function openInSystemEditor(): Promise<void> {
+    if (!failedSession) return;
+    try {
+      await openWithSystemEditor(failedSession.filePath);
+      editSessionManager.endSession(failedSession.filePath);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -276,7 +308,7 @@ export function AutoMemoryView({
         profileName: profile.name,
         entryName,
       });
-      setStatus(t('autoMemory.remove.done').replace('{entry}', entryName));
+      setStatus(t('autoMemory.remove.done', { entry: entryName }));
       await reload();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error));
@@ -303,11 +335,7 @@ export function AutoMemoryView({
         toProfile: target,
         entryName: selectedEntry.name,
       });
-      setStatus(
-        t('autoMemory.copy.success')
-          .replace('{entry}', selectedEntry.name)
-          .replace('{profile}', target),
-      );
+      setStatus(t('autoMemory.copy.success', { entry: selectedEntry.name, profile: target }));
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error));
     }
@@ -340,7 +368,7 @@ export function AutoMemoryView({
     if (!item) return;
     try {
       await restoreRecoveryItem({ appHomePath, itemId: item.id });
-      setStatus(t('autoMemory.restore.success').replace('{entry}', item.entryName));
+      setStatus(t('autoMemory.restore.success', { entry: item.entryName }));
       setMode('list');
       await reload();
     } catch (error) {
@@ -348,7 +376,7 @@ export function AutoMemoryView({
       if (/collision|already exists/i.test(message)) {
         enterCollision(item, item.entryName);
       } else {
-        setStatus(t('autoMemory.restore.failed').replace('{message}', message));
+        setStatus(t('autoMemory.restore.failed', { message }));
       }
     }
   }
@@ -372,10 +400,8 @@ export function AutoMemoryView({
       });
       setStatus(
         choice.resolution === 'restore-as-new-name'
-          ? t('autoMemory.restore.renamed')
-              .replace('{entry}', item.entryName)
-              .replace('{newName}', choice.newName)
-          : t('autoMemory.restore.replaced').replace('{entry}', item.entryName),
+          ? t('autoMemory.restore.renamed', { entry: item.entryName, newName: choice.newName })
+          : t('autoMemory.restore.replaced', { entry: item.entryName }),
       );
       setCollisionItem(null);
       setMode('list');
@@ -387,7 +413,7 @@ export function AutoMemoryView({
         const base = choice.resolution === 'restore-as-new-name' ? choice.newName : item.entryName;
         enterCollision(item, base);
       } else {
-        setStatus(t('autoMemory.restore.failed').replace('{message}', message));
+        setStatus(t('autoMemory.restore.failed', { message }));
         setCollisionItem(null);
         setMode('restore');
       }
@@ -404,10 +430,18 @@ export function AutoMemoryView({
       <Box marginBottom={1}>
         <Text bold>{t('autoMemory.title')}</Text>
         <Text dimColor> · {profile.name}</Text>
-        {editActive && (
-          <Text color="green"> · ✎ {t('autoMemory.edit.banner')}</Text>
-        )}
+        {editActive && <Text color="green"> · ✎ {t('autoMemory.edit.banner')}</Text>}
       </Box>
+
+      {failedSession && (
+        <FallbackMenu
+          reason={failedSession.openFailedReason}
+          filePath={failedSession.filePath}
+          onSystemEditor={() => void openInSystemEditor()}
+          onRetry={() => void editSessionManager.open(failedSession.filePath)}
+          onDismiss={() => editSessionManager.endSession(failedSession.filePath)}
+        />
+      )}
 
       {mode === 'copy' ? (
         <Box flexDirection="column" flexGrow={1}>
@@ -432,7 +466,11 @@ export function AutoMemoryView({
             <Text dimColor>{t('autoMemory.restore.empty')}</Text>
           ) : (
             restoreItems.map((item, i) => (
-              <Text key={item.id} bold={i === restoreIndex} color={i === restoreIndex ? 'cyan' : undefined}>
+              <Text
+                key={item.id}
+                bold={i === restoreIndex}
+                color={i === restoreIndex ? 'cyan' : undefined}
+              >
                 {i === restoreIndex ? '▸ ' : '  '}
                 {item.entryName}
               </Text>
@@ -516,5 +554,7 @@ function truncatePreview(content: string, maxLines: number, maxWidth: number): s
   if (!content) return '';
   const lines = content.split('\n');
   const slice = lines.slice(0, Math.max(1, maxLines));
-  return slice.map((line) => (line.length > maxWidth ? line.slice(0, maxWidth - 1) + '…' : line)).join('\n');
+  return slice
+    .map((line) => (line.length > maxWidth ? line.slice(0, maxWidth - 1) + '…' : line))
+    .join('\n');
 }

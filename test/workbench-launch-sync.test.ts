@@ -14,6 +14,8 @@ import {
 } from '../src/core/profile-template';
 import { buildLaunchPlan, formatLaunchDryRun, launchProfile } from '../src/core/launcher';
 import { workbenchLaunchSync } from '../src/core/workbench-launch';
+import { appConfigV2Schema } from '../src/schemas/config';
+import { appStateV1Schema } from '../src/schemas/state';
 
 /**
  * In test environments, the macOS PTY wrapper (`script -q /dev/null`) fails
@@ -109,6 +111,102 @@ describe('workbench launch (spawnSync)', () => {
     });
 
     expect(result.exitCode).toBe(42);
+  });
+
+  it('records neither recents nor lastUsedProfile on non-zero exit (spec §13.3)', async () => {
+    const { appHome } = await makeProfile();
+    const projectCwd = await makeTempRoot('ccps-project-');
+
+    const plan = await buildLaunchPlan({
+      appHomePath: appHome,
+      profileName: 'coding',
+      cwd: projectCwd,
+    });
+
+    const testPlan = { ...plan, command: 'node', args: ['-e', 'process.exit(42)'] };
+
+    const result = workbenchLaunchSync({
+      plan: testPlan,
+      appHomePath: appHome,
+      spawnImpl: testSpawnSync,
+    });
+
+    expect(result.exitCode).toBe(42);
+
+    // config.json lastUsedProfile stays unset
+    const config = await fs.readJson(join(appHome, 'config.json'));
+    expect(config.lastUsedProfile).toBeNull();
+
+    // state.json recents stay empty (file was never created)
+    const state = await loadAppState(appHome);
+    expect(state.recentProjectDirs).toHaveLength(0);
+  });
+
+  it('records schema-valid metadata atomically on exit 0 (no tmp residue)', async () => {
+    const { appHome } = await makeProfile();
+    const projectCwd = await makeTempRoot('ccps-project-');
+
+    const plan = await buildLaunchPlan({
+      appHomePath: appHome,
+      profileName: 'coding',
+      cwd: projectCwd,
+    });
+
+    const testPlan = { ...plan, command: 'node', args: ['-e', 'process.exit(0)'] };
+
+    workbenchLaunchSync({
+      plan: testPlan,
+      appHomePath: appHome,
+      spawnImpl: testSpawnSync,
+    });
+
+    // Both files validate against their strict schemas (spec §13.4)
+    const rawConfig = await fs.readJson(join(appHome, 'config.json'));
+    expect(appConfigV2Schema.safeParse(rawConfig).success).toBe(true);
+    expect(rawConfig.lastUsedProfile).toBe('coding');
+
+    const rawState = await fs.readJson(join(appHome, 'state.json'));
+    expect(appStateV1Schema.safeParse(rawState).success).toBe(true);
+    expect(rawState.recentProjectDirs[0].path).toBe(projectCwd);
+
+    // Writes went through temp+rename — no residue left behind
+    const entries = await fs.readdir(appHome);
+    expect(entries.filter((entry) => entry.endsWith('.tmp'))).toHaveLength(0);
+  });
+
+  it('leaves a state.json with unknown fields untouched (never silently rewrites)', async () => {
+    const { appHome } = await makeProfile();
+    const projectCwd = await makeTempRoot('ccps-project-');
+
+    // Pre-existing state.json carrying a field from a newer ccps version
+    const foreignState = {
+      version: 1,
+      recentProjectDirs: [{ path: '/old/project', lastUsedAt: '2026-01-01T00:00:00.000Z' }],
+      futureField: { from: 'newer-ccps' },
+    };
+    await fs.writeJson(join(appHome, 'state.json'), foreignState);
+
+    const plan = await buildLaunchPlan({
+      appHomePath: appHome,
+      profileName: 'coding',
+      cwd: projectCwd,
+    });
+
+    const testPlan = { ...plan, command: 'node', args: ['-e', 'process.exit(0)'] };
+
+    const result = workbenchLaunchSync({
+      plan: testPlan,
+      appHomePath: appHome,
+      spawnImpl: testSpawnSync,
+    });
+
+    expect(result.exitCode).toBe(0);
+
+    // Strict schema (spec §13.4): the file fails parse, so the recents
+    // update is skipped and the file is preserved verbatim — the old code
+    // silently rewrote it without the unknown fields.
+    const raw = await fs.readJson(join(appHome, 'state.json'));
+    expect(raw).toEqual(foreignState);
   });
 
   it('workbenchLaunchSync passes CLAUDE_CONFIG_DIR and cwd to spawn', async () => {

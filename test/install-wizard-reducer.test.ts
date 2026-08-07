@@ -4,18 +4,29 @@ import {
   initialInstallWizardState,
   installWizardReducer,
 } from '../src/tui/workbench/skills/install-wizard-reducer';
-import type { InstallPreview, LocalSkillSourceInfo } from '../src/core/skills-install';
+import type {
+  CatalogedLocalSkillSource,
+  InstallPreview,
+  LocalSkillSourceInfo,
+} from '../src/core/skills-install';
 import type { RemoteInstallPreview } from '../src/core/skills-remote-install';
 
 // `startAtKind()` opens the wizard to the kind picker (spec §7.3: Local|Remote).
-// `start()` opens the wizard AND selects Local, landing on the Local source step
-// — this is what the bulk of the local-flow tests want, so they stay readable.
+// `startAtSourceList()` selects Local, landing on the step-1 pick list (spec
+// §7.2: pick the Local Skill Source from a list). `start()` additionally picks
+// the manual-entry row, landing on the typed-path step — this is what the bulk
+// of the local-flow tests want, so they stay readable.
 function startAtKind(): ReturnType<typeof initialInstallWizardState> {
   return installWizardReducer(initialInstallWizardState(), { type: 'START', profileName: 'coding' });
 }
 
-function start(): ReturnType<typeof initialInstallWizardState> {
+function startAtSourceList(): ReturnType<typeof initialInstallWizardState> {
   return installWizardReducer(startAtKind(), { type: 'KIND_SELECT_LOCAL' });
+}
+
+function start(): ReturnType<typeof initialInstallWizardState> {
+  // Empty source list (not yet loaded) → the only row is manual entry.
+  return installWizardReducer(startAtSourceList(), { type: 'SOURCE_LIST_PICK' });
 }
 
 function startRemote(): ReturnType<typeof initialInstallWizardState> {
@@ -91,10 +102,14 @@ describe('install wizard reducer', () => {
     expect(s.mode).toBe('copy'); // Copy is the default per spec §7.2
   });
 
-  it('KIND_SELECT_LOCAL lands on the Local source step', () => {
-    const s = start();
-    expect(s.phase).toBe('source');
+  it('KIND_SELECT_LOCAL lands on the source-list step (spec §7.2 step 1)', () => {
+    const s = startAtSourceList();
+    expect(s.phase).toBe('source-list');
     expect(s.kind).toBe('local');
+    // The manual-entry row is the typed-path fallback.
+    const manual = installWizardReducer(s, { type: 'SOURCE_LIST_PICK' });
+    expect(manual.phase).toBe('source');
+    expect(manual.kind).toBe('local');
   });
 
   it('KIND_SELECT_REMOTE lands on the remote source step', () => {
@@ -315,18 +330,23 @@ describe('install wizard reducer', () => {
     s = installWizardReducer(s, { type: 'CANCEL' });
     expect(s.open).toBe(false);
 
-    // source → kind (esc walks back to the kind picker, not closed)
-    s = start();
+    // source-list → kind (esc walks back to the kind picker, not closed)
+    s = startAtSourceList();
     s = installWizardReducer(s, { type: 'CANCEL' });
     expect(s.phase).toBe('kind');
 
-    // mode → source
+    // source (manual entry) → source-list
+    s = start();
+    s = installWizardReducer(s, { type: 'CANCEL' });
+    expect(s.phase).toBe('source-list');
+
+    // mode → source-list (one decision back: the source choice)
     s = start();
     s = typeSource(s, '/x');
     s = installWizardReducer(s, { type: 'SOURCE_SUBMIT' });
     s = installWizardReducer(s, { type: 'SOURCE_RESOLVED', info: validSourceInfo });
     s = installWizardReducer(s, { type: 'CANCEL' });
-    expect(s.phase).toBe('source');
+    expect(s.phase).toBe('source-list');
 
     // confirm → mode
     s = start();
@@ -363,6 +383,96 @@ describe('install wizard reducer', () => {
     expect(s.phase).toBe('installing');
     s = installWizardReducer(s, { type: 'CANCEL' });
     expect(s.phase).toBe('installing');
+  });
+
+  // ─── Local source pick list (spec §7.2 step 1) ────────────────────────
+
+  describe('source list (local step 1)', () => {
+    function cataloged(overrides: Partial<CatalogedLocalSkillSource> = {}): CatalogedLocalSkillSource {
+      return {
+        sourcePath: '/profiles/notes/claude-home/skills/grilling',
+        readable: true,
+        skillMdPresent: true,
+        suggestedName: 'grilling',
+        originProfile: 'notes',
+        ...overrides,
+      };
+    }
+
+    it('SOURCES_LOADED populates the pick list and marks it loaded', () => {
+      let s = startAtSourceList();
+      expect(s.sourcesLoaded).toBe(false);
+      s = installWizardReducer(s, {
+        type: 'SOURCES_LOADED',
+        sources: [cataloged(), cataloged({ suggestedName: 'tdd', sourcePath: '/profiles/notes/claude-home/skills/tdd' })],
+      });
+      expect(s.sourcesLoaded).toBe(true);
+      expect(s.localSources).toHaveLength(2);
+      expect(s.phase).toBe('source-list');
+    });
+
+    it('SOURCES_LOADED is a no-op outside the source-list phase', () => {
+      let s = start(); // typed manual-entry step
+      s = installWizardReducer(s, { type: 'SOURCES_LOADED', sources: [cataloged()] });
+      expect(s.sourcesLoaded).toBe(false);
+      expect(s.localSources).toHaveLength(0);
+    });
+
+    it('SOURCE_LIST_MOVE clamps at both ends across sources + the manual row', () => {
+      let s = startAtSourceList();
+      s = installWizardReducer(s, {
+        type: 'SOURCES_LOADED',
+        sources: [cataloged(), cataloged({ suggestedName: 'tdd', sourcePath: '/x/tdd' })],
+      });
+      expect(s.sourceListIndex).toBe(0);
+      // Up at the top clamps to 0.
+      s = installWizardReducer(s, { type: 'SOURCE_LIST_MOVE', delta: -1 });
+      expect(s.sourceListIndex).toBe(0);
+      // Rows: 2 sources + manual = 3; down walks to the manual row and clamps.
+      s = installWizardReducer(s, { type: 'SOURCE_LIST_MOVE', delta: 1 });
+      s = installWizardReducer(s, { type: 'SOURCE_LIST_MOVE', delta: 1 });
+      expect(s.sourceListIndex).toBe(2);
+      s = installWizardReducer(s, { type: 'SOURCE_LIST_MOVE', delta: 1 });
+      expect(s.sourceListIndex).toBe(2);
+    });
+
+    it('SOURCE_LIST_PICK on a source row validates the picked path', () => {
+      let s = startAtSourceList();
+      s = installWizardReducer(s, { type: 'SOURCES_LOADED', sources: [cataloged()] });
+      s = installWizardReducer(s, { type: 'SOURCE_LIST_PICK' });
+      expect(s.phase).toBe('validating');
+      expect(s.sourceInput).toBe('/profiles/notes/claude-home/skills/grilling');
+    });
+
+    it('SOURCE_LIST_PICK on the manual row falls back to the typed-path step', () => {
+      let s = startAtSourceList();
+      s = installWizardReducer(s, { type: 'SOURCES_LOADED', sources: [cataloged()] });
+      s = installWizardReducer(s, { type: 'SOURCE_LIST_MOVE', delta: 1 });
+      s = installWizardReducer(s, { type: 'SOURCE_LIST_PICK' });
+      expect(s.phase).toBe('source');
+      // Typed input is preserved (empty here) for manual entry.
+      expect(s.sourceInput).toBe('');
+    });
+
+    it('esc from validating returns to the source list', () => {
+      let s = startAtSourceList();
+      s = installWizardReducer(s, { type: 'SOURCES_LOADED', sources: [cataloged()] });
+      s = installWizardReducer(s, { type: 'SOURCE_LIST_PICK' });
+      expect(s.phase).toBe('validating');
+      s = installWizardReducer(s, { type: 'CANCEL' });
+      expect(s.phase).toBe('source-list');
+    });
+
+    it('a picked source that fails validation lands on the typed step with the error', () => {
+      let s = startAtSourceList();
+      s = installWizardReducer(s, { type: 'SOURCES_LOADED', sources: [cataloged()] });
+      s = installWizardReducer(s, { type: 'SOURCE_LIST_PICK' });
+      s = installWizardReducer(s, { type: 'SOURCE_INVALID', message: 'no SKILL.md' });
+      expect(s.phase).toBe('source');
+      expect(s.sourceError).toBe('no SKILL.md');
+      // The picked path is prefilled for editing.
+      expect(s.sourceInput).toBe('/profiles/notes/claude-home/skills/grilling');
+    });
   });
 
   // ─── Remote flow (spec §7.3) ──────────────────────────────────────────

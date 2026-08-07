@@ -23,11 +23,14 @@ const KEYBINDINGS: Binding[] = [
   { key: '/', group: 'nav', labelKey: 'keymap.search' },
   { key: '?', group: 'nav', labelKey: 'keymap.help' },
   { key: 'q/Ctrl+C', group: 'nav', labelKey: 'keymap.quit' },
+  // In-Workbench language switch (§14.10): toggles zh↔en from the help sheet.
+  { key: 'l', group: 'nav', labelKey: 'keymap.language' },
   // Profile lifecycle actions
   { key: 'l', group: 'actions', labelKey: 'keymap.launch' },
   { key: 'L', group: 'actions', labelKey: 'lifecycle.launchDir' },
   { key: 'a', group: 'actions', labelKey: 'skill.add' },
   { key: 'e', group: 'actions', labelKey: 'keymap.edit' },
+  { key: 'D', group: 'actions', labelKey: 'lifecycle.editDescription' },
   { key: 'n', group: 'actions', labelKey: 'lifecycle.create' },
   { key: 'c', group: 'actions', labelKey: 'lifecycle.copy' },
   { key: 'r', group: 'actions', labelKey: 'lifecycle.rename' },

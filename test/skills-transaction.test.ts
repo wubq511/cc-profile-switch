@@ -28,6 +28,7 @@ import {
   listRecoveryBinItems,
   performStartupSweep,
 } from '../src/core/recovery-bin';
+import { probeLinkCapability } from '../src/platform/link';
 import { CcpsError } from '../src/utils/errors';
 
 const tempRoots: string[] = [];
@@ -924,5 +925,286 @@ describe('applySkillTransaction — traversal safety', () => {
         clock: fixedClock,
       }),
     ).rejects.toThrow(CcpsError);
+  });
+});
+
+// ─── applySkillTransaction — link mode ──────────────────────────────────
+// Link-mode applies swap in one atomic symlink creation; the old entry still
+// renames to .ccps-old first, so a replacing link install is crash-safe and
+// sweep-reconcilable exactly like copy mode.
+
+const canLink = probeLinkCapability().canCreate;
+
+describe.skipIf(!canLink)('applySkillTransaction — link mode', () => {
+  it('fresh link install lands an absolute-target symlink and a link-mode record', async () => {
+    const root = await makeTempRoot('ccps-tx-link-');
+    const appHome = await makeAppHome();
+    const profileDir = await makeProfile(appHome, 'coding');
+    const source = await makeSourceSkill(root, 'live-skill', '# LIVE\n');
+
+    const result = await applySkillTransaction({
+      profileRootPath: profileDir,
+      profileName: 'coding',
+      name: 'live-skill',
+      mode: 'link',
+      linkTargetPath: source,
+      source: localSource(source),
+      clock: fixedClock,
+    });
+
+    const linkPath = path.join(skillsDirOf(profileDir), 'live-skill');
+    expect((await fs.lstat(linkPath)).isSymbolicLink()).toBe(true);
+    expect(path.resolve(await fs.readlink(linkPath))).toBe(path.resolve(source));
+    expect(result.record.mode).toBe('link');
+    expect(result.record.link?.targetPath).toBe(path.resolve(source));
+    expect(result.replaced).toBe(false);
+    expect(await listResidue(skillsDirOf(profileDir))).toEqual([]);
+  });
+
+  it('replacing a copied entry bins the old tree as a file-tree item', async () => {
+    const root = await makeTempRoot('ccps-tx-link-replace-');
+    const appHome = await makeAppHome();
+    const profileDir = await makeProfile(appHome, 'coding');
+
+    const sourceA = await makeSourceSkill(root, 'old', '# OLD\n');
+    const { stagedPath: stageA } = await stageSkillTree({
+      appHomePath: appHome,
+      localSourcePath: sourceA,
+    });
+    await applySkillTransaction({
+      profileRootPath: profileDir,
+      profileName: 'coding',
+      name: 'shared',
+      mode: 'copy',
+      stagedPath: stageA,
+      source: localSource(sourceA),
+      clock: fixedClock,
+    });
+
+    const sourceB = await makeSourceSkill(root, 'new', '# NEW\n');
+    const result = await applySkillTransaction({
+      profileRootPath: profileDir,
+      profileName: 'coding',
+      name: 'shared',
+      mode: 'link',
+      linkTargetPath: sourceB,
+      source: localSource(sourceB),
+      replaceOld: { kind: 'bin', origin: 'remove', appHomePath: appHome, profileName: 'coding' },
+      clock: laterClock,
+    });
+
+    expect(result.replaced).toBe(true);
+    // The new entry is a live link to the source.
+    const linkPath = path.join(skillsDirOf(profileDir), 'shared');
+    expect((await fs.lstat(linkPath)).isSymbolicLink()).toBe(true);
+    expect(path.resolve(await fs.readlink(linkPath))).toBe(path.resolve(sourceB));
+    // Old copied tree landed in the Bin as a file-tree item.
+    const binItems = await listRecoveryBinItems(appHome);
+    expect(binItems.length).toBe(1);
+    expect(binItems[0].kind).toBe('skill');
+    expect(binItems[0].shape).toBe('file-tree');
+    expect(binItems[0].origin).toBe('remove');
+    // The record is link-mode with the resolved target.
+    expect(result.record.mode).toBe('link');
+    expect(result.record.link?.targetPath).toBe(path.resolve(sourceB));
+    expect(await listResidue(skillsDirOf(profileDir))).toEqual([]);
+  });
+
+  it('replacing a linked entry bins it as a fragment with link coordinates + provenance', async () => {
+    const root = await makeTempRoot('ccps-tx-link-frag-');
+    const appHome = await makeAppHome();
+    const profileDir = await makeProfile(appHome, 'coding');
+
+    // Old entry is a LINK with a link-mode record in the manifest.
+    const sourceA = await makeSourceSkill(root, 'old-live', '# OLD LIVE\n');
+    await applySkillTransaction({
+      profileRootPath: profileDir,
+      profileName: 'coding',
+      name: 'shared',
+      mode: 'link',
+      linkTargetPath: sourceA,
+      source: localSource(sourceA),
+      clock: fixedClock,
+    });
+
+    const sourceB = await makeSourceSkill(root, 'new', '# NEW\n');
+    const { stagedPath: stageB } = await stageSkillTree({
+      appHomePath: appHome,
+      localSourcePath: sourceB,
+    });
+    await applySkillTransaction({
+      profileRootPath: profileDir,
+      profileName: 'coding',
+      name: 'shared',
+      mode: 'copy',
+      stagedPath: stageB,
+      source: localSource(sourceB),
+      replaceOld: { kind: 'bin', origin: 'remove', appHomePath: appHome, profileName: 'coding' },
+      clock: laterClock,
+    });
+
+    // New copied tree is live.
+    expect(await fs.readFile(path.join(skillsDirOf(profileDir), 'shared', 'SKILL.md'), 'utf8')).toContain(
+      '# NEW',
+    );
+    // The linked old entry was binned as a fragment — restore re-creates the
+    // link instead of materializing its content.
+    const binItems = await listRecoveryBinItems(appHome);
+    expect(binItems.length).toBe(1);
+    expect(binItems[0].kind).toBe('skill');
+    expect(binItems[0].shape).toBe('fragment');
+    const coords = binItems[0].coordinates as {
+      file: string;
+      keyPath: string;
+      value: { mode: string; linkTargetPath: string; provenance?: { mode: string } };
+    };
+    expect(coords.keyPath).toBe('shared');
+    expect(coords.value.mode).toBe('link');
+    expect(path.resolve(coords.value.linkTargetPath)).toBe(path.resolve(sourceA));
+    expect(coords.value.provenance?.mode).toBe('link');
+    expect(await listResidue(skillsDirOf(profileDir))).toEqual([]);
+  });
+
+  it('crash after rename-old (link mode) → sweep renames the old entry back', async () => {
+    const root = await makeTempRoot('ccps-tx-link-crash-old-');
+    const appHome = await makeAppHome();
+    const profileDir = await makeProfile(appHome, 'coding');
+
+    const sourceA = await makeSourceSkill(root, 'old', '# OLD\n');
+    const { stagedPath: stageA } = await stageSkillTree({
+      appHomePath: appHome,
+      localSourcePath: sourceA,
+    });
+    await applySkillTransaction({
+      profileRootPath: profileDir,
+      profileName: 'coding',
+      name: 'shared',
+      mode: 'copy',
+      stagedPath: stageA,
+      source: localSource(sourceA),
+      clock: fixedClock,
+    });
+
+    const sourceB = await makeSourceSkill(root, 'new', '# NEW\n');
+    await expect(
+      applySkillTransaction({
+        profileRootPath: profileDir,
+        profileName: 'coding',
+        name: 'shared',
+        mode: 'link',
+        linkTargetPath: sourceB,
+        source: localSource(sourceB),
+        __fault: 'after-rename-old',
+        clock: laterClock,
+      }),
+    ).rejects.toMatchObject({ code: 'SKILL_TX_FAULT_INJECTED' });
+
+    // Pre-sweep: <name> is gone (renamed to .ccps-old), no tmp in link mode.
+    expect(await fs.pathExists(path.join(skillsDirOf(profileDir), 'shared'))).toBe(false);
+    const residueBefore = await listResidue(skillsDirOf(profileDir));
+    expect(residueBefore.some((n) => n.startsWith(TX_OLD_PREFIX))).toBe(true);
+    expect(residueBefore.some((n) => n.startsWith(TX_TMP_PREFIX))).toBe(false);
+
+    const result = await reconcileSkillTransactionCrashStates(profileDir);
+
+    expect(result.entries).toHaveLength(1);
+    expect(result.entries[0].action).toBe('renamed-old-back');
+    expect(await fs.readFile(path.join(skillsDirOf(profileDir), 'shared', 'SKILL.md'), 'utf8')).toContain(
+      '# OLD',
+    );
+    expect(await listResidue(skillsDirOf(profileDir))).toEqual([]);
+  });
+
+  it('crash after rename-new (link mode) → sweep deletes old; the live link shows as drift', async () => {
+    const root = await makeTempRoot('ccps-tx-link-crash-new-');
+    const appHome = await makeAppHome();
+    const profileDir = await makeProfile(appHome, 'coding');
+
+    const sourceA = await makeSourceSkill(root, 'old', '# OLD\n');
+    const { stagedPath: stageA } = await stageSkillTree({
+      appHomePath: appHome,
+      localSourcePath: sourceA,
+    });
+    await applySkillTransaction({
+      profileRootPath: profileDir,
+      profileName: 'coding',
+      name: 'shared',
+      mode: 'copy',
+      stagedPath: stageA,
+      source: localSource(sourceA),
+      clock: fixedClock,
+    });
+    const recordedHash = (await loadSkillsProvenance(profileDir)).skills['shared'].contentHash;
+
+    const sourceB = await makeSourceSkill(root, 'new', '# NEW\n');
+    await expect(
+      applySkillTransaction({
+        profileRootPath: profileDir,
+        profileName: 'coding',
+        name: 'shared',
+        mode: 'link',
+        linkTargetPath: sourceB,
+        source: localSource(sourceB),
+        __fault: 'after-rename-new',
+        clock: laterClock,
+      }),
+    ).rejects.toMatchObject({ code: 'SKILL_TX_FAULT_INJECTED' });
+
+    const result = await reconcileSkillTransactionCrashStates(profileDir);
+
+    expect(result.entries).toHaveLength(1);
+    expect(result.entries[0].action).toBe('deleted-old');
+    // The new entry is the live link.
+    const linkPath = path.join(skillsDirOf(profileDir), 'shared');
+    expect((await fs.lstat(linkPath)).isSymbolicLink()).toBe(true);
+    expect(await listResidue(skillsDirOf(profileDir))).toEqual([]);
+    // Manifest was not written → live link content diverges from the OLD
+    // record → local drift (same path as a manual user edit, spec §7.1).
+    const manifest = await loadSkillsProvenance(profileDir);
+    expect(manifest.skills['shared'].contentHash).toBe(recordedHash);
+    const drift = await computeDrift(linkPath, manifest.skills['shared']);
+    expect(drift).toBe('local-drift');
+  });
+
+  it('real failure after rename-new (link mode) rolls back: link removed, old restored', async () => {
+    const root = await makeTempRoot('ccps-tx-link-rollback-');
+    const appHome = await makeAppHome();
+    const profileDir = await makeProfile(appHome, 'coding');
+
+    const sourceA = await makeSourceSkill(root, 'old', '# OLD\n');
+    const { stagedPath: stageA } = await stageSkillTree({
+      appHomePath: appHome,
+      localSourcePath: sourceA,
+    });
+    await applySkillTransaction({
+      profileRootPath: profileDir,
+      profileName: 'coding',
+      name: 'shared',
+      mode: 'copy',
+      stagedPath: stageA,
+      source: localSource(sourceA),
+      clock: fixedClock,
+    });
+
+    const sourceB = await makeSourceSkill(root, 'new', '# NEW\n');
+    await expect(
+      applySkillTransaction({
+        profileRootPath: profileDir,
+        profileName: 'coding',
+        name: 'shared',
+        mode: 'link',
+        linkTargetPath: sourceB,
+        source: localSource(sourceB),
+        __failAt: 'after-rename-new',
+        clock: laterClock,
+      }),
+    ).rejects.toThrow('Real failure injected at after-rename-new');
+
+    // Rollback restored the pre-operation state: old tree back at <name>, the
+    // just-created link removed, no residue.
+    const restored = path.join(skillsDirOf(profileDir), 'shared');
+    expect((await fs.lstat(restored)).isSymbolicLink()).toBe(false);
+    expect(await fs.readFile(path.join(restored, 'SKILL.md'), 'utf8')).toContain('# OLD');
+    expect(await listResidue(skillsDirOf(profileDir))).toEqual([]);
   });
 });

@@ -12,7 +12,8 @@ import {
   buildRemoteInstallPlan,
   installRemoteSkill,
 } from '../src/core/skills-remote-install';
-import { getSkillsDirectoryPath, loadSkillsProvenance } from '../src/core/skills-provenance';
+import { getSkillsDirectoryPath, loadSkillsProvenance, computeDrift } from '../src/core/skills-provenance';
+import { reconcileSkillTransactionCrashStates } from '../src/core/skills-transaction';
 import { listRecoveryBinItems } from '../src/core/recovery-bin';
 import { type CaptureProcess } from '../src/platform/process';
 import { resolveFilesystemPath } from '../src/platform/path';
@@ -658,3 +659,150 @@ async function listTree(root: string): Promise<string[]> {
   }
   return out;
 }
+
+// ─── installRemoteSkill replace — crash reconciliation (spec §7.1, #65) ───
+// The remote install replace path runs through the transaction engine's
+// rename-swap, so a crash leaves sidecar + .ccps-tmp/.ccps-old residue that
+// the startup sweep reconciles. Fault injection mirrors
+// skills-transaction.test.ts.
+
+describe('installRemoteSkill — replace crash reconciliation', () => {
+  async function stageAndPreview2(
+    appHome: string,
+    profileDir: string,
+    opts: { name?: string; skillName?: string; source?: string } = {},
+  ) {
+    const name = opts.name ?? 'find-skills';
+    const skillName = opts.skillName ?? name;
+    return acquireAndPreviewRemoteInstall({
+      appHomePath: appHome,
+      profileName: 'coding',
+      profileRootPath: profileDir,
+      rawSource: opts.source ?? 'vercel-labs/skills',
+      name,
+      stagingId: 'abc123',
+      captureProcess: fakeCaptureStaging(skillName),
+    });
+  }
+
+  async function seedExistingCopy(profileDir: string, name: string): Promise<void> {
+    const existing = path.join(getSkillsDirectoryPath(profileDir), name);
+    await fs.ensureDir(existing);
+    await fs.writeFile(
+      path.join(existing, 'SKILL.md'),
+      `---\nname: ${name}\ndescription: OLD\n---\n# old\n`,
+      'utf8',
+    );
+  }
+
+  async function listTxResidue(skillsDir: string): Promise<string[]> {
+    if (!(await fs.pathExists(skillsDir))) return [];
+    return (await fs.readdir(skillsDir)).filter((n) => n.startsWith('.ccps-'));
+  }
+
+  it('crash after rename-old → sweep renames the old tree back; staging root reaped', async () => {
+    const appHome = await makeAppHome();
+    const profileDir = await makeProfile(appHome, 'coding');
+    const skillsDir = getSkillsDirectoryPath(profileDir);
+    await seedExistingCopy(profileDir, 'find-skills');
+    const preview = await stageAndPreview2(appHome, profileDir);
+
+    await expect(
+      installRemoteSkill({
+        appHomePath: appHome,
+        profileName: 'coding',
+        profileRootPath: profileDir,
+        name: preview.name,
+        stagingRoot: preview.stagingRoot,
+        stagedName: preview.stagedName,
+        provenanceSource: preview.provenanceSource,
+        collisionResolution: 'replace',
+        clock: fixedClock,
+        __fault: 'after-rename-old',
+      }),
+    ).rejects.toMatchObject({ code: 'SKILL_TX_FAULT_INJECTED' });
+
+    // The staging root is reaped even on a crash (the engine consumed the
+    // staged tree into .ccps-tmp before the fault).
+    expect(await fs.pathExists(preview.stagingRoot)).toBe(false);
+    expect(await fs.pathExists(path.join(skillsDir, 'find-skills'))).toBe(false);
+
+    const result = await reconcileSkillTransactionCrashStates(profileDir);
+
+    expect(result.entries).toHaveLength(1);
+    expect(result.entries[0].action).toBe('renamed-old-back');
+    expect(
+      await fs.readFile(path.join(skillsDir, 'find-skills', 'SKILL.md'), 'utf8'),
+    ).toContain('# old');
+    expect(await listTxResidue(skillsDir)).toEqual([]);
+  });
+
+  it('crash after rename-new → sweep deletes old; new tree live; stale manifest drifts', async () => {
+    const appHome = await makeAppHome();
+    const profileDir = await makeProfile(appHome, 'coding');
+    const skillsDir = getSkillsDirectoryPath(profileDir);
+    // Install the old tree through the engine so the manifest records it.
+    const previewOld = await stageAndPreview2(appHome, profileDir, {
+      source: 'vercel-labs/skills',
+      stagingId: undefined,
+    });
+    await installRemoteSkill({
+      appHomePath: appHome,
+      profileName: 'coding',
+      profileRootPath: profileDir,
+      name: previewOld.name,
+      stagingRoot: previewOld.stagingRoot,
+      stagedName: previewOld.stagedName,
+      provenanceSource: previewOld.provenanceSource,
+      clock: fixedClock,
+    });
+    const recordedHash = (await loadSkillsProvenance(profileDir)).skills['find-skills'].contentHash;
+
+    const preview = await stageAndPreview2(appHome, profileDir, { skillName: 'find-skills' });
+    // Rewrite the staged SKILL.md so the new tree differs from the record.
+    const stagedMd = path.join(
+      preview.stagingRoot,
+      'claude-home',
+      'skills',
+      preview.stagedName,
+      'SKILL.md',
+    );
+    await fs.writeFile(
+      stagedMd,
+      '---\nname: find-skills\ndescription: NEW\n---\n# new\n',
+      'utf8',
+    );
+
+    await expect(
+      installRemoteSkill({
+        appHomePath: appHome,
+        profileName: 'coding',
+        profileRootPath: profileDir,
+        name: preview.name,
+        stagingRoot: preview.stagingRoot,
+        stagedName: preview.stagedName,
+        provenanceSource: preview.provenanceSource,
+        collisionResolution: 'replace',
+        clock: fixedClock,
+        __fault: 'after-rename-new',
+      }),
+    ).rejects.toMatchObject({ code: 'SKILL_TX_FAULT_INJECTED' });
+
+    const result = await reconcileSkillTransactionCrashStates(profileDir);
+
+    expect(result.entries).toHaveLength(1);
+    expect(result.entries[0].action).toBe('deleted-old');
+    expect(
+      await fs.readFile(path.join(skillsDir, 'find-skills', 'SKILL.md'), 'utf8'),
+    ).toContain('# new');
+    expect(await listTxResidue(skillsDir)).toEqual([]);
+    // Manifest was not written → live hash diverges from the record → drift.
+    const manifest = await loadSkillsProvenance(profileDir);
+    expect(manifest.skills['find-skills'].contentHash).toBe(recordedHash);
+    const drift = await computeDrift(
+      path.join(skillsDir, 'find-skills'),
+      manifest.skills['find-skills'],
+    );
+    expect(drift).toBe('local-drift');
+  });
+});

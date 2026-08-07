@@ -5,18 +5,16 @@ import { useI18n } from './i18n/react';
 import { useHints } from './guidance';
 import type { WorkbenchProfile, ResourceCounts } from './profile-data';
 import type { ResourceNavState } from './resource-nav';
-import type {
-  AgentFrontmatter,
-  SearchResult,
-} from '../../core/resource';
-import type { ResourceDiffResult, DiffCategory } from '../../core/resource/diff-all';
+import type { AgentFrontmatter, SearchResult } from '../../core/resource';
+import type { ResourceDiffResult } from '../../core/resource/diff-all';
 import type { EditSession } from '../../core/edit-session';
 import { ResourceMainPane } from './resource-main';
 import { WatchingBadge } from './edit-session/WatchingBadge';
-import { CATEGORIES } from './categories';
+import { FallbackMenu, type EditFallbackHandlers } from './edit-session/FallbackMenu';
+import { CATEGORIES, diffCategoryFor } from './categories';
 
 // Re-export for consumers that import from main-pane.
-export { CATEGORIES, CATEGORY_COUNT, categoryKeyAt } from './categories';
+export { CATEGORIES, CATEGORY_COUNT, categoryKeyAt, diffCategoryFor } from './categories';
 
 type MainPaneProps = {
   profile: WorkbenchProfile | undefined;
@@ -34,6 +32,10 @@ type MainPaneProps = {
    *  when edited from the top-level grid `e` (§4.3/§8). */
   editSession?: EditSession;
   sessionFor: (resourceName: string) => EditSession | undefined;
+  /** Inline description-edit draft (S5); null when not editing. */
+  descriptionDraft?: string | null;
+  /** §8 editor-unavailable fallback actions for failed edit sessions. */
+  editFallback: EditFallbackHandlers;
   content: string | null;
   diff: ResourceDiffResult | null;
   drilledAgent: string | null;
@@ -44,26 +46,6 @@ type MainPaneProps = {
   hintLine: string;
 };
 
-/** Map a category card key to its diff presentation (spec §12); Auto Memory has no diff. */
-export function diffCategoryFor(key: CategoryKey): DiffCategory | undefined {
-  switch (key) {
-    case 'userMemory':
-      return 'user-memory';
-    case 'agents':
-      return 'agents';
-    case 'skills':
-      return 'skills';
-    case 'mcp':
-      return 'mcp';
-    case 'settings':
-      return 'settings';
-    case 'launchConfig':
-      return 'launch-config';
-    case 'autoMemory':
-      return undefined;
-  }
-}
-
 type CategoryDef = (typeof CATEGORIES)[number];
 type CategoryKey = CategoryDef['key'];
 
@@ -71,6 +53,7 @@ type CategoryKey = CategoryDef['key'];
 const PROFILE_HINTS = [
   { key: 'l' as const, labelKey: 'lifecycle.launch' as const },
   { key: 'e' as const, labelKey: 'keymap.edit' as const },
+  { key: 'D' as const, labelKey: 'lifecycle.editDescription' as const },
   { key: 'b' as const, labelKey: 'lifecycle.backup' as const },
   { key: 's' as const, labelKey: 'lifecycle.saveTemplate' as const },
   { key: 'x' as const, labelKey: 'lifecycle.remove' as const },
@@ -88,6 +71,8 @@ export function MainPane({
   selectedCategoryIndex,
   editSession,
   sessionFor,
+  descriptionDraft,
+  editFallback,
   content,
   diff,
   drilledAgent,
@@ -125,6 +110,7 @@ export function MainPane({
       onBack,
       width,
       height,
+      editFallback,
     });
   }
 
@@ -139,45 +125,73 @@ export function MainPane({
       Box,
       { marginBottom: 1 },
       React.createElement(Text, { bold: true }, profile.name),
-      profile.isDefault && React.createElement(Text, { color: 'green' }, ` [${t('sidebar.default')}]`),
+      profile.isDefault &&
+        React.createElement(Text, { color: 'green' }, ` [${t('sidebar.default')}]`),
     ),
-    profile.description && React.createElement(
-      Box,
-      { marginBottom: 1 },
-      React.createElement(Text, { dimColor: true }, profile.description),
-    ),
+    // S5 inline description edit: while editing, the description line becomes
+    // the draft input row; the saved value re-renders here after refreshData.
+    descriptionDraft != null
+      ? React.createElement(
+          Box,
+          { marginBottom: 1 },
+          React.createElement(Text, { color: 'cyan', wrap: 'truncate' }, `${descriptionDraft}█`),
+        )
+      : profile.description &&
+          React.createElement(
+            Box,
+            { marginBottom: 1 },
+            React.createElement(Text, { dimColor: true }, profile.description),
+          ),
     // Just-in-time amber nudge: MCP servers that failed to connect (§5).
-    (mcpFailed?.length ?? 0) > 0 && React.createElement(
-      Box,
-      { marginBottom: 1 },
+    (mcpFailed?.length ?? 0) > 0 &&
       React.createElement(
-        Text,
-        { color: 'yellow', wrap: 'wrap' },
-        `⚠ ${t('mcp.failed').replace('{name}', mcpFailed.join(', '))}`,
+        Box,
+        { marginBottom: 1 },
+        React.createElement(
+          Text,
+          { color: 'yellow', wrap: 'wrap' },
+          `⚠ ${t('mcp.failed', { name: mcpFailed.join(', ') })}`,
+        ),
       ),
-    ),
     // §8 watching banner: the selected Profile's CLAUDE.md is being edited in
     // VS Code (top-level `e`). The badge re-renders on every external save,
     // carrying the per-session change counter and refresh timestamp.
-    editSession && editSession.phase !== 'idle' && React.createElement(
-      Box,
-      { marginBottom: 1 },
-      React.createElement(WatchingBadge, {
-        phase: editSession.phase,
-        changeCount: editSession.changeCount,
-        lastUpdated: editSession.lastUpdated,
-      }),
-    ),
+    editSession &&
+      editSession.phase !== 'idle' &&
+      React.createElement(
+        Box,
+        { marginBottom: 1 },
+        React.createElement(WatchingBadge, {
+          phase: editSession.phase,
+          changeCount: editSession.changeCount,
+          lastUpdated: editSession.lastUpdated,
+        }),
+      ),
+    // §8 VS Code unavailable: the failed handoff is no silent dead-end — the
+    // fallback menu offers system editor / show path / retry.
+    editSession?.openFailedReason &&
+      React.createElement(
+        Box,
+        { marginBottom: 1 },
+        React.createElement(FallbackMenu, {
+          reason: editSession.openFailedReason,
+          filePath: editSession.filePath,
+          onSystemEditor: () => editFallback.systemEditor(editSession.filePath),
+          onRetry: () => editFallback.retry(editSession.filePath),
+          onDismiss: () => editFallback.dismiss(editSession.filePath),
+        }),
+      ),
     React.createElement(
       Box,
       { flexDirection: 'column', gap: 1, flexGrow: 1 },
       ...renderCategoryGrid(profile.resourceCounts, colWidth, cursor, focused ?? false),
     ),
-    focused && React.createElement(
-      Box,
-      { marginTop: 1 },
-      React.createElement(Text, { dimColor: true }, t('main.drillIn')),
-    ),
+    focused &&
+      React.createElement(
+        Box,
+        { marginTop: 1 },
+        React.createElement(Text, { dimColor: true }, t('main.drillIn')),
+      ),
     React.createElement(
       Box,
       { marginTop: 1 },
@@ -185,16 +199,28 @@ export function MainPane({
         ? React.createElement(
             Text,
             { color: 'cyan', wrap: 'wrap' },
-            liveProfileHints.map((k) => {
-              const hint = PROFILE_HINTS.find((h) => h.key === k);
-              return hint ? `[${hint.key}]${t(hint.labelKey)}` : '';
-            }).filter(Boolean).join(' '),
+            liveProfileHints
+              .map((k) => {
+                const hint = PROFILE_HINTS.find((h) => h.key === k);
+                return hint ? `[${hint.key}]${t(hint.labelKey)}` : '';
+              })
+              .filter(Boolean)
+              .join(' '),
           )
-        : React.createElement(Text, { dimColor: true, wrap: 'wrap' }, t('guidance.hints.knowRopes')),
+        : React.createElement(
+            Text,
+            { dimColor: true, wrap: 'wrap' },
+            t('guidance.hints.knowRopes'),
+          ),
     ),
   );
 
-  function renderCategoryGrid(counts: ResourceCounts, colW: number, cursorIdx: number, isFocused: boolean): React.ReactElement[] {
+  function renderCategoryGrid(
+    counts: ResourceCounts,
+    colW: number,
+    cursorIdx: number,
+    isFocused: boolean,
+  ): React.ReactElement[] {
     const rows: React.ReactElement[] = [];
     for (let i = 0; i < CATEGORIES.length; i += 2) {
       const left = CATEGORIES[i];
@@ -206,7 +232,12 @@ export function MainPane({
           { key: left.key, gap: 1 },
           renderCategoryCard(left, counts[left.key], colW, i === cursorIdx && isFocused),
           right
-            ? renderCategoryCard(right, counts[right.key as CategoryKey], colW, i + 1 === cursorIdx && isFocused)
+            ? renderCategoryCard(
+                right,
+                counts[right.key as CategoryKey],
+                colW,
+                i + 1 === cursorIdx && isFocused,
+              )
             : React.createElement(Box, { width: colW }),
         ),
       );
@@ -214,7 +245,12 @@ export function MainPane({
     return rows;
   }
 
-  function renderCategoryCard(def: CategoryDef, count: number, colW: number, highlighted: boolean): React.ReactElement {
+  function renderCategoryCard(
+    def: CategoryDef,
+    count: number,
+    colW: number,
+    highlighted: boolean,
+  ): React.ReactElement {
     const drillHint = def.drillable
       ? def.key === 'userMemory'
         ? ' [u]'

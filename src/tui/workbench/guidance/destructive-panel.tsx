@@ -18,9 +18,10 @@ type RemoveProfilePanelProps = {
 export function RemoveProfilePanel({ profile }: RemoveProfilePanelProps): React.ReactElement {
   const { t } = useI18n();
 
-  const consequence = t('destructive.removeConsequence')
-    .replace('{skills}', String(profile.resourceCounts.skills))
-    .replace('{agents}', String(profile.resourceCounts.agents));
+  const consequence = t('destructive.removeConsequence', {
+    skills: String(profile.resourceCounts.skills),
+    agents: String(profile.resourceCounts.agents),
+  });
 
   return React.createElement(
     GuidancePanel,
@@ -28,7 +29,11 @@ export function RemoveProfilePanel({ profile }: RemoveProfilePanelProps): React.
     React.createElement(
       Box,
       null,
-      React.createElement(Text, { bold: true }, t('destructive.removeTitle').replace('{name}', profile.name)),
+      React.createElement(
+        Text,
+        { bold: true },
+        t('destructive.removeTitle', { name: profile.name }),
+      ),
     ),
     React.createElement(
       Box,
@@ -67,7 +72,7 @@ export function SaveTemplatePanel({
 }: SaveTemplatePanelProps): React.ReactElement {
   const { t } = useI18n();
 
-  const summary = t('template.summary.stripped').replace('{count}', String(strippedCount));
+  const summary = t('template.summary.stripped', { count: String(strippedCount) });
 
   return React.createElement(
     GuidancePanel,
@@ -75,7 +80,11 @@ export function SaveTemplatePanel({
     React.createElement(
       Box,
       null,
-      React.createElement(Text, { bold: true }, t('template.confirm.title').replace('{name}', templateName)),
+      React.createElement(
+        Text,
+        { bold: true },
+        t('template.confirm.title', { name: templateName }),
+      ),
     ),
     React.createElement(
       Box,

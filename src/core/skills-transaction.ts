@@ -3,7 +3,7 @@ import fs from 'fs-extra';
 import path from 'node:path';
 
 import { getAppHomePaths } from './app-config';
-import { createFileTreeItem } from './recovery-bin';
+import { createFileTreeItem, createFragmentItem } from './recovery-bin';
 import {
   computeAuditView,
   computeContentHash,
@@ -13,8 +13,10 @@ import {
 } from './skills-provenance';
 import type { AuditView, SkillProvenanceRecord, SkillSource } from '../schemas/skills-provenance';
 import { resolveFilesystemPath, resolveInside, validateProfileName } from '../platform/path';
+import { createSkillLink, readLinkTarget } from '../platform/link';
 import { atomicWriteJson } from './versioned-json';
 import { CcpsError } from '../utils/errors';
+import { isNodeError } from '../utils/type-guards';
 import { type Clock } from './types';
 
 export type { Clock } from './types';
@@ -37,9 +39,12 @@ export type { Clock } from './types';
 // A crash between the file swap and the manifest write surfaces as local drift
 // and follows exactly the same path as a manual user edit — deliberately.
 //
-// Link-mode installs are a single atomic symlink creation and do not need the
-// rename-swap; this engine is copy-mode only. Link previews still flow through
-// previewTransaction to report the link target and source diff.
+// Link-mode applies swap in an atomic symlink creation instead of a staged
+// tree: the old entry still renames to .ccps-old-<id> first, so a replacing
+// link install is crash-safe and sweep-reconcilable exactly like copy mode.
+// (A fresh link install is a single atomic symlink creation; routing it
+// through the same phase machine keeps one apply path.) Link previews still
+// flow through previewTransaction to report the link target and source diff.
 
 // ─── Names ───────────────────────────────────────────────────────────────
 
@@ -319,15 +324,13 @@ export type ApplyOptions = {
   profileRootPath: string;
   profileName: string;
   name: string;
-  /** Apply is copy-mode only; link installs use their own atomic symlink path. */
-  mode: 'copy';
-  stagedPath: string;
   source: SkillSource;
   /**
    * How to handle an existing tree at <name>. Default: delete outright. When
    * binning, the old tree is copied to the Recovery Bin (with the given
    * origin) before being deleted — `update` origin carries the fixed 3-day
-   * TTL (spec §7.1/§9.2).
+   * TTL (spec §7.1/§9.2). A linked old entry is binned as a fragment (link
+   * coordinates + provenance) so restore re-creates the link.
    */
   replaceOld?: ReplaceOldDisposition;
   /** Existing record (update path) — preserves installedAt and the audit cache. */
@@ -343,7 +346,24 @@ export type ApplyOptions = {
    * a real (non-crash) failure: apply rolls back to pre-operation state.
    */
   __failAt?: FaultPoint;
-};
+} & (
+  | {
+      mode: 'copy';
+      /** Staged tree to swap in (same partition as the skills directory). */
+      stagedPath: string;
+    }
+  | {
+      mode: 'link';
+      /**
+       * Link-mode apply: the swap lands a single atomic symlink at <name>
+       * pointing at this source directory (resolved to absolute). The old
+       * entry still renames to .ccps-old-<id> first, so a replacing link
+       * install is crash-safe. 'after-rename-tmp' never fires in link mode
+       * (there is no staged tree).
+       */
+      linkTargetPath: string;
+    }
+);
 
 export type ApplyResult = {
   name: string;
@@ -364,10 +384,12 @@ type ApplyPhase =
   | 'manifest-written';
 
 /**
- * Apply the staged tree by rename swap inside claude-home/skills/:
- * staged → .ccps-tmp-<id>, old → .ccps-old-<id>, .ccps-tmp-<id> → final,
- * delete old, then write the manifest atomically. Never in-place; verified
- * same-partition so every rename is atomic.
+ * Apply the swap inside claude-home/skills/ (never in-place):
+ * copy mode renames staged → .ccps-tmp-<id>, old → .ccps-old-<id>,
+ * .ccps-tmp-<id> → final, disposes old, then writes the manifest atomically;
+ * link mode renames old → .ccps-old-<id>, creates the symlink at final
+ * (atomic), disposes old, then writes the manifest atomically. Copy mode is
+ * verified same-partition so every rename is atomic.
  */
 export async function applySkillTransaction(options: ApplyOptions): Promise<ApplyResult> {
   validateProfileName(options.profileName);
@@ -375,10 +397,13 @@ export async function applySkillTransaction(options: ApplyOptions): Promise<Appl
   const skillsDir = getSkillsDirectoryPath(options.profileRootPath);
   await fs.ensureDir(skillsDir);
   const targetPath = resolveInside(skillsDir, options.name);
+  const isLink = options.mode === 'link';
 
   // Same-partition guarantee: the staged tree must live on the same filesystem
   // as the skills directory so the staged → .ccps-tmp rename is atomic.
-  await assertSamePartition(options.stagedPath, skillsDir);
+  if (!isLink) {
+    await assertSamePartition(options.stagedPath, skillsDir);
+  }
 
   const txId = randomBytes(6).toString('hex');
   const tmpPath = resolveInside(skillsDir, `${TX_TMP_PREFIX}${txId}`);
@@ -396,10 +421,12 @@ export async function applySkillTransaction(options: ApplyOptions): Promise<Appl
   let phase: ApplyPhase = 'init';
   let oldExists = false;
   try {
-    // 1. staged → .ccps-tmp-<id> (atomic same-partition rename).
-    await renameOrCrossPartitionError(options.stagedPath, tmpPath);
-    phase = 'tmp-staged';
-    maybeInjectFault(options, 'after-rename-tmp');
+    // 1. staged → .ccps-tmp-<id> (atomic same-partition rename; copy only).
+    if (!isLink) {
+      await renameOrCrossPartitionError(options.stagedPath, tmpPath);
+      phase = 'tmp-staged';
+      maybeInjectFault(options, 'after-rename-tmp');
+    }
 
     // 2. old <name> → .ccps-old-<id> (if present).
     oldExists = await fs.pathExists(targetPath);
@@ -409,8 +436,16 @@ export async function applySkillTransaction(options: ApplyOptions): Promise<Appl
     phase = 'old-moved';
     maybeInjectFault(options, 'after-rename-old');
 
-    // 3. .ccps-tmp-<id> → <name> (final). New tree is now live.
-    await fs.rename(tmpPath, targetPath);
+    // 3. New tree lands at <name> (final): tmp rename (copy) or one atomic
+    // symlink creation (link).
+    if (isLink) {
+      await createSkillLink({
+        targetPath: resolveFilesystemPath(options.linkTargetPath),
+        linkPath: targetPath,
+      });
+    } else {
+      await fs.rename(tmpPath, targetPath);
+    }
     phase = 'new-live';
     maybeInjectFault(options, 'after-rename-new');
 
@@ -421,6 +456,7 @@ export async function applySkillTransaction(options: ApplyOptions): Promise<Appl
         oldPath,
         options.replaceOld ?? { kind: 'delete' },
         options.name,
+        options.profileRootPath,
         clock,
       );
     }
@@ -447,7 +483,9 @@ export async function applySkillTransaction(options: ApplyOptions): Promise<Appl
     // new tree is live (new-live onward) the old tree may already be gone, so
     // rollback degrades to cleaning tmp/old residue and letting local drift
     // surface — identical to a crash at that phase, reconciled by the sweep.
-    await rollbackTransaction(sidecarPath, tmpPath, oldPath, targetPath, phase).catch(() => {});
+    await rollbackTransaction(sidecarPath, tmpPath, oldPath, targetPath, phase, isLink).catch(
+      () => {},
+    );
     throw error;
   }
 }
@@ -494,11 +532,38 @@ async function disposeOldTree(
   oldPath: string,
   disposition: ReplaceOldDisposition,
   skillName: string,
+  profileRootPath: string,
   clock: Clock,
 ): Promise<string | undefined> {
   if (disposition.kind === 'delete') {
     await fs.remove(oldPath);
     return undefined;
+  }
+  if (await entryIsSymlink(oldPath)) {
+    // Linked old entry → Bin as a fragment (link coordinates + provenance), so
+    // restore re-creates the link instead of materializing its content —
+    // identical to the pre-transaction installers' binning semantics.
+    const linkTargetPath = (await readLinkTarget(oldPath)) ?? '';
+    const manifest = await loadSkillsProvenance(profileRootPath);
+    const existingRecord = manifest.skills[skillName];
+    const item = await createFragmentItem({
+      appHomePath: disposition.appHomePath,
+      origin: disposition.origin,
+      kind: 'skill',
+      profile: disposition.profileName,
+      coordinates: {
+        file: 'claude-home/skills',
+        keyPath: skillName,
+        value: {
+          mode: 'link',
+          linkTargetPath,
+          provenance: existingRecord,
+        },
+      },
+      clock,
+    });
+    await fs.remove(oldPath);
+    return item.id;
   }
   // Bin the old tree (copy to Recovery Bin), then delete the live copy. The
   // bin copy is taken from .ccps-old-<id>, so the recorded targetRelativePath
@@ -514,6 +579,15 @@ async function disposeOldTree(
   });
   await fs.remove(oldPath);
   return item.id;
+}
+
+async function entryIsSymlink(entryPath: string): Promise<boolean> {
+  try {
+    const lstat = await fs.lstat(entryPath);
+    return lstat.isSymbolicLink();
+  } catch {
+    return false;
+  }
 }
 
 async function buildApplyRecord(
@@ -533,9 +607,12 @@ async function buildApplyRecord(
     updatedAt: now,
     sourceCheckedAt: now,
   };
-  // applySkillTransaction is copy-mode only; link installs use their own
-  // atomic symlink path and never reach here. The audit cache is preserved
-  // across an update (spec §7.1 audit cache).
+  // Link mode records the link target (the hash above follows the link, so it
+  // fingerprints the live source tree). The audit cache is preserved across an
+  // update (spec §7.1 audit cache).
+  if (options.mode === 'link') {
+    record.link = { targetPath: resolveFilesystemPath(options.linkTargetPath) };
+  }
   if (options.existingRecord?.audit) {
     record.audit = options.existingRecord.audit;
   }
@@ -548,6 +625,7 @@ async function rollbackTransaction(
   oldPath: string,
   targetPath: string,
   phase: ApplyPhase,
+  isLink: boolean,
 ): Promise<void> {
   // Criterion #6: any failure rolls back to pre-operation state with no
   // half-applied residue. Rollback is fully achievable up to and including
@@ -566,7 +644,13 @@ async function rollbackTransaction(
     // The new tree is live at targetPath; the old tree is still at .ccps-old.
     // Restore pre-operation state: move new back to tmp, old back to target.
     const oldStillHeld = await fs.pathExists(oldPath);
-    if (oldStillHeld) {
+    if (isLink) {
+      // The new entry is a symlink: remove just the link, then restore old.
+      await fs.remove(targetPath).catch(() => {});
+      if (oldStillHeld) {
+        await fs.rename(oldPath, targetPath).catch(() => {});
+      }
+    } else if (oldStillHeld) {
       await fs.rename(targetPath, tmpPath).catch(() => {});
       await fs.rename(oldPath, targetPath).catch(() => {});
       await fs.remove(tmpPath).catch(() => {});
@@ -771,10 +855,4 @@ export async function reconcileAllProfilesTransactionCrashStates(
   }
 
   return { entries: allEntries };
-}
-
-// ─── Helpers ─────────────────────────────────────────────────────────────
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error;
 }

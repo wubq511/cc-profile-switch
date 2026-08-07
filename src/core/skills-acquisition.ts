@@ -6,6 +6,7 @@ import { captureProcess as defaultCaptureProcess, type CaptureProcess } from '..
 import { resolveFilesystemPath, resolveInside } from '../platform/path';
 import { parseFrontmatter } from './resource/frontmatter';
 import { CcpsError } from '../utils/errors';
+import { isRecord } from '../utils/type-guards';
 
 export const SKILLS_CLI_PINNED_VERSION = '1.5.21';
 export const SKILLS_ACQUISITION_TIMEOUT_MS = 10 * 60 * 1000;
@@ -486,8 +487,4 @@ function summarizeOutput(...chunks: string[]): string {
     .map((line) => line.replace(/\x1b\[[0-9;]*m/g, ''));
   const tail = combined.slice(-3).join(' | ');
   return tail.length > 0 ? `Skills CLI said: ${tail}` : 'The Skills CLI produced no output.';
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

@@ -2,7 +2,7 @@ import fs from 'fs-extra';
 import { basename, dirname, resolve } from 'node:path';
 import { spawn, type SpawnOptions } from 'node:child_process';
 
-import { buildEditorSpawnCommand } from '../../platform/editor';
+import { buildEditorSpawnCommand, type EditorSpawnCommand } from '../../platform/editor';
 import { resolveInside } from '../../platform/path';
 import type { Clock } from '../types';
 import { initialSession, isSessionActive, reduceSession } from './reducer';
@@ -47,7 +47,8 @@ export class EditSessionManager {
     this.dispatch(resolvedPath, { type: 'open-requested', filePath: resolvedPath });
 
     try {
-      const command = this.editorOverride
+      const override = this.editorOverride?.trim();
+      const command = override
         ? this.buildOverrideCommand(resolvedPath)
         : buildEditorSpawnCommand(resolvedPath);
 
@@ -174,11 +175,17 @@ export class EditSessionManager {
     }
   }
 
-  private buildOverrideCommand(filePath: string) {
+  private buildOverrideCommand(filePath: string): EditorSpawnCommand {
+    // `workbench.editor` may carry arguments ("code -w"): the first
+    // whitespace-separated token is the executable, the rest are prepended to
+    // its arguments. Spawn stays arg-array style (shell: false), so an
+    // executable path containing spaces is not supported — put a wrapper on
+    // PATH for those.
+    const [command, ...overrideArgs] = this.editorOverride!.trim().split(/\s+/).filter(Boolean);
     return {
-      command: this.editorOverride!,
-      args: [filePath],
-      options: { stdio: 'ignore' as const, shell: false },
+      command,
+      args: [...overrideArgs, filePath],
+      options: { stdio: 'ignore' as const },
       failureGuidance: `Check that "${this.editorOverride}" is installed and available in PATH.`,
     };
   }

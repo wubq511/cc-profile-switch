@@ -21,6 +21,7 @@ import {
 import { writeJsonFile, type Clock } from './app-config';
 import { profileConfigSchema, type ProfileConfig } from '../schemas/profile';
 import { CcpsError } from '../utils/errors';
+import { isNodeError } from '../utils/type-guards';
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
@@ -352,10 +353,4 @@ export async function validateLaunchConfig(
 
     throw error;
   }
-}
-
-// ─── Utility ─────────────────────────────────────────────────────────────
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error;
 }

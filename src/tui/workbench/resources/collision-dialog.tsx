@@ -2,10 +2,7 @@ import React, { useReducer } from 'react';
 import { Box, Text, useInput, useStdin } from 'ink';
 
 import { useI18n } from '../i18n/react';
-import {
-  collisionDialogReducer,
-  initialCollisionDialogState,
-} from './collision-dialog-reducer';
+import { collisionDialogReducer, initialCollisionDialogState } from './collision-dialog-reducer';
 
 /**
  * A collision on a Bin restore offers three paths beyond plain refuse
@@ -46,57 +43,60 @@ export function CollisionDialog({
     initialCollisionDialogState,
   );
 
-  useInput((input: string, key: Record<string, boolean>) => {
-    if (key.ctrl && input === 'c') return; // app-level exit handles this
+  useInput(
+    (input: string, key: Record<string, boolean>) => {
+      if (key.ctrl && input === 'c') return; // app-level exit handles this
 
-    if (state.phase === 'rename') {
-      if (key.return) {
-        const name = state.nameInput.trim();
-        if (name === '') {
-          dispatch({ type: 'NAME_ERROR', message: t('collision.rename.empty') });
+      if (state.phase === 'rename') {
+        if (key.return) {
+          const name = state.nameInput.trim();
+          if (name === '') {
+            dispatch({ type: 'NAME_ERROR', message: t('collision.rename.empty') });
+            return;
+          }
+          onResolve({ resolution: 'restore-as-new-name', newName: name });
           return;
         }
-        onResolve({ resolution: 'restore-as-new-name', newName: name });
+        if (key.escape) {
+          dispatch({ type: 'BACK' });
+          return;
+        }
+        if (key.backspace || key.delete) {
+          dispatch({ type: 'NAME_BACKSPACE' });
+          return;
+        }
+        if (!key.ctrl && !key.meta && input.length === 1) {
+          dispatch({ type: 'NAME_CHAR', char: input });
+        }
         return;
       }
+
+      if (state.phase === 'confirm-delete') {
+        if (input === 'y' || input === 'Y') {
+          onResolve({ resolution: 'delete-and-restore' });
+          return;
+        }
+        if (input === 'n' || input === 'N' || key.escape) {
+          dispatch({ type: 'BACK' });
+        }
+        return;
+      }
+
+      // choose phase
       if (key.escape) {
-        dispatch({ type: 'BACK' });
+        onResolve({ resolution: 'refuse' });
         return;
       }
-      if (key.backspace || key.delete) {
-        dispatch({ type: 'NAME_BACKSPACE' });
+      if (input === 'r' || input === 'R') {
+        dispatch({ type: 'SELECT_RESTORE_AS_NEW_NAME' });
         return;
       }
-      if (!key.ctrl && !key.meta && input.length === 1) {
-        dispatch({ type: 'NAME_CHAR', char: input });
+      if (input === 'd' || input === 'D') {
+        dispatch({ type: 'SELECT_DELETE_AND_RESTORE' });
       }
-      return;
-    }
-
-    if (state.phase === 'confirm-delete') {
-      if (input === 'y' || input === 'Y') {
-        onResolve({ resolution: 'delete-and-restore' });
-        return;
-      }
-      if (input === 'n' || input === 'N' || key.escape) {
-        dispatch({ type: 'BACK' });
-      }
-      return;
-    }
-
-    // choose phase
-    if (key.escape) {
-      onResolve({ resolution: 'refuse' });
-      return;
-    }
-    if (input === 'r' || input === 'R') {
-      dispatch({ type: 'SELECT_RESTORE_AS_NEW_NAME' });
-      return;
-    }
-    if (input === 'd' || input === 'D') {
-      dispatch({ type: 'SELECT_DELETE_AND_RESTORE' });
-    }
-  }, { isActive: canUseInput });
+    },
+    { isActive: canUseInput },
+  );
 
   return (
     <Box flexDirection="column" flexGrow={1} paddingX={1}>
@@ -117,7 +117,7 @@ export function CollisionDialog({
         </Box>
       ) : state.phase === 'confirm-delete' ? (
         <Box flexDirection="column">
-          <Text>{t('collision.delete.confirm').replace('{resource}', resourceName)}</Text>
+          <Text>{t('collision.delete.confirm', { resource: resourceName })}</Text>
           <Text dimColor>{t('collision.delete.detail')}</Text>
           <Text dimColor>{t('collision.delete.hint')}</Text>
         </Box>

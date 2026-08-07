@@ -12,6 +12,7 @@ import { WorkbenchApp, resetWelcomeSessionForTests } from '../src/tui/workbench/
 import { createAppConfig, getAppHomePaths } from '../src/core/app-config';
 import { createProfileFromTemplate } from '../src/core/profile-template';
 import { loadWorkbenchData, type WorkbenchData } from '../src/tui/workbench/profile-data';
+import { flatten, stripAnsi } from './render-helpers';
 
 vi.mock('node:child_process', () => ({
   spawn: vi.fn(),
@@ -49,19 +50,6 @@ class FakeTtyStdin extends Readable {
     this.push(Buffer.from(ch, 'utf8'));
     this.emit('readable');
   }
-}
-
-function stripAnsi(text: string): string {
-  // eslint-disable-next-line no-control-regex
-  return text.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '').replace(/\r/g, '');
-}
-
-function flatten(text: string): string {
-  return stripAnsi(text)
-    .replace(/[│╭╰╮╯─┌┐└┘┃┏┓┗┛]/g, ' ')
-    .replace(/\n/g, ' ')
-    .replace(/[ ]+/g, ' ')
-    .trim();
 }
 
 async function waitForInputListener(stdin: FakeTtyStdin, timeoutMs = 2000): Promise<void> {

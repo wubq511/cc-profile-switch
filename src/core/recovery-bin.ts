@@ -121,7 +121,8 @@ function pad2(n: number): string {
 
 // ─── Size computation ───────────────────────────────────────────────────
 
-async function computeDirectorySize(dirPath: string): Promise<number> {
+/** du-style recursive size of a directory tree, in bytes. */
+export async function computeDirectorySize(dirPath: string): Promise<number> {
   let total = 0;
   const entries = await fs.readdir(dirPath, { withFileTypes: true });
   for (const entry of entries) {
@@ -176,10 +177,103 @@ export function formatSweepSummary(result: SweepResult): string | null {
   return `Recovery Bin: ${result.deletedCount} expired item(s) swept, ${sizeStr} reclaimed.`;
 }
 
-function formatBytes(bytes: number): string {
+export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// ─── Startup sweep orchestration (spec §9.4) ────────────────────────────
+
+/**
+ * Pending-summary marker: written when a sweep deleted something, consumed
+ * (read once, then removed) at the next startup so the one-line summary
+ * prints exactly once — the §9.4 "next launch prints one line" contract.
+ * Lives at the app-home root next to config.json/state.json; the Recovery
+ * Bin itself stays free of non-item files (items are self-describing). This
+ * is a one-shot notification, not a cleanup log (§9.4: no persistent log).
+ */
+const PENDING_SWEEP_SUMMARY_FILE_NAME = 'pending-sweep-summary.json';
+
+function getPendingSweepSummaryPath(appHomePath: string): string {
+  return resolveInside(appHomePath, PENDING_SWEEP_SUMMARY_FILE_NAME);
+}
+
+async function consumePendingSweepSummary(appHomePath: string): Promise<SweepResult | null> {
+  const markerPath = getPendingSweepSummaryPath(appHomePath);
+  try {
+    if (!(await fs.pathExists(markerPath))) return null;
+    const raw: unknown = await fs.readJson(markerPath).catch(() => undefined);
+    // One-shot marker: always consumed, even when corrupt, so a bad file
+    // never lingers or repeats.
+    await fs.remove(markerPath).catch(() => {});
+    if (
+      raw === null ||
+      typeof raw !== 'object' ||
+      typeof (raw as SweepResult).deletedCount !== 'number' ||
+      typeof (raw as SweepResult).reclaimedBytes !== 'number'
+    ) {
+      return null;
+    }
+    const result = raw as SweepResult;
+    return { deletedCount: result.deletedCount, reclaimedBytes: result.reclaimedBytes };
+  } catch {
+    // The marker is best-effort; I/O failure never blocks startup.
+    return null;
+  }
+}
+
+async function recordPendingSweepSummary(
+  result: SweepResult,
+  appHomePath: string,
+): Promise<void> {
+  if (result.deletedCount === 0) return;
+  const markerPath = getPendingSweepSummaryPath(appHomePath);
+  await fs.ensureDir(path.dirname(markerPath));
+  await atomicWriteJson(markerPath, result);
+}
+
+export type StartupSweepReport = {
+  /**
+   * One-line summary of the PREVIOUS sweep's deletions, ready to print. Null
+   * when the previous sweep deleted nothing or no sweep has run yet. The
+   * marker is consumed by this call, so the line prints exactly once.
+   */
+  pendingSummary: string | null;
+  /**
+   * This invocation's sweep result. Null when the sweep could not run
+   * (uninitialized app home, corrupt config, I/O failure) — the caller must
+   * treat the sweep as best-effort and continue.
+   */
+  sweepResult: SweepResult | null;
+};
+
+/**
+ * §9.4 lazy startup sweep driver, run once per ccps invocation (any command).
+ * Consumes and formats the previous sweep's pending summary line, then sweeps
+ * expired items and reconciles §7.1 transaction crash states (via
+ * performStartupSweep), recording a new pending summary when this sweep
+ * deleted something. Fully failure-isolated: sweep problems never throw.
+ */
+export async function runStartupSweep(
+  appHomePath?: string,
+  clock?: Clock,
+): Promise<StartupSweepReport> {
+  const resolved = appHomePath ?? getAppHomePaths().appHomePath;
+
+  const pending = await consumePendingSweepSummary(resolved);
+  const pendingSummary = pending === null ? null : formatSweepSummary(pending);
+
+  try {
+    const sweepResult = await performStartupSweep(resolved, clock);
+    const last = getLastSweepResult() ?? sweepResult;
+    if (last.deletedCount > 0) {
+      await recordPendingSweepSummary(last, resolved);
+    }
+    return { pendingSummary, sweepResult: last };
+  } catch {
+    return { pendingSummary, sweepResult: null };
+  }
 }
 
 // ─── Core operations ────────────────────────────────────────────────────
@@ -466,6 +560,43 @@ export async function getBinSummary(appHomePath?: string): Promise<BinSummary> {
   return {
     itemCount: items.length,
     totalSizeBytes: items.reduce((sum, item) => sum + item.sizeBytes, 0),
+  };
+}
+
+export type RecoveryBinListEntry = {
+  item: RecoveryBinItem;
+  /** Live du-style size of the whole item directory (payload + item.json). */
+  sizeBytes: number;
+};
+
+export type RecoveryBinList = {
+  entries: RecoveryBinListEntry[];
+  totalSizeBytes: number;
+};
+
+/**
+ * §9.5 Bin listing: per-entry sizes inline plus a total. Sizes are computed
+ * du-style at listing time so fragment/plugin items (recorded as 0 payload
+ * bytes) still report the space they actually occupy; the removal-time
+ * recording is the fallback when the live walk fails.
+ */
+export async function listRecoveryBinWithSizes(appHomePath?: string): Promise<RecoveryBinList> {
+  const items = await listRecoveryBinItems(appHomePath);
+  const entries: RecoveryBinListEntry[] = [];
+
+  for (const item of items) {
+    let sizeBytes = item.sizeBytes;
+    try {
+      sizeBytes = await computeDirectorySize(item.itemDirPath);
+    } catch {
+      // Fall back to the removal-time recording when live du fails.
+    }
+    entries.push({ item, sizeBytes });
+  }
+
+  return {
+    entries,
+    totalSizeBytes: entries.reduce((sum, entry) => sum + entry.sizeBytes, 0),
   };
 }
 

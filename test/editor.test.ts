@@ -3,7 +3,7 @@ import { EventEmitter } from 'node:events';
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { buildBrowserOpenCommand, buildEditorSpawnCommand, openUrlInBrowser, openWithDefaultEditor } from '../src/platform/editor';
+import { buildBrowserOpenCommand, buildEditorSpawnCommand, buildSystemOpenCommand, openUrlInBrowser, openWithDefaultEditor, openWithSystemEditor } from '../src/platform/editor';
 
 vi.mock('node:child_process', () => ({
   spawn: vi.fn(),
@@ -85,7 +85,7 @@ describe('browser handoff (spec §7.4)', () => {
     expect(buildBrowserOpenCommand('https://skills.sh', 'darwin')).toEqual({
       command: 'open',
       args: ['https://skills.sh'],
-      options: { stdio: 'ignore' },
+      options: { stdio: 'ignore', shell: false },
     });
   });
 
@@ -93,7 +93,7 @@ describe('browser handoff (spec §7.4)', () => {
     expect(buildBrowserOpenCommand('https://skills.sh', 'linux')).toEqual({
       command: 'xdg-open',
       args: ['https://skills.sh'],
-      options: { stdio: 'ignore' },
+      options: { stdio: 'ignore', shell: false },
     });
   });
 
@@ -106,7 +106,7 @@ describe('browser handoff (spec §7.4)', () => {
         '-Command',
         "Start-Process 'https://skills.sh'",
       ],
-      options: { stdio: 'ignore', windowsHide: true },
+      options: { stdio: 'ignore', windowsHide: true, shell: false },
     });
   });
 
@@ -133,5 +133,81 @@ describe('browser handoff (spec §7.4)', () => {
 
     const expected = buildBrowserOpenCommand('https://skills.sh');
     expect(spawn).toHaveBeenCalledWith(expected.command, expected.args, expected.options);
+  });
+});
+
+describe('system editor fallback (spec §8)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('builds a macOS open command for the OS default editor', () => {
+    expect(buildSystemOpenCommand('/tmp/notes.md', 'darwin')).toEqual({
+      command: 'open',
+      args: ['/tmp/notes.md'],
+      options: { stdio: 'ignore', shell: false },
+    });
+  });
+
+  it('builds a Linux xdg-open command for the OS default editor', () => {
+    expect(buildSystemOpenCommand('/home/robert/notes.md', 'linux')).toEqual({
+      command: 'xdg-open',
+      args: ['/home/robert/notes.md'],
+      options: { stdio: 'ignore', shell: false },
+    });
+  });
+
+  it('builds a Windows Start-Process command that quotes the path', () => {
+    expect(buildSystemOpenCommand("C:\\Users\\h\\it's.md", 'win32')).toEqual({
+      command: 'powershell.exe',
+      args: [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        "Start-Process 'C:\\Users\\h\\it''s.md'",
+      ],
+      options: { stdio: 'ignore', windowsHide: true, shell: false },
+    });
+  });
+
+  it('rejects an unsupported platform', () => {
+    expect(() => buildSystemOpenCommand('/tmp/notes.md', 'sunos' as never)).toThrow(
+      /Windows, macOS, and Linux/,
+    );
+  });
+
+  it('openWithSystemEditor resolves on a clean exit and spawns the arg-array command', async () => {
+    const child = new EventEmitter() as EventEmitter & { unref: () => void };
+    child.unref = vi.fn();
+    vi.mocked(spawn).mockReturnValue(child as never);
+
+    const opening = openWithSystemEditor('/tmp/notes.md');
+    child.emit('spawn');
+    child.emit('close', 0);
+    await opening;
+
+    const expected = buildSystemOpenCommand('/tmp/notes.md');
+    expect(spawn).toHaveBeenCalledWith(expected.command, expected.args, expected.options);
+  });
+
+  it('openWithSystemEditor rejects on spawn error so the UI can surface it', async () => {
+    const child = new EventEmitter() as EventEmitter & { unref: () => void };
+    child.unref = vi.fn();
+    vi.mocked(spawn).mockReturnValue(child as never);
+
+    const opening = openWithSystemEditor('/tmp/notes.md');
+    child.emit('error', new Error('spawn xdg-open ENOENT'));
+    await expect(opening).rejects.toMatchObject({ code: 'EDITOR_OPEN_FAILED' });
+  });
+
+  it('openWithSystemEditor rejects on a non-zero exit', async () => {
+    const child = new EventEmitter() as EventEmitter & { unref: () => void };
+    child.unref = vi.fn();
+    vi.mocked(spawn).mockReturnValue(child as never);
+
+    const opening = openWithSystemEditor('/tmp/notes.md');
+    child.emit('spawn');
+    child.emit('close', 1);
+    await expect(opening).rejects.toMatchObject({ code: 'EDITOR_OPEN_FAILED' });
   });
 });

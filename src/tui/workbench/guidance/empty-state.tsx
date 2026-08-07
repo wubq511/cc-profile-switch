@@ -16,7 +16,12 @@ type RecipeEmptyStateProps = {
 };
 
 /** title + recipe + one concrete next step. */
-function RecipeEmptyState({ title, recipe, action, titleWrap }: RecipeEmptyStateProps): React.ReactElement {
+function RecipeEmptyState({
+  title,
+  recipe,
+  action,
+  titleWrap,
+}: RecipeEmptyStateProps): React.ReactElement {
   return React.createElement(
     Box,
     { flexDirection: 'column' },
@@ -43,7 +48,7 @@ export function NoMatchEmptyState({ query }: { query: string }): React.ReactElem
 
   return React.createElement(RecipeEmptyState, {
     titleWrap: true,
-    title: t('empty.noMatch.title').replace('{query}', query),
+    title: t('empty.noMatch.title', { query }),
     recipe: t('empty.noMatch.recipe'),
     action: t('empty.noMatch.clear'),
   });

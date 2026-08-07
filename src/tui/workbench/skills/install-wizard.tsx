@@ -10,6 +10,7 @@ import {
   type InstallWizardState,
 } from './install-wizard-reducer';
 import type {
+  CatalogedLocalSkillSource,
   InstallPreview,
   LocalSkillSourceInfo,
 } from '../../../core/skills-install';
@@ -19,6 +20,9 @@ import type { RemoteInstallPreview } from '../../../core/skills-remote-install';
 // runs in effects keyed on phase transitions; results come back as dispatches.
 
 export type InstallWizardCallbacks = {
+  /** Catalog the pickable local sources for step 1 (§7.2). Optional: the
+   * source list falls back to the manual-entry row alone when absent. */
+  onListLocalSources?: () => Promise<CatalogedLocalSkillSource[]>;
   onResolveSource: (sourceInput: string) => Promise<LocalSkillSourceInfo>;
   onComputePreview: (input: {
     sourcePath: string;
@@ -80,13 +84,39 @@ export function InstallWizard({
   // Open on mount. A pre-seeded remote source (Discover) skips the kind picker.
   useEffect(() => {
     if (initialRemote) {
-      dispatch({ type: 'START_REMOTE', profileName, profileRootPath, source: initialRemote.source, skill: initialRemote.skill });
+      dispatch({
+        type: 'START_REMOTE',
+        profileName,
+        profileRootPath,
+        source: initialRemote.source,
+        skill: initialRemote.skill,
+      });
     } else {
       dispatch({ type: 'START', profileName, profileRootPath });
     }
   }, [profileName, profileRootPath, initialRemote]);
 
   // Drive async work from phase transitions.
+  useEffect(() => {
+    let cancelled = false;
+    if (state.phase === 'source-list' && !state.sourcesLoaded) {
+      // Catalog the pickable local sources (§7.2 step 1). A listing failure
+      // degrades to the manual-entry row alone — never blocks the wizard.
+      (callbacks.onListLocalSources?.() ?? Promise.resolve([]))
+        .then((sources) => {
+          if (cancelled) return;
+          dispatch({ type: 'SOURCES_LOADED', sources });
+        })
+        .catch(() => {
+          if (cancelled) return;
+          dispatch({ type: 'SOURCES_LOADED', sources: [] });
+        });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [state.phase, state.sourcesLoaded, callbacks]);
+
   useEffect(() => {
     let cancelled = false;
     if (state.phase === 'validating') {
@@ -241,8 +271,7 @@ export function InstallWizard({
   // already removed its staging root and nulled the reference. Idempotent.
   useEffect(() => {
     const abandoned =
-      !state.open ||
-      ['source-remote', 'kind', 'success', 'error'].includes(state.phase);
+      !state.open || ['source-remote', 'kind', 'success', 'error'].includes(state.phase);
     if (abandoned && state.stagingRoot && state.stagingRoot !== cleanedStagingRef.current) {
       cleanedStagingRef.current = state.stagingRoot;
       callbacks.onCleanupStaging?.(state.stagingRoot);
@@ -272,7 +301,7 @@ export function InstallWizard({
       }
 
       if (key.escape) {
-        if (state.phase === 'kind' || state.phase === 'source') {
+        if (state.phase === 'kind' || state.phase === 'source-list') {
           dispatch({ type: 'CANCEL' });
           callbacks.onClose();
         } else {
@@ -298,6 +327,21 @@ export function InstallWizard({
                 ? { type: 'KIND_SELECT_REMOTE' }
                 : { type: 'KIND_SELECT_LOCAL' },
             );
+          }
+          return;
+        }
+        case 'source-list': {
+          if (key.upArrow) {
+            dispatch({ type: 'SOURCE_LIST_MOVE', delta: -1 });
+            return;
+          }
+          if (key.downArrow) {
+            dispatch({ type: 'SOURCE_LIST_MOVE', delta: 1 });
+            return;
+          }
+          if (key.return) {
+            dispatch({ type: 'SOURCE_LIST_PICK' });
+            return;
           }
           return;
         }
@@ -388,7 +432,11 @@ export function InstallWizard({
     React.createElement(
       Box,
       { marginBottom: 1 },
-      React.createElement(Text, { bold: true }, `${t('skill.install.breadcrumb')} · ${profileName}`),
+      React.createElement(
+        Text,
+        { bold: true },
+        `${t('skill.install.breadcrumb')} · ${profileName}`,
+      ),
     ),
     renderStep(state, width, t),
   );
@@ -402,7 +450,6 @@ function linkIncapable(state: InstallWizardState): boolean {
 // Render a CcpsError's numbered guidance across multiple lines; fall back to the
 // raw message for non-CcpsError throws.
 function formatWizardError(error: unknown): string {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const maybe = error as { code?: string; guidance?: string; message?: string };
   if (maybe && typeof maybe.code === 'string' && typeof maybe.message === 'string') {
     const guidance = typeof maybe.guidance === 'string' ? `\n${maybe.guidance}` : '';
@@ -421,6 +468,9 @@ function renderStep(
   switch (state.phase) {
     case 'kind':
       return renderKind(state, innerWidth, t);
+
+    case 'source-list':
+      return renderSourceList(state, innerWidth, t);
 
     case 'source':
     case 'validating':
@@ -452,9 +502,7 @@ function renderStep(
           null,
           React.createElement(Text, { color: 'cyan' }, `${state.remoteSourceInput}█`),
         ),
-        state.remoteSourceError.length > 0
-          ? renderErrorPanel(state.remoteSourceError)
-          : null,
+        state.remoteSourceError.length > 0 ? renderErrorPanel(state.remoteSourceError) : null,
         state.phase === 'staging'
           ? React.createElement(Text, { color: 'yellow' }, t('skill.install.remote.staging'))
           : React.createElement(Text, { dimColor: true }, t('skill.install.remote.source.hint')),
@@ -468,10 +516,26 @@ function renderStep(
         React.createElement(
           Box,
           { flexDirection: 'row', gap: 2, marginTop: 1 },
-          renderModeCard('copy', state.mode === 'copy', t('skill.install.mode.copy'), t('skill.install.mode.copy.desc'), Math.floor(innerWidth / 2)),
-          renderModeCard('link', state.mode === 'link', t('skill.install.mode.link'), t('skill.install.mode.link.desc'), Math.floor(innerWidth / 2)),
+          renderModeCard(
+            'copy',
+            state.mode === 'copy',
+            t('skill.install.mode.copy'),
+            t('skill.install.mode.copy.desc'),
+            Math.floor(innerWidth / 2),
+          ),
+          renderModeCard(
+            'link',
+            state.mode === 'link',
+            t('skill.install.mode.link'),
+            t('skill.install.mode.link.desc'),
+            Math.floor(innerWidth / 2),
+          ),
         ),
-        React.createElement(Box, { marginTop: 1 }, React.createElement(Text, { dimColor: true }, t('skill.install.mode.hint'))),
+        React.createElement(
+          Box,
+          { marginTop: 1 },
+          React.createElement(Text, { dimColor: true }, t('skill.install.mode.hint')),
+        ),
       );
 
     case 'confirming':
@@ -491,7 +555,11 @@ function renderStep(
       return React.createElement(
         Box,
         { flexDirection: 'column', width: innerWidth },
-        React.createElement(Text, { bold: true, color: 'yellow' }, t('skill.install.collision.title')),
+        React.createElement(
+          Text,
+          { bold: true, color: 'yellow' },
+          t('skill.install.collision.title'),
+        ),
         React.createElement(
           Box,
           { marginTop: 1 },
@@ -502,7 +570,11 @@ function renderStep(
           ? React.createElement(Text, { color: 'red' }, `✗ ${state.collisionError}`)
           : null,
         React.createElement(Text, { dimColor: true }, t('skill.install.collision.replace')),
-        React.createElement(Box, { marginTop: 1 }, React.createElement(Text, { dimColor: true }, t('skill.install.collision.hint'))),
+        React.createElement(
+          Box,
+          { marginTop: 1 },
+          React.createElement(Text, { dimColor: true }, t('skill.install.collision.hint')),
+        ),
       );
 
     case 'installing':
@@ -535,6 +607,70 @@ function renderStep(
   }
 }
 
+// The §7.2 step-1 pick list: discovered local sources plus the manual-entry
+// fallback row. Invalid sources (unreadable / no SKILL.md) are marked in place.
+function renderSourceList(
+  state: InstallWizardState,
+  innerWidth: number,
+  t: (key: LocaleKey) => string,
+): React.ReactElement {
+  const rows: React.ReactElement[] = state.localSources.map((source, i) => {
+    const selected = i === state.sourceListIndex;
+    const tag = !source.readable
+      ? t('skill.install.source.list.tag.unreadable')
+      : !source.skillMdPresent
+        ? t('skill.install.source.list.tag.noSkillMd')
+        : null;
+    return React.createElement(
+      Box,
+      { key: `src-${i}` },
+      React.createElement(
+        Text,
+        { bold: selected, color: selected ? 'cyan' : undefined },
+        `${selected ? '▸ ' : '  '}${source.suggestedName}`,
+      ),
+      React.createElement(Text, { dimColor: true }, `  ${source.sourcePath}`),
+      tag ? React.createElement(Text, { color: 'yellow' }, `  ⚠ ${tag}`) : null,
+    );
+  });
+
+  // Manual-entry fallback row (arbitrary local paths must remain possible).
+  const manualIndex = state.localSources.length;
+  const manualSelected = state.sourceListIndex === manualIndex;
+  rows.push(
+    React.createElement(
+      Box,
+      { key: 'manual' },
+      React.createElement(
+        Text,
+        { bold: manualSelected, color: manualSelected ? 'cyan' : undefined },
+        `${manualSelected ? '▸ ' : '  '}${t('skill.install.source.list.manual')}`,
+      ),
+    ),
+  );
+
+  return React.createElement(
+    Box,
+    { flexDirection: 'column', width: innerWidth },
+    React.createElement(Text, { bold: true }, t('skill.install.source.list.title')),
+    React.createElement(
+      Box,
+      { flexDirection: 'column', marginTop: 1 },
+      !state.sourcesLoaded
+        ? React.createElement(Text, { color: 'yellow' }, t('skill.install.source.list.loading'))
+        : state.localSources.length === 0
+          ? React.createElement(Text, { dimColor: true }, t('skill.install.source.list.empty'))
+          : null,
+      ...rows,
+    ),
+    React.createElement(
+      Box,
+      { marginTop: 1 },
+      React.createElement(Text, { dimColor: true }, t('skill.install.source.list.hint')),
+    ),
+  );
+}
+
 function renderKind(
   state: InstallWizardState,
   innerWidth: number,
@@ -547,10 +683,26 @@ function renderKind(
     React.createElement(
       Box,
       { flexDirection: 'row', gap: 2, marginTop: 1 },
-      renderModeCard('local', state.kind === 'local', t('skill.install.kind.local'), t('skill.install.kind.local.desc'), Math.floor(innerWidth / 2)),
-      renderModeCard('remote', state.kind === 'remote', t('skill.install.kind.remote'), t('skill.install.kind.remote.desc'), Math.floor(innerWidth / 2)),
+      renderModeCard(
+        'local',
+        state.kind === 'local',
+        t('skill.install.kind.local'),
+        t('skill.install.kind.local.desc'),
+        Math.floor(innerWidth / 2),
+      ),
+      renderModeCard(
+        'remote',
+        state.kind === 'remote',
+        t('skill.install.kind.remote'),
+        t('skill.install.kind.remote.desc'),
+        Math.floor(innerWidth / 2),
+      ),
     ),
-    React.createElement(Box, { marginTop: 1 }, React.createElement(Text, { dimColor: true }, t('skill.install.kind.hint'))),
+    React.createElement(
+      Box,
+      { marginTop: 1 },
+      React.createElement(Text, { dimColor: true }, t('skill.install.kind.hint')),
+    ),
   );
 }
 
@@ -563,17 +715,18 @@ function renderModeCard(
 ): React.ReactElement {
   return React.createElement(
     Box,
-    { flexDirection: 'column', width: colW, borderStyle: selected ? 'double' : 'round', paddingX: 1 },
+    {
+      flexDirection: 'column',
+      width: colW,
+      borderStyle: selected ? 'double' : 'round',
+      paddingX: 1,
+    },
     React.createElement(
       Text,
       { bold: true, color: selected ? 'cyan' : undefined },
       `${selected ? '▸ ' : '  '}${title}`,
     ),
-    React.createElement(
-      Box,
-      { marginTop: 1 },
-      React.createElement(Text, { dimColor: true }, desc),
-    ),
+    React.createElement(Box, { marginTop: 1 }, React.createElement(Text, { dimColor: true }, desc)),
   );
 }
 
@@ -623,8 +776,16 @@ function renderConfirm(
             ? React.createElement(
                 Box,
                 null,
-                React.createElement(Text, { color: 'yellow' }, t('skill.install.confirm.linkIncapable')),
-                React.createElement(Text, { color: 'cyan' }, ` ${t('skill.install.confirm.fallbackCopy')}`),
+                React.createElement(
+                  Text,
+                  { color: 'yellow' },
+                  t('skill.install.confirm.linkIncapable'),
+                ),
+                React.createElement(
+                  Text,
+                  { color: 'cyan' },
+                  ` ${t('skill.install.confirm.fallbackCopy')}`,
+                ),
               )
             : null,
         )
@@ -661,14 +822,22 @@ function renderRemoteConfirm(
     React.createElement(
       Box,
       { flexDirection: 'column', marginTop: 1 },
-      React.createElement(Text, { dimColor: true, bold: true }, t('skill.install.remote.confirm.identity')),
+      React.createElement(
+        Text,
+        { dimColor: true, bold: true },
+        t('skill.install.remote.confirm.identity'),
+      ),
       React.createElement(Text, null, `  name: ${preview.identity.name}`),
       React.createElement(Text, null, `  description: ${preview.identity.description}`),
     ),
     React.createElement(
       Box,
       { flexDirection: 'column', marginTop: 1 },
-      React.createElement(Text, { dimColor: true, bold: true }, t('skill.install.remote.confirm.provenance')),
+      React.createElement(
+        Text,
+        { dimColor: true, bold: true },
+        t('skill.install.remote.confirm.provenance'),
+      ),
       React.createElement(Text, null, `  source: ${preview.provenanceSource.kind}`),
       preview.provenanceSource.url
         ? React.createElement(Text, null, `  url: ${preview.provenanceSource.url}`)

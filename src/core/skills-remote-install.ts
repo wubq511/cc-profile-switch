@@ -10,18 +10,19 @@ import {
   type SkillsAcquisitionPlan,
   type StagedSkillIdentity,
 } from './skills-acquisition';
-import { binExistingSkillEntry, validateSkillDirectoryName } from './skills-install';
+import { validateSkillDirectoryName } from './skills-install';
+import { getSkillsDirectoryPath } from './skills-provenance';
 import {
-  createRecordForInstall,
-  getSkillsDirectoryPath,
-  loadSkillsProvenance,
-  saveSkillsProvenance,
-} from './skills-provenance';
+  applySkillTransaction,
+  type FaultPoint,
+  type ReplaceOldDisposition,
+} from './skills-transaction';
 import type { SkillProvenanceRecord, SkillSource } from '../schemas/skills-provenance';
 import { resolveInside, validateProfileName } from '../platform/path';
 import { type CaptureProcess } from '../platform/process';
 import { type Clock } from './types';
 import { CcpsError } from '../utils/errors';
+import { isNodeError } from '../utils/type-guards';
 
 export type { Clock } from './types';
 
@@ -29,11 +30,12 @@ export type { Clock } from './types';
 //
 // The pinned `skills@1.5.21` adapter stages the source into an isolated
 // `<profileRoot>/.ccps-remote-stage-<id>/claude-home/skills/<stagedName>` tree;
-// ccps verifies the staged frontmatter identity, then lands the tree through a
-// same-partition rename-swap into `claude-home/skills/<name>` with a full
-// provenance record. The real `~/.claude` is never touched (CLAUDE_CONFIG_DIR
-// points into staging). `buildRemoteInstallPlan` is the pure plan builder, so
-// dry-run ≡ real (spec §7.3 / invariant 8).
+// ccps verifies the staged frontmatter identity, then lands the tree through
+// the §7.1 transaction engine's rename-swap (sidecar + .ccps-tmp/.ccps-old
+// residue reconciled by the startup sweep) into `claude-home/skills/<name>`
+// with a full provenance record. The real `~/.claude` is never touched
+// (CLAUDE_CONFIG_DIR points into staging). `buildRemoteInstallPlan` is the
+// pure plan builder, so dry-run ≡ real (spec §7.3 / invariant 8).
 
 export type RemoteInstallPlanOptions = {
   profileRootPath: string;
@@ -89,6 +91,12 @@ export type InstallRemoteSkillOptions = {
   provenanceSource: SkillSource;
   collisionResolution?: 'rename' | 'replace';
   clock?: Clock;
+  /**
+   * @internal Test-only. Simulates a process crash mid-apply (forwarded to the
+   * transaction engine), leaving sidecar residue for crash-reconciliation
+   * tests of the install replace path.
+   */
+  __fault?: FaultPoint;
 };
 
 export type InstallRemoteSkillResult = {
@@ -194,12 +202,11 @@ export async function acquireAndPreviewRemoteInstall(
 }
 
 // ─── Apply (wizard "installing" phase) ────────────────────────────────────
-// Rename-swap the staged tree into the Profile skills dir, then write the
-// provenance record. On a caught failure before the swap lands, staging is
-// removed and the Profile is untouched. After a successful swap, a manifest
-// write failure leaves the Skill installed without a record — reconcile
-// backfills an unknown-kind record at next Inspect (spec §7.1), matching the
-// local install's behavior.
+// Land the staged tree through the §7.1 transaction engine's rename-swap
+// (sidecar + .ccps-tmp/.ccps-old residue, reconciled by the startup sweep),
+// which also writes the provenance record atomically. A crash between the
+// file swap and the manifest write surfaces as local drift — exactly the
+// same path as a manual user edit (spec §7.1, deliberately).
 
 export async function installRemoteSkill(
   options: InstallRemoteSkillOptions,
@@ -217,59 +224,49 @@ export async function installRemoteSkill(
     options.stagedName,
   );
 
-  // Collision handling at apply time. 'replace' bins the old entry first so the
-  // rename lands on an empty target (Windows refuses rename onto a non-empty dir).
-  if (await fs.pathExists(targetPath)) {
-    if (options.collisionResolution !== 'replace') {
-      throw new CcpsError(
-        'SKILL_INSTALL_COLLISION',
-        `A Skill named "${options.name}" already exists.`,
-        {
-          guidance: 'Choose rename or replace on the confirm step to resolve the collision.',
-        },
-      );
-    }
-    await binExistingSkillEntry({
-      appHomePath: options.appHomePath,
-      profileName: options.profileName,
+  // Collision handling at apply time: refuse unless the caller chose replace.
+  // The refusal runs before any staging cleanup so the wizard can retry with a
+  // rename/replace resolution without re-acquiring the staged tree.
+  if ((await fs.pathExists(targetPath)) && options.collisionResolution !== 'replace') {
+    throw new CcpsError(
+      'SKILL_INSTALL_COLLISION',
+      `A Skill named "${options.name}" already exists.`,
+      {
+        guidance: 'Choose rename or replace on the confirm step to resolve the collision.',
+      },
+    );
+  }
+
+  // Replaced entries are always binned (spec §7.2 auto-Bin). The disposition is
+  // passed unconditionally so that even a fresh install racing a late-appearing
+  // entry bins it instead of deleting.
+  const replaceOld: ReplaceOldDisposition = {
+    kind: 'bin',
+    origin: 'remove',
+    appHomePath: options.appHomePath,
+    profileName: options.profileName,
+  };
+
+  try {
+    // The acquisition staging lives under the Profile root, so the staged tree
+    // is already same-partition and the engine renames it directly (no extra
+    // copy). The engine consumes it via the rename swap.
+    const result = await applySkillTransaction({
       profileRootPath: options.profileRootPath,
+      profileName: options.profileName,
       name: options.name,
-      targetPath,
-      clock,
-    });
-  }
-
-  try {
-    // Same-partition rename (staging lives under profileRoot): atomic directory
-    // rename into the Profile skills dir.
-    await fs.rename(stagedSourcePath, targetPath);
-  } catch (error) {
-    // Rename failed before landing — clean staging, leave the Profile untouched.
-    await fs.remove(options.stagingRoot).catch(() => {});
-    if (isNodeError(error) && error.code === 'ENOTEMPTY') {
-      throw new CcpsError(
-        'SKILL_INSTALL_COLLISION',
-        `A Skill named "${options.name}" already exists.`,
-        { guidance: 'Resolve the collision on the confirm step.', cause: error },
-      );
-    }
-    throw error;
-  }
-
-  try {
-    const record = await createRecordForInstall({
-      skillDirPath: targetPath,
       mode: 'copy',
+      stagedPath: stagedSourcePath,
       source: options.provenanceSource,
+      replaceOld,
       clock,
+      __fault: options.__fault,
     });
-    const manifest = await loadSkillsProvenance(options.profileRootPath);
-    manifest.skills[options.name] = record;
-    await saveSkillsProvenance(options.profileRootPath, manifest);
-    return { name: options.name, mode: 'copy', targetPath, record };
+    return { name: options.name, mode: 'copy', targetPath, record: result.record };
   } finally {
-    // The swap succeeded; remove the (now mostly empty) staging root. A failure
-    // here is non-fatal — the install landed.
+    // The swap consumed the staged Skill tree; remove the (now mostly empty)
+    // staging root. On a pre-swap failure this also reaps the untouched staged
+    // tree. A failure here is non-fatal.
     await fs.remove(options.stagingRoot).catch(() => {});
   }
 }
@@ -308,8 +305,4 @@ async function entryIsLink(targetPath: string): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error;
 }

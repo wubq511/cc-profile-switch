@@ -39,11 +39,6 @@ class FakeTtyStdout extends Writable {
   public get output(): string {
     return Buffer.concat(this.chunks).toString('utf8');
   }
-  public snapshot(): string {
-    const out = this.output;
-    this.chunks.length = 0;
-    return out;
-  }
 }
 
 class FakeTtyStdin extends Readable {
@@ -74,7 +69,11 @@ async function waitForInputListener(stdin: FakeTtyStdin, timeoutMs = 2000): Prom
   }
 }
 
-async function waitForOutputSettled(stdout: FakeTtyStdout, baseline: string, timeoutMs = 3000): Promise<void> {
+async function waitForOutputSettled(
+  stdout: FakeTtyStdout,
+  baseline: string,
+  timeoutMs = 3000,
+): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline && stdout.output === baseline) {
     await new Promise((resolve) => setTimeout(resolve, 10));
@@ -132,9 +131,24 @@ const sampleData: WorkbenchData = {
       isDefault: true,
       isLastUsed: true,
       status: 'valid',
-      resourceCounts: { userMemory: 1, autoMemory: 5, skills: 3, agents: 2, mcp: 1, settings: 1, launchConfig: 1 },
+      resourceCounts: {
+        userMemory: 1,
+        autoMemory: 5,
+        skills: 3,
+        agents: 2,
+        mcp: 1,
+        settings: 1,
+        launchConfig: 1,
+      },
       resourceDetails: {
-        userMemory: { kind: 'user-memory', name: 'CLAUDE.md', relativePath: 'claude-home/CLAUDE.md', exists: true, lineCount: 12, excerpt: 'Prefer explicit answers.' },
+        userMemory: {
+          kind: 'user-memory',
+          name: 'CLAUDE.md',
+          relativePath: 'claude-home/CLAUDE.md',
+          exists: true,
+          lineCount: 12,
+          excerpt: 'Prefer explicit answers.',
+        },
         agents: [],
         autoMemory: 5,
         skills: 3,
@@ -150,12 +164,19 @@ const sampleData: WorkbenchData = {
 };
 
 /** A Discover session served entirely by a fake HTTP layer. */
-function fakeSession(options: { experimentalEnabled?: boolean; http?: ReturnType<typeof makeHttp>['http'] } = {}): SkillsDiscoverySession {
-  const browse = options.http ?? makeHttp([
-    ['/repos/vercel-labs/skills', apiRepo('vercel-labs', 'skills')],
-    ['/git/trees/main', apiTree(['skills/find-skills/SKILL.md'])],
-    ['raw.githubusercontent.com/vercel-labs/skills/main/skills/find-skills/SKILL.md', rawSkill('find-skills', 'Finds skills.')],
-  ]).http;
+function fakeSession(
+  options: { experimentalEnabled?: boolean; http?: ReturnType<typeof makeHttp>['http'] } = {},
+): SkillsDiscoverySession {
+  const browse =
+    options.http ??
+    makeHttp([
+      ['/repos/vercel-labs/skills', apiRepo('vercel-labs', 'skills')],
+      ['/git/trees/main', apiTree(['skills/find-skills/SKILL.md'])],
+      [
+        'raw.githubusercontent.com/vercel-labs/skills/main/skills/find-skills/SKILL.md',
+        rawSkill('find-skills', 'Finds skills.'),
+      ],
+    ]).http;
   return new SkillsDiscoverySession({
     http: browse,
     experimentalEnabled: options.experimentalEnabled ?? true,
@@ -174,7 +195,10 @@ function stripAnsi(text: string): string {
  * focus → Skills card → Enter (BulkOpsView, §11.1) → `d` (Discover) sequence
  * commits. Discover moved behind `d` when the Skills card became the bulk-ops
  * entry (issue #72). */
-async function openDiscoverFromSkillsCard(stdin: FakeTtyStdin, stdout: FakeTtyStdout): Promise<void> {
+async function openDiscoverFromSkillsCard(
+  stdin: FakeTtyStdin,
+  stdout: FakeTtyStdout,
+): Promise<void> {
   stdin.press('\t');
   await waitForOutputSettled(stdout, stdout.output);
   stdin.press('\x1b[B');
@@ -195,7 +219,11 @@ describe('Workbench Discover entry (Skills category card)', () => {
         data: sampleData,
         initialLocale: 'en',
         skipWelcome: true,
-        configLoader: async () => ({ version: 2, recovery: { retentionDays: 30 }, workbench: { skillsDiscoveryExperimental: true } }),
+        configLoader: async () => ({
+          version: 2,
+          recovery: { retentionDays: 30 },
+          workbench: { skillsDiscoveryExperimental: true },
+        }),
         discoverySessionFactory: () => fakeSession(),
       }),
     );
@@ -220,8 +248,13 @@ describe('Workbench Discover entry (Skills category card)', () => {
         data: sampleData,
         initialLocale: 'en',
         skipWelcome: true,
-        configLoader: async () => ({ version: 2, recovery: { retentionDays: 30 }, workbench: { skillsDiscoveryExperimental: false } }),
-        discoverySessionFactory: (_appHome, experimental) => fakeSession({ experimentalEnabled: experimental }),
+        configLoader: async () => ({
+          version: 2,
+          recovery: { retentionDays: 30 },
+          workbench: { skillsDiscoveryExperimental: false },
+        }),
+        discoverySessionFactory: (_appHome, experimental) =>
+          fakeSession({ experimentalEnabled: experimental }),
       }),
     );
     await openDiscoverFromSkillsCard(stdin, stdout);
@@ -248,7 +281,11 @@ describe('Workbench Discover entry (Skills category card)', () => {
         data: sampleData,
         initialLocale: 'en',
         skipWelcome: true,
-        configLoader: async () => ({ version: 2, recovery: { retentionDays: 30 }, workbench: { skillsDiscoveryExperimental: true } }),
+        configLoader: async () => ({
+          version: 2,
+          recovery: { retentionDays: 30 },
+          workbench: { skillsDiscoveryExperimental: true },
+        }),
         discoverySessionFactory: () => offlineSession,
       }),
     );
@@ -267,7 +304,15 @@ describe('DiscoverView interactions', () => {
   it('searching merges a skills.sh result with install counts and an audit state', async () => {
     const { http } = makeHttp([
       ['/search/repositories', new FakeResponse(200, { total_count: 0, items: [] })],
-      ['https://skills.sh/api/search', skillshubSearch([{ ...shubItem({ id: 'mattpocock/skills/git-guardrails', installs: 185164 }), audit: 'pass' }])],
+      [
+        'https://skills.sh/api/search',
+        skillshubSearch([
+          {
+            ...shubItem({ id: 'mattpocock/skills/git-guardrails', installs: 185164 }),
+            audit: 'pass',
+          },
+        ]),
+      ],
     ]);
     const session = new SkillsDiscoverySession({
       http,
@@ -384,7 +429,10 @@ describe('DiscoverView interactions', () => {
       http: makeHttp([
         ['/repos/vercel-labs/skills', apiRepo('vercel-labs', 'skills')],
         ['/git/trees/main', apiTree(['skills/find-skills/SKILL.md'])],
-        ['raw.githubusercontent.com/vercel-labs/skills/main/skills/find-skills/SKILL.md', rawSkill('find-skills', 'Finds skills.')],
+        [
+          'raw.githubusercontent.com/vercel-labs/skills/main/skills/find-skills/SKILL.md',
+          rawSkill('find-skills', 'Finds skills.'),
+        ],
       ]).http,
       experimentalEnabled: false,
       now: () => new Date('2026-08-01T12:00:00.000Z'),

@@ -27,6 +27,7 @@ import {
 import { createFragmentItem, type RecoveryBinItem } from './recovery-bin';
 import { writeJsonFile, type Clock } from './app-config';
 import { CcpsError } from '../utils/errors';
+import { isNodeError, isRecord } from '../utils/type-guards';
 
 // ─── Managed field definitions ───────────────────────────────────────────
 
@@ -497,12 +498,4 @@ function isManagedKeyPathOrAncestor(keyPath: string): boolean {
     }
   }
   return false;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error;
 }

@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { EditSessionManager } from '../src/core/edit-session/session-manager';
 import type { EditSession } from '../src/core/edit-session/types';
 import { resolveInside } from '../src/platform/path';
+import { setupSpawnSuccess } from './render-helpers';
 
 vi.mock('node:child_process', () => ({
   spawn: vi.fn(),
@@ -27,15 +28,6 @@ import fs from 'fs-extra';
  *  Mirror the manager's own resolution so assertions hold on every platform. */
 function resolvedPath(filePath: string): string {
   return resolveInside(resolve(filePath));
-}
-
-function setupSpawnSuccess() {
-  vi.mocked(spawn).mockImplementation((() => {
-    const child = new EventEmitter() as EventEmitter & { unref: () => void };
-    child.unref = vi.fn();
-    setTimeout(() => child.emit('close', 0), 0);
-    return child;
-  }) as never);
 }
 
 function setupSpawnFailure(code = 1) {
@@ -227,6 +219,50 @@ describe('EditSessionManager', () => {
       await manager.open('/tmp/test.md');
 
       expect(spawn).toHaveBeenCalledWith('vim', [resolvedPath('/tmp/test.md')], expect.objectContaining({ stdio: 'ignore' }));
+    });
+
+    it('splits an override with arguments into executable + args ("code -w")', async () => {
+      setupSpawnSuccess();
+      vi.mocked(fs.watch).mockReturnValue({ close: vi.fn() } as never);
+
+      const manager = new EditSessionManager({ editorOverride: 'code -w' });
+      await manager.open('/tmp/test.md');
+
+      // The override must not reach spawn as one executable name ("code -w"
+      // would ENOENT); arg-array style is preserved (shell: false).
+      expect(spawn).toHaveBeenCalledWith(
+        'code',
+        ['-w', resolvedPath('/tmp/test.md')],
+        expect.objectContaining({ stdio: 'ignore', shell: false }),
+      );
+    });
+
+    it('surfaces openFailedReason when the override editor is unavailable', async () => {
+      setupSpawnError();
+
+      const manager = new EditSessionManager({ editorOverride: 'code -w' });
+      await manager.open('/tmp/test.md');
+
+      expect(spawn).toHaveBeenCalledWith('code', ['-w', resolvedPath('/tmp/test.md')], expect.anything());
+      const session = manager.getSession(resolvedPath('/tmp/test.md'));
+      expect(session?.phase).toBe('idle');
+      expect(session?.openFailedReason).toContain('ENOENT');
+    });
+
+    it('retry clears openFailedReason and re-attempts the spawn', async () => {
+      setupSpawnError();
+      const manager = new EditSessionManager({ editorOverride: 'code -w' });
+      await manager.open('/tmp/test.md');
+      expect(manager.getSession(resolvedPath('/tmp/test.md'))?.openFailedReason).toBeTruthy();
+
+      setupSpawnSuccess();
+      vi.mocked(fs.watch).mockReturnValue({ close: vi.fn() } as never);
+      await manager.open('/tmp/test.md');
+
+      const session = manager.getSession(resolvedPath('/tmp/test.md'));
+      expect(session?.phase).toBe('watching');
+      expect(session?.openFailedReason).toBeNull();
+      expect(spawn).toHaveBeenCalledTimes(2);
     });
   });
 });

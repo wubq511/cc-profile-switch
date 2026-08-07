@@ -5,8 +5,9 @@ import { render } from 'ink';
 import { describe, expect, it } from 'vitest';
 
 import { WorkbenchApp, resetWelcomeSessionForTests } from '../src/tui/workbench/app';
-import type { WorkbenchData, WorkbenchProfile } from '../src/tui/workbench/profile-data';
+import type { WorkbenchData } from '../src/tui/workbench/profile-data';
 import type { SearchResult } from '../src/core/resource/types';
+import { flatten, makeProfile, stripAnsi } from './render-helpers';
 
 class FakeTtyStdout extends Writable {
   public readonly isTTY = true;
@@ -47,40 +48,6 @@ class FakeTtyStdin extends Readable {
     this.push(Buffer.from(ch, 'utf8'));
     this.emit('readable');
   }
-}
-
-function stripAnsi(text: string): string {
-  // eslint-disable-next-line no-control-regex
-  return text.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '').replace(/\r/g, '');
-}
-
-function flatten(text: string): string {
-  return stripAnsi(text)
-    .replace(/[│╭╰╮╯─┌┐└┘┃┏┓┗┛]/g, ' ')
-    .replace(/\n/g, ' ')
-    .replace(/[ ]+/g, ' ')
-    .trim();
-}
-
-function makeProfile(overrides: Partial<WorkbenchProfile>): WorkbenchProfile {
-  return {
-    name: 'coding',
-    description: 'Daily coding profile',
-    isDefault: true,
-    isLastUsed: false,
-    status: 'valid',
-    resourceCounts: { userMemory: 1, autoMemory: 1, skills: 1, agents: 1, mcp: 0, settings: 1, launchConfig: 1 },
-    resourceDetails: {
-      userMemory: { kind: 'user-memory', name: 'CLAUDE.md', relativePath: 'claude-home/CLAUDE.md', exists: true, lineCount: 12, excerpt: '' },
-      agents: [],
-      skills: [],
-      autoMemory: [],
-      settings: [],
-    },
-    mcpServers: [],
-    validation: null,
-    ...overrides,
-  };
 }
 
 const sampleData: WorkbenchData = {

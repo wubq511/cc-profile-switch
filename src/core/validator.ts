@@ -3,6 +3,7 @@ import fs from 'fs-extra';
 import { areSameFilesystemPath, resolveInside, validateProfileName } from '../platform/path';
 import { profileConfigSchema, type ProfileConfig } from '../schemas/profile';
 import { CcpsError } from '../utils/errors';
+import { isNodeError, isRecord } from '../utils/type-guards';
 import {
   getProfileTemplatePaths,
   hasUnrepairableCcpsProfileRuleMarkers,
@@ -332,12 +333,4 @@ function validateLaunchPaths(
       throw error;
     }
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error;
 }

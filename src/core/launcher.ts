@@ -14,6 +14,7 @@ import { spawnProcess as defaultSpawnProcess, type SpawnProcess } from '../platf
 import { resolveFilesystemPath, resolveInside } from '../platform/path';
 import { type ProfileLaunchConfig } from '../schemas/profile';
 import { CcpsError } from '../utils/errors';
+import { isNodeError, isRecord } from '../utils/type-guards';
 import {
   isLaunchBlocking,
   validateProfile,
@@ -231,23 +232,28 @@ export async function launchProfile(options: LaunchProfileOptions): Promise<Laun
     });
   }
 
-  const config = await loadAppConfig(options.appHomePath);
-  await saveAppConfig(
-    options.appHomePath,
-    {
-      ...config,
-      lastUsedProfile: plan.profileName,
-    },
-    { clock: options.clock },
-  );
-
   if (result.exitCode !== null && result.exitCode !== 0) {
     throw new CcpsError('CLAUDE_EXITED_WITH_ERROR', 'Claude Code exited with a non-zero status.', {
       guidance: `Claude Code exited with status ${result.exitCode}. Review the Claude Code output above.`,
     });
   }
 
-  await recordRecentProjectDir(options.appHomePath, plan.cwd, { clock: options.clock });
+  // Recents and last-used profile record a successful real launch only
+  // (exit 0, spec §13.3): non-zero exits throw above, and signal exits (null)
+  // record nothing — mirroring the Workbench launch path.
+  if (result.exitCode === 0) {
+    const config = await loadAppConfig(options.appHomePath);
+    await saveAppConfig(
+      options.appHomePath,
+      {
+        ...config,
+        lastUsedProfile: plan.profileName,
+      },
+      { clock: options.clock },
+    );
+
+    await recordRecentProjectDir(options.appHomePath, plan.cwd, { clock: options.clock });
+  }
 
   return { plan, exitCode: result.exitCode };
 }
@@ -342,14 +348,6 @@ function invalidLaunchCwd(cwd: string, message: string): CcpsError {
   return new CcpsError('INVALID_LAUNCH_CWD', message, {
     guidance: `Choose an existing project directory for --cwd: ${cwd}`,
   });
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function sortedKeys(value: Record<string, string>): string[] {

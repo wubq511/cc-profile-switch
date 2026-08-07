@@ -17,6 +17,7 @@ import {
 } from '../schemas/plugins';
 import { createPluginItem, type RecoveryBinItem } from './recovery-bin';
 import { CcpsError } from '../utils/errors';
+import { isNodeError, isRecord } from '../utils/type-guards';
 
 export const PLUGIN_COMMAND_TIMEOUT_MS = 5 * 60 * 1000;
 
@@ -570,12 +571,4 @@ function summarizeOutput(...chunks: string[]): string {
 function stripAnsi(value: string): string {
   // eslint-disable-next-line no-control-regex
   return value.replace(/\x1b\[[0-9;]*m/g, '');
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error;
 }

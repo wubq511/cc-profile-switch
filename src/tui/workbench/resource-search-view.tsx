@@ -39,18 +39,26 @@ export function ResourceSearchView({
             const isSelected = i === selectedIndex;
             const label =
               hit.category === 'user-memory'
-                ? t('resource.search.memoryMatch').replace('{profile}', hit.profileName)
-                : t('resource.search.agentMatch').replace('{profile}', hit.profileName);
+                ? t('resource.search.memoryMatch', { profile: hit.profileName })
+                : t('resource.search.agentMatch', { profile: hit.profileName });
 
             return React.createElement(
               Box,
-              { key: `${hit.profileName}:${hit.relativePath}:${hit.lineNumber}`, flexDirection: 'column', marginBottom: 1 },
+              {
+                key: `${hit.profileName}:${hit.relativePath}:${hit.lineNumber}`,
+                flexDirection: 'column',
+                marginBottom: 1,
+              },
               React.createElement(
                 Text,
                 { inverse: isSelected, bold: isSelected },
                 `${isSelected ? '▸ ' : '  '}${label} · ${hit.itemName}:${hit.lineNumber}`,
               ),
-              React.createElement(Text, { dimColor: true, wrap: 'truncate' }, `    ${hit.matchLine}`),
+              React.createElement(
+                Text,
+                { dimColor: true, wrap: 'truncate' },
+                `    ${hit.matchLine}`,
+              ),
             );
           }),
     ),

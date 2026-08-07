@@ -26,24 +26,24 @@ export function WatchingBadge({ phase, changeCount, lastUpdated }: WatchingBadge
   if (phase === 'missing') {
     return (
       <Box>
-        <Text>{pc.yellow('⚠')} {t('editSession.missing.title')}</Text>
+        <Text>
+          {pc.yellow('⚠')} {t('editSession.missing.title')}
+        </Text>
       </Box>
     );
   }
 
-  const timeStr = lastUpdated
-    ? lastUpdated.toLocaleTimeString('en-GB', { hour12: false })
-    : null;
+  const timeStr = lastUpdated ? lastUpdated.toLocaleTimeString('en-GB', { hour12: false }) : null;
 
   return (
     <Box gap={1}>
-      <Text>{pc.green('✎')} {t('editSession.watching')}</Text>
+      <Text>
+        {pc.green('✎')} {t('editSession.watching')}
+      </Text>
       {changeCount > 0 && (
-        <Text>{pc.dim(t('editSession.watching.changeCount').replace('{count}', String(changeCount)))}</Text>
+        <Text>{pc.dim(t('editSession.watching.changeCount', { count: String(changeCount) }))}</Text>
       )}
-      {timeStr && (
-        <Text>{pc.dim(t('editSession.watching.updated').replace('{time}', timeStr))}</Text>
-      )}
+      {timeStr && <Text>{pc.dim(t('editSession.watching.updated', { time: timeStr }))}</Text>}
     </Box>
   );
 }

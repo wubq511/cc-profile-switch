@@ -1,4 +1,3 @@
-import { EventEmitter } from 'node:events';
 import { Readable, Writable } from 'node:stream';
 import fs from 'fs-extra';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -16,6 +15,7 @@ import { createAppConfig, getAppHomePaths } from '../src/core/app-config';
 import { createProfileFromTemplate } from '../src/core/profile-template';
 import { getProfileTemplatePaths } from '../src/core/profile-template';
 import type { WorkbenchProfile, WorkbenchData } from '../src/tui/workbench/profile-data';
+import { flatten, setupSpawnSuccess, stripAnsi } from './render-helpers';
 
 vi.mock('node:child_process', () => ({
   spawn: vi.fn(),
@@ -36,13 +36,6 @@ class FakeTtyStdout extends Writable {
 
   public get output(): string {
     return Buffer.concat(this.chunks).toString('utf8');
-  }
-
-  /** Return and clear the accumulated writes so a later frame can be asserted alone. */
-  public snapshot(): string {
-    const out = this.output;
-    this.chunks.length = 0;
-    return out;
   }
 }
 
@@ -65,40 +58,18 @@ class FakeTtyStdin extends Readable {
   }
 }
 
-function stripAnsi(text: string): string {
-  // eslint-disable-next-line no-control-regex
-  return text.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '').replace(/\r/g, '');
-}
-
-/** Flatten wrapped render output (borders included) for substring assertions. */
-function flatten(text: string): string {
-  return stripAnsi(text)
-    .replace(/[│╭╰╮╯─┌┐└┘┃┏┓┗┛]/g, ' ')
-    .replace(/\n/g, ' ')
-    .replace(/[ ]+/g, ' ')
-    .trim();
-}
-
-/** Controlled spawn: emits a successful exit so the edit session reaches 'watching'. */
-function setupSpawnSuccess() {
-  vi.mocked(spawn).mockImplementation((() => {
-    const child = new EventEmitter() as EventEmitter & { unref: () => void };
-    child.unref = vi.fn();
-    setTimeout(() => child.emit('close', 0), 5);
-    return child;
-  }) as never);
-}
-
 /** True when any spawn call was handed the given path (works across the
  *  platform-specific editor commands — the path is a separate arg on POSIX and
  *  embedded in the PowerShell script on Windows). Compares raw arg strings;
  *  JSON.stringify would escape the backslashes in Windows paths and never match. */
 function spawnTargetsPath(targetPath: string): boolean {
-  return vi.mocked(spawn).mock.calls.some((call) =>
-    call
-      .flatMap((part) => (Array.isArray(part) ? part : [part]))
-      .some((arg) => typeof arg === 'string' && arg.includes(targetPath)),
-  );
+  return vi
+    .mocked(spawn)
+    .mock.calls.some((call) =>
+      call
+        .flatMap((part) => (Array.isArray(part) ? part : [part]))
+        .some((arg) => typeof arg === 'string' && arg.includes(targetPath)),
+    );
 }
 
 describe('top-level `e` edit in VS Code (§4.3/§8)', () => {
@@ -219,7 +190,11 @@ describe('top-level `e` edit in VS Code (§4.3/§8)', () => {
     }
   }
 
-  async function waitForOutputSettled(stdout: FakeTtyStdout, baseline: string, timeoutMs = 3000): Promise<void> {
+  async function waitForOutputSettled(
+    stdout: FakeTtyStdout,
+    baseline: string,
+    timeoutMs = 3000,
+  ): Promise<void> {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline && stdout.output === baseline) {
       await new Promise((resolve) => setTimeout(resolve, 10));
@@ -237,7 +212,11 @@ describe('top-level `e` edit in VS Code (§4.3/§8)', () => {
   /** Poll until the flattened output contains a needle (the edit session's
    *  'opening'→'watching' transition lands a frame or two after the spawn
    *  exits, which `waitForOutputSettled` can miss under frame throttling). */
-  async function waitForOutput(stdout: FakeTtyStdout, needle: string, timeoutMs = 3000): Promise<string> {
+  async function waitForOutput(
+    stdout: FakeTtyStdout,
+    needle: string,
+    timeoutMs = 3000,
+  ): Promise<string> {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       const current = flatten(stripAnsi(stdout.output));
@@ -272,8 +251,18 @@ describe('top-level `e` edit in VS Code (§4.3/§8)', () => {
   it('? help sheet lists [e] Edit in VS Code in the Actions group', async () => {
     const stdout = new FakeTtyStdout();
     const instance = render(
-      React.createElement(I18nProvider, { initialLocale: 'en' }, React.createElement(KeymapOverlay, { visible: true })),
-      { stdout: stdout as unknown as NodeJS.WriteStream, stdin: dummyStdin() as unknown as NodeJS.ReadStream, exitOnCtrlC: false, patchConsole: false, interactive: true },
+      React.createElement(
+        I18nProvider,
+        { initialLocale: 'en' },
+        React.createElement(KeymapOverlay, { visible: true }),
+      ),
+      {
+        stdout: stdout as unknown as NodeJS.WriteStream,
+        stdin: dummyStdin() as unknown as NodeJS.ReadStream,
+        exitOnCtrlC: false,
+        patchConsole: false,
+        interactive: true,
+      },
     );
     await instance.waitUntilRenderFlush();
     const output = stripAnsi(stdout.output);
@@ -283,7 +272,7 @@ describe('top-level `e` edit in VS Code (§4.3/§8)', () => {
   });
 
   it('pressing [e] on the profile grid opens the Profile CLAUDE.md and shows the watching banner', async () => {
-    setupSpawnSuccess();
+    setupSpawnSuccess(5);
     const { claudeMdPath } = await setupRealProfile();
     const data = dataFor(profileWith(true));
     resetWelcomeSessionForTests();
@@ -310,7 +299,7 @@ describe('top-level `e` edit in VS Code (§4.3/§8)', () => {
   });
 
   it('pressing [e] while the category grid is focused still opens CLAUDE.md (no dead-key state)', async () => {
-    setupSpawnSuccess();
+    setupSpawnSuccess(5);
     const { claudeMdPath } = await setupRealProfile();
     const data = dataFor(profileWith(true));
     resetWelcomeSessionForTests();
@@ -337,7 +326,7 @@ describe('top-level `e` edit in VS Code (§4.3/§8)', () => {
   });
 
   it('external save refreshes the banner with the per-session change counter', async () => {
-    setupSpawnSuccess();
+    setupSpawnSuccess(5);
     const { claudeMdPath } = await setupRealProfile();
     const data = dataFor(profileWith(true));
     resetWelcomeSessionForTests();
@@ -365,7 +354,7 @@ describe('top-level `e` edit in VS Code (§4.3/§8)', () => {
   });
 
   it('when CLAUDE.md is missing, [e] explains the recreate path instead of opening VS Code', async () => {
-    setupSpawnSuccess();
+    setupSpawnSuccess(5);
     await overrideHomeToTemp(); // interactive renders must stay off the real home
     const data = dataFor(profileWith(false));
     resetWelcomeSessionForTests();
@@ -387,7 +376,7 @@ describe('top-level `e` edit in VS Code (§4.3/§8)', () => {
   });
 
   it('does not fire the top-level edit while a resource view owns the keys (agents drill-down)', async () => {
-    setupSpawnSuccess();
+    setupSpawnSuccess(5);
     const { appHome, claudeMdPath } = await setupRealProfile();
     const agentPath = join(appHome, 'profiles', 'coding', 'claude-home', 'agents', 'explore.md');
     await fs.ensureDir(join(appHome, 'profiles', 'coding', 'claude-home', 'agents'));
@@ -427,7 +416,7 @@ describe('top-level `e` edit in VS Code (§4.3/§8)', () => {
   });
 
   it('zh renders the missing-CLAUDE.md guidance for the top-level edit', async () => {
-    setupSpawnSuccess();
+    setupSpawnSuccess(5);
     await overrideHomeToTemp(); // interactive renders must stay off the real home
     const data = dataFor(profileWith(false));
     resetWelcomeSessionForTests();

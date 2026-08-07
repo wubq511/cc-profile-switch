@@ -8,7 +8,7 @@ import { NoMatchEmptyState, useHints, ZeroProfilesEmptyState } from './guidance'
 import {
   LIFECYCLE_ACTIONS,
   LAUNCH_ACTIONS,
-  TEMPLATE_LIST,
+  getTemplateList,
   type LifecycleState,
   type LifecycleAction,
   type LifecyclePromptKind,
@@ -61,6 +61,9 @@ type SidebarProps = {
   onJumpContentHit?: (hit: SearchResult) => void;
   /** Cross-profile content search backing the sidebar box (searchAllResources). */
   onSearchContent?: (query: string) => Promise<SearchResult[]>;
+  /** Reports search-box focus so the app can suppress its top-level keys
+   * while the box owns input (issue #83/#84). */
+  onSearchFocusChange?: (focused: boolean) => void;
   /** Zero-confirm removal of a custom template from the create picker (S104). */
   onRemoveCustomTemplate?: (templateName: string) => void;
 };
@@ -85,6 +88,7 @@ export function Sidebar({
   onDrillCategory,
   onJumpContentHit,
   onSearchContent,
+  onSearchFocusChange,
   onRemoveCustomTemplate,
 }: SidebarProps): React.ReactElement {
   const { t } = useI18n();
@@ -147,6 +151,13 @@ export function Sidebar({
     };
   }, [searchQuery, onSearchContent]);
 
+  // Report search-box focus to the app (issue #83/#84): Ink broadcasts every
+  // keypress to all active useInput handlers with no propagation stop, so the
+  // app-level handler must know when this box owns input and stay quiet.
+  useEffect(() => {
+    onSearchFocusChange?.(searchFocused);
+  }, [searchFocused, onSearchFocusChange]);
+
   // Keep the cursor inside the visible rows as filtering shrinks the tree.
   useEffect(() => {
     if (rowCursor >= rows.length) {
@@ -208,7 +219,7 @@ export function Sidebar({
   // Create-flow template picker: built-ins first, then customs with a clear
   // source distinction (§11.3). Arrows wrap over the combined selectable list.
   const templateOptions: TemplateOption[] = [
-    ...TEMPLATE_LIST.map((name): TemplateOption => ({ name, source: 'built-in' })),
+    ...getTemplateList().map((name): TemplateOption => ({ name, source: 'built-in' })),
     ...customTemplates.map((c): TemplateOption => ({ name: c.name, source: 'custom' })),
   ];
   // Clamp after a zero-confirm custom-template removal shrinks the list.
@@ -613,7 +624,7 @@ export function Sidebar({
             { flexDirection: 'column' },
             React.createElement(Text, { bold: true }, t('lifecycle.prompt.createTemplate')),
             React.createElement(Text, { dimColor: true }, t('template.section.builtin')),
-            ...TEMPLATE_LIST.map((tmpl, i) =>
+            ...getTemplateList().map((tmpl, i) =>
               React.createElement(
                 Text,
                 {
@@ -632,7 +643,7 @@ export function Sidebar({
                     t('template.section.custom'),
                   ),
                   ...customTemplates.map((custom, j) => {
-                    const i = TEMPLATE_LIST.length + j;
+                    const i = getTemplateList().length + j;
                     return React.createElement(
                       Text,
                       {

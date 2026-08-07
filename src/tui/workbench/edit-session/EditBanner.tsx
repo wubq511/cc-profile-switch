@@ -16,7 +16,7 @@ export function EditBanner({ activeCount }: EditBannerProps) {
   return (
     <Box>
       <Text>
-        {pc.green('✎')} {t('editSession.banner').replace('{count}', String(activeCount))}
+        {pc.green('✎')} {t('editSession.banner', { count: String(activeCount) })}
       </Text>
     </Box>
   );

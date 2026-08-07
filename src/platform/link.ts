@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { CcpsError } from '../utils/errors';
+import { isNodeError } from '../utils/type-guards';
 
 // Cross-platform directory-link primitives for Linked Skill installation
 // (spec §7.2). The physical primitive is a symlink on macOS/Linux and an
@@ -45,9 +46,7 @@ export function probeLinkCapability(): LinkProbeResult {
       canCreate: false,
       kind,
       reason:
-        error instanceof Error
-          ? error.message
-          : `Failed to create a ${kind} in this environment.`,
+        error instanceof Error ? error.message : `Failed to create a ${kind} in this environment.`,
     };
   } finally {
     fs.rmSync(probeRoot, { recursive: true, force: true });
@@ -94,14 +93,10 @@ export async function createSkillLink(options: CreateSkillLinkOptions): Promise<
     );
   } catch (error) {
     if (isNodeError(error) && error.code === 'EEXIST') {
-      throw new CcpsError(
-        'LINK_TARGET_EXISTS',
-        'A Skill entry already exists at the link path.',
-        {
-          guidance: 'Resolve the name collision before installing the Linked Skill.',
-          cause: error,
-        },
-      );
+      throw new CcpsError('LINK_TARGET_EXISTS', 'A Skill entry already exists at the link path.', {
+        guidance: 'Resolve the name collision before installing the Linked Skill.',
+        cause: error,
+      });
     }
     throw new CcpsError(
       'LINK_CREATE_FAILED',
@@ -152,8 +147,4 @@ export async function readLinkTarget(linkPath: string): Promise<string | undefin
   } catch {
     return undefined;
   }
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error;
 }

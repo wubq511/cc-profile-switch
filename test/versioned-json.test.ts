@@ -123,6 +123,54 @@ describe('cleanupTmpResidue', () => {
     const files = await fs.readdir(dir);
     expect(files).toEqual(['config.json']);
   });
+
+  it('removes nested .tmp residue under profiles/ and backups/', async () => {
+    const dir = await makeTempDir();
+    await fs.ensureDir(join(dir, 'profiles', 'alpha', 'claude-home'));
+    await fs.ensureDir(join(dir, 'backups', 'alpha-2026-01-01', 'claude-home'));
+    await fs.writeFile(join(dir, 'profiles', 'alpha', 'profile.json'), '{}', 'utf8');
+    await fs.writeFile(join(dir, 'profiles', 'alpha', 'profile.json.tmp'), '{}', 'utf8');
+    await fs.writeFile(
+      join(dir, 'profiles', 'alpha', 'claude-home', 'settings.json.tmp'),
+      '{}',
+      'utf8',
+    );
+    await fs.writeFile(
+      join(dir, 'backups', 'alpha-2026-01-01', 'claude-home', 'settings.json.tmp'),
+      '{}',
+      'utf8',
+    );
+
+    await cleanupTmpResidue(dir);
+
+    expect(await fs.pathExists(join(dir, 'profiles', 'alpha', 'profile.json.tmp'))).toBe(false);
+    expect(
+      await fs.pathExists(join(dir, 'profiles', 'alpha', 'claude-home', 'settings.json.tmp')),
+    ).toBe(false);
+    expect(
+      await fs.pathExists(
+        join(dir, 'backups', 'alpha-2026-01-01', 'claude-home', 'settings.json.tmp'),
+      ),
+    ).toBe(false);
+    expect(await fs.pathExists(join(dir, 'profiles', 'alpha', 'profile.json'))).toBe(true);
+  });
+
+  it('does not descend past the bounded depth into Claude-managed bulk', async () => {
+    const dir = await makeTempDir();
+    const deepDir = join(dir, 'profiles', 'alpha', 'claude-home', 'projects');
+    await fs.ensureDir(deepDir);
+    await fs.writeFile(join(deepDir, 'session.json.tmp'), '{}', 'utf8');
+
+    await cleanupTmpResidue(dir);
+
+    expect(await fs.pathExists(join(deepDir, 'session.json.tmp'))).toBe(true);
+  });
+
+  it('tolerates an app home without profiles/ or backups/', async () => {
+    const dir = await makeTempDir();
+
+    await expect(cleanupTmpResidue(dir)).resolves.toBeUndefined();
+  });
 });
 
 describe('loadVersionedJson', () => {
@@ -238,7 +286,11 @@ describe('saveVersionedJson', () => {
   it('validates and writes atomically', async () => {
     const dir = await makeTempDir();
     const filePath = join(dir, 'test.json');
-    const result = await saveVersionedJson(testSpec, filePath, { version: 2, name: 'saved', addedField: true });
+    const result = await saveVersionedJson(testSpec, filePath, {
+      version: 2,
+      name: 'saved',
+      addedField: true,
+    });
 
     expect(result).toEqual({ version: 2, name: 'saved', addedField: true });
     const onDisk = JSON.parse(await fs.readFile(filePath, 'utf8'));
@@ -250,7 +302,11 @@ describe('saveVersionedJson', () => {
     const filePath = join(dir, 'test.json');
 
     await expect(
-      saveVersionedJson(testSpec, filePath, { version: 2, name: 'ok', unknownExtra: true } as TestV2),
+      saveVersionedJson(testSpec, filePath, {
+        version: 2,
+        name: 'ok',
+        unknownExtra: true,
+      } as TestV2),
     ).rejects.toMatchObject({
       code: 'TEST_CONFIG_INVALID',
     });

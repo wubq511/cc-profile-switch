@@ -6,6 +6,7 @@ import type { WorkbenchProfile } from './profile-data';
 import type { ResourceCategory } from '../../core/resource';
 import type { EditSession } from '../../core/edit-session';
 import { WatchingBadge } from './edit-session/WatchingBadge';
+import { FallbackMenu, type EditFallbackHandlers } from './edit-session/FallbackMenu';
 
 type ResourceListProps = {
   profile: WorkbenchProfile;
@@ -16,6 +17,8 @@ type ResourceListProps = {
   width: number;
   height: number;
   hintLine: string;
+  /** §8 editor-unavailable fallback actions for a failed edit session. */
+  editFallback: EditFallbackHandlers;
 };
 
 /**
@@ -32,6 +35,7 @@ export function ResourceList({
   width,
   height,
   hintLine,
+  editFallback,
 }: ResourceListProps): React.ReactElement {
   const { t } = useI18n();
 
@@ -47,8 +51,12 @@ export function ResourceList({
       Box,
       { flexDirection: 'column', width, height, paddingX: 1 },
       React.createElement(Text, { bold: true }, `${profile.name} › ${headerText}`),
-      React.createElement(Box, { marginTop: 1, flexDirection: 'column' },
-        React.createElement(Text, { dimColor: true },
+      React.createElement(
+        Box,
+        { marginTop: 1, flexDirection: 'column' },
+        React.createElement(
+          Text,
+          { dimColor: true },
           isAgents ? t('resource.agents.empty') : t('resource.userMemory.missing'),
         ),
       ),
@@ -59,23 +67,26 @@ export function ResourceList({
     ? agents.map((a) => ({
         key: a.name,
         label: a.name,
-        detail: a.frontmatter?.description
-          ? String(a.frontmatter.description)
-          : a.bodyExcerpt,
+        detail: a.frontmatter?.description ? String(a.frontmatter.description) : a.bodyExcerpt,
       }))
     : [
         {
           key: 'CLAUDE.md',
           label: 'CLAUDE.md',
-          detail: t('resource.userMemory.lines').replace('{count}', String(userMemory.lineCount)),
+          detail: t('resource.userMemory.lines', { count: String(userMemory.lineCount) }),
         },
       ];
+
+  const selectedRowKey = rows[selectedIndex]?.key;
+  const failedSession = selectedRowKey ? sessionFor(selectedRowKey) : undefined;
 
   return React.createElement(
     Box,
     { flexDirection: 'column', width, height, paddingX: 1 },
     React.createElement(Text, { bold: true }, `${profile.name} › ${headerText}`),
-    React.createElement(Box, { marginTop: 1, flexDirection: 'column' },
+    React.createElement(
+      Box,
+      { marginTop: 1, flexDirection: 'column' },
       ...rows.map((row, i) => {
         const isSelected = i === selectedIndex;
         const session = sessionFor(row.key);
@@ -97,14 +108,24 @@ export function ResourceList({
                 lastUpdated: session.lastUpdated,
               }),
           ),
-          React.createElement(
-            Text,
-            { dimColor: true, wrap: 'truncate' },
-            `    ${row.detail}`,
-          ),
+          React.createElement(Text, { dimColor: true, wrap: 'truncate' }, `    ${row.detail}`),
         );
       }),
     ),
+    // §8 VS Code unavailable: surface the selected row's failed handoff with
+    // its fallback actions (at most one menu — the selected row's).
+    failedSession?.openFailedReason &&
+      React.createElement(
+        Box,
+        { marginTop: 1 },
+        React.createElement(FallbackMenu, {
+          reason: failedSession.openFailedReason,
+          filePath: failedSession.filePath,
+          onSystemEditor: () => editFallback.systemEditor(failedSession.filePath),
+          onRetry: () => editFallback.retry(failedSession.filePath),
+          onDismiss: () => editFallback.dismiss(failedSession.filePath),
+        }),
+      ),
     React.createElement(Box, { flexGrow: 1 }),
     React.createElement(Text, { dimColor: true, wrap: 'truncate' }, hintLine),
   );

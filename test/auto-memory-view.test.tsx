@@ -12,7 +12,7 @@ import { AutoMemoryView } from '../src/tui/workbench/resources/auto-memory-view'
 import { EditSessionManager } from '../src/core/edit-session';
 import { createAppConfig, getAppHomePaths } from '../src/core/app-config';
 import { createProfileFromTemplate } from '../src/core/profile-template';
-import type { WorkbenchProfile } from '../src/tui/workbench/profile-data';
+import { makeProfile, stripAnsi } from './render-helpers';
 
 class FakeTtyStdout extends Writable {
   public readonly isTTY = true;
@@ -32,23 +32,6 @@ class FakeTtyStdout extends Writable {
 
 function dummyStdin(): Readable {
   return new Readable({ read() {} });
-}
-
-function stripAnsi(text: string): string {
-  // eslint-disable-next-line no-control-regex
-  return text.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '').replace(/\r/g, '');
-}
-
-function makeProfile(name: string): WorkbenchProfile {
-  return {
-    name,
-    description: '',
-    isDefault: false,
-    isLastUsed: false,
-    status: 'valid',
-    resourceCounts: { userMemory: 1, autoMemory: 0, skills: 0, agents: 0, mcp: 0, settings: 1, launchConfig: 1 },
-    validation: null,
-  };
 }
 
 describe('AutoMemoryView render', () => {
@@ -92,7 +75,12 @@ describe('AutoMemoryView render', () => {
   ): Promise<string> {
     const stdout = new FakeTtyStdout();
     const manager = new EditSessionManager();
-    const profile = makeProfile(profileName);
+    const profile = makeProfile({
+      name: profileName,
+      description: '',
+      isDefault: false,
+      resourceCounts: { userMemory: 1, autoMemory: 0, skills: 0, agents: 0, mcp: 0, settings: 1, launchConfig: 1 },
+    });
     const instance = render(
       React.createElement(AutoMemoryView, {
         profile,

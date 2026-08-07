@@ -1,5 +1,5 @@
-import type { ResourceCategory, SearchResult } from '../../core/resource/types';
-import { CATEGORIES } from './categories';
+import type { SearchResult } from '../../core/resource/types';
+import { CATEGORIES, contentHitCategoryFor } from './categories';
 import type { WorkbenchProfile } from './profile-data';
 
 /**
@@ -24,12 +24,6 @@ export type TreeRow =
       hit: SearchResult;
       depth: 2;
     };
-
-/** Resource-content search categories map onto these tree categories. */
-const CONTENT_HIT_CATEGORY: Record<ResourceCategory, CategoryKey> = {
-  'user-memory': 'userMemory',
-  agents: 'agents',
-};
 
 /** Item names shown under each category of a profile. */
 export function categoryItems(profile: WorkbenchProfile, categoryKey: CategoryKey): string[] {
@@ -91,7 +85,7 @@ export function buildSidebarRows(opts: BuildSidebarRowsOptions): TreeRow[] {
     const matchedCategories = SIDEBAR_CATEGORY_KEYS.filter((key) => {
       if (categoryLabels[key].toLowerCase().includes(query)) return true;
       if (categoryItems(profile, key).some((item) => item.toLowerCase().includes(query))) return true;
-      return profileHits.some((h) => CONTENT_HIT_CATEGORY[h.category] === key);
+      return profileHits.some((h) => contentHitCategoryFor(h.category) === key);
     });
 
     if (matchedCategories.length === 0) continue;
@@ -123,7 +117,7 @@ function pushSubtree(
       rows.push({ kind: 'item', profileName: profile.name, categoryKey, itemName, depth: 2 });
     }
     for (const hit of profileHits) {
-      if (CONTENT_HIT_CATEGORY[hit.category] === categoryKey) {
+      if (contentHitCategoryFor(hit.category) === categoryKey) {
         rows.push({ kind: 'content-hit', profileName: profile.name, categoryKey, hit, depth: 2 });
       }
     }

@@ -747,4 +747,45 @@ describe('launcher', () => {
     const state = await loadAppState(appHome);
     expect(state.recentProjectDirs).toHaveLength(0);
   });
+
+  it('does not record recents or last-used on a non-zero exit (spec §13.3)', async () => {
+    const { appHome } = await makeProfile();
+    const projectCwd = await makeTempRoot('ccps-project-');
+
+    await expect(
+      launchProfile({
+        appHomePath: appHome,
+        profileName: 'coding',
+        cwd: projectCwd,
+        spawnProcess: async () => ({ exitCode: 2 }),
+      }),
+    ).rejects.toMatchObject({ code: 'CLAUDE_EXITED_WITH_ERROR' });
+
+    await expect(fs.readJson(join(appHome, 'config.json'))).resolves.toMatchObject({
+      lastUsedProfile: null,
+    });
+    const state = await loadAppState(appHome);
+    expect(state.recentProjectDirs).toHaveLength(0);
+  });
+
+  it('does not record recents or last-used on a signal exit (null exit code)', async () => {
+    const { appHome } = await makeProfile();
+    const projectCwd = await makeTempRoot('ccps-project-');
+
+    const result = await launchProfile({
+      appHomePath: appHome,
+      profileName: 'coding',
+      cwd: projectCwd,
+      spawnProcess: async () => ({ exitCode: null }),
+    });
+
+    // A signal exit is not a launch failure, but it is not a successful real
+    // launch either (spec §13.3) — metadata records nothing.
+    expect(result.exitCode).toBeNull();
+    await expect(fs.readJson(join(appHome, 'config.json'))).resolves.toMatchObject({
+      lastUsedProfile: null,
+    });
+    const state = await loadAppState(appHome);
+    expect(state.recentProjectDirs).toHaveLength(0);
+  });
 });

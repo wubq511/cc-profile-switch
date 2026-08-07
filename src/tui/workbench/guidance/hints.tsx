@@ -1,12 +1,14 @@
 // Contextual hint retirement (issue #76).
 //
 // Hints attach to a focused element (the selected Profile) and retire once the
-// key they teach has been used HINT_RETIRE_AFTER times. Usage is tracked in
-// session memory; a retired hint stays retired for the rest of the session, so
-// steady state converges to near-minimal as the user learns. No persistence —
-// the Welcome card is also per-session, and hints are guidance, not state.
+// key they teach has been used HINT_RETIRE_AFTER times. Use counts persist in
+// state.json (hintUsage), so retirement is permanent across sessions and
+// steady state converges to near-minimal as the user learns. Persistence is
+// wired from the outside: the Workbench entry (index.mts) seeds `initialUsage`
+// from state.json and persists each use through `onMarkUsed`; without those
+// props the provider degrades to session-only tracking (tests).
 
-import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
 
 export const HINT_RETIRE_AFTER = 3;
 
@@ -27,13 +29,22 @@ const HintsContext = createContext<HintsApi>({
 
 type HintsProviderProps = {
   children: React.ReactNode;
+  /** Persisted per-key use counts from state.json, seeded once at mount. */
+  initialUsage?: Record<string, number>;
+  /** Called after each local increment so the host can persist the use. */
+  onMarkUsed?: (key: string) => void;
 };
 
-export function HintsProvider({ children }: HintsProviderProps): React.ReactElement {
-  const [used, setUsed] = useState<Record<string, number>>({});
+export function HintsProvider({ children, initialUsage, onMarkUsed }: HintsProviderProps): React.ReactElement {
+  const [used, setUsed] = useState<Record<string, number>>(() => ({ ...(initialUsage ?? {}) }));
+  // Ref so markUsed stays referentially stable when the host re-renders with
+  // a fresh persistence closure.
+  const onMarkUsedRef = useRef(onMarkUsed);
+  onMarkUsedRef.current = onMarkUsed;
 
   const markUsed = useCallback((key: string) => {
     setUsed((prev) => ({ ...prev, [key]: (prev[key] ?? 0) + 1 }));
+    onMarkUsedRef.current?.(key);
   }, []);
 
   const isRetired = useCallback(

@@ -1,13 +1,9 @@
-import { Readable, Writable } from 'node:stream';
-
 import React from 'react';
-import { render } from 'ink';
 import { describe, expect, it } from 'vitest';
 
 import { ResourceList } from '../src/tui/workbench/resource-list';
 import { ResourceDiffView } from '../src/tui/workbench/resource-diff-view';
 import { ResourcePreview } from '../src/tui/workbench/resource-preview';
-import { I18nProvider } from '../src/tui/workbench/i18n/react';
 import type { WorkbenchProfile } from '../src/tui/workbench/profile-data';
 import type { UserMemoryDiff, AgentsDiff } from '../src/core/resource';
 import type {
@@ -16,31 +12,15 @@ import type {
   McpInventoryDiff,
 } from '../src/core/resource/diff-all';
 import type { LaunchConfigDiffEntry, SettingsDiffEntry } from '../src/core/diff';
+import { renderWithLocale, stripAnsi } from './render-helpers';
 
-class FakeTtyStdout extends Writable {
-  public readonly isTTY = true;
-  public columns = 100;
-  public rows = 30;
-  private readonly chunks: Buffer[] = [];
-
-  public override _write(chunk: Buffer, _encoding: string, callback: () => void): void {
-    this.chunks.push(Buffer.from(chunk));
-    callback();
-  }
-
-  public get output(): string {
-    return Buffer.concat(this.chunks).toString('utf8');
-  }
-}
-
-function dummyStdin(): Readable {
-  return new Readable({ read() {} });
-}
-
-function stripAnsi(text: string): string {
-  // eslint-disable-next-line no-control-regex
-  return text.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '').replace(/\r/g, '');
-}
+/** No-op §8 fallback actions: these renders never surface a failed session,
+ *  so the handlers are present only to satisfy the props contract. */
+const stubEditFallback = {
+  systemEditor: () => {},
+  retry: () => {},
+  dismiss: () => {},
+};
 
 function profile(name: string): WorkbenchProfile {
   return {
@@ -86,15 +66,6 @@ function profile(name: string): WorkbenchProfile {
   };
 }
 
-function renderWithLocale(element: React.ReactElement) {
-  const stdout = new FakeTtyStdout();
-  const instance = render(
-    React.createElement(I18nProvider, { initialLocale: 'en' }, element),
-    { stdout, stdin: dummyStdin(), debug: true },
-  );
-  return { instance, stdout };
-}
-
 describe('ResourceList', () => {
   it('renders agent rows with names and descriptions', async () => {
     const { instance, stdout } = renderWithLocale(
@@ -106,6 +77,7 @@ describe('ResourceList', () => {
         width: 60,
         height: 20,
         hintLine: '[e] edit  [x] remove',
+        editFallback: stubEditFallback,
       }),
     );
     await instance.waitUntilRenderFlush();
@@ -129,6 +101,7 @@ describe('ResourceList', () => {
         width: 60,
         height: 20,
         hintLine: '',
+        editFallback: stubEditFallback,
       }),
     );
     await instance.waitUntilRenderFlush();
@@ -151,6 +124,7 @@ describe('ResourcePreview', () => {
         session: undefined,
         width: 60,
         height: 20,
+        editFallback: stubEditFallback,
       }),
     );
     await instance.waitUntilRenderFlush();

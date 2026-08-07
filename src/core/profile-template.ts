@@ -10,6 +10,7 @@ import {
 } from '../platform/path';
 import { profileConfigSchema, profileTemplateSchema, type ProfileConfig } from '../schemas/profile';
 import { CcpsError } from '../utils/errors';
+import { isNodeError, isRecord } from '../utils/type-guards';
 import { type Clock, writeJsonFile } from './app-config';
 
 export type ProfileTemplateName = 'coding' | 'study' | 'work' | 'research' | 'general' | 'blank';
@@ -463,12 +464,4 @@ function autoMemoryEntrypoint(profileName: string): string {
 This file is the entrypoint for Claude Code auto memory for the "${profileName}" ccps profile.
 Claude Code may update this file and create topic files in this directory during sessions.
 `;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error;
 }

@@ -2,6 +2,7 @@ import { getSkillsDirectoryPath } from '../../../core/skills-provenance';
 import { resolveInside } from '../../../platform/path';
 import type { RemoteInstallPreview } from '../../../core/skills-remote-install';
 import type {
+  CatalogedLocalSkillSource,
   CollisionResolution,
   InstallMode,
   InstallPreview,
@@ -28,7 +29,8 @@ export type InstallSourceRef = {
 
 export type InstallWizardPhase =
   | 'kind' // pick Local (§7.2) or Remote (§7.3)
-  | 'source' // typing the Local Skill Source path
+  | 'source-list' // pick a discovered Local Skill Source, or manual entry (§7.2 step 1)
+  | 'source' // typing the Local Skill Source path (manual fallback)
   | 'validating' // async: validateLocalSkillSource
   | 'mode' // choosing Copy (default) or Link
   | 'confirming' // async: previewInstall (local)
@@ -47,6 +49,12 @@ export type InstallWizardState = {
   profileRootPath: string | null;
   kind: InstallWizardKind; // 'local' is the default per spec §7.2
   // Local flow
+  /** Discovered local sources for the step-1 pick list (empty until loaded). */
+  localSources: CatalogedLocalSkillSource[];
+  /** Highlighted row on the source-list step (rows = sources + manual entry). */
+  sourceListIndex: number;
+  /** True once the component delivered the discovered sources (empty is a valid result). */
+  sourcesLoaded: boolean;
   sourceInput: string;
   sourceInfo: LocalSkillSourceInfo | null;
   sourceError: string;
@@ -72,8 +80,11 @@ export type InstallWizardState = {
 export type InstallWizardAction =
   | { type: 'START'; profileName: string; profileRootPath?: string }
   | { type: 'START_REMOTE'; profileName: string; profileRootPath?: string } & InstallSourceRef
-  | { type: 'KIND_SELECT_LOCAL' } // → source
+  | { type: 'KIND_SELECT_LOCAL' } // → source-list
   | { type: 'KIND_SELECT_REMOTE' } // → source-remote
+  | { type: 'SOURCES_LOADED'; sources: CatalogedLocalSkillSource[] } // populate the step-1 list
+  | { type: 'SOURCE_LIST_MOVE'; delta: 1 | -1 }
+  | { type: 'SOURCE_LIST_PICK' } // → validating (a source row) or source (manual row)
   | { type: 'SOURCE_CHAR'; char: string }
   | { type: 'SOURCE_BACKSPACE' }
   | { type: 'SOURCE_SUBMIT' } // → validating
@@ -106,6 +117,9 @@ export function initialInstallWizardState(): InstallWizardState {
     profileName: '',
     profileRootPath: null,
     kind: 'local',
+    localSources: [],
+    sourceListIndex: 0,
+    sourcesLoaded: false,
     sourceInput: '',
     sourceInfo: null,
     sourceError: '',
@@ -160,12 +174,51 @@ export function installWizardReducer(
 
     case 'KIND_SELECT_LOCAL': {
       if (state.phase !== 'kind') return state;
-      return { ...state, kind: 'local', phase: 'source' };
+      // Spec §7.2 step 1: pick the Local Skill Source from a list (manual path
+      // entry is the fallback row). The component loads localSources on entry.
+      return { ...state, kind: 'local', phase: 'source-list' };
     }
 
     case 'KIND_SELECT_REMOTE': {
       if (state.phase !== 'kind') return state;
       return { ...state, kind: 'remote', phase: 'source-remote' };
+    }
+
+    case 'SOURCES_LOADED': {
+      if (state.phase !== 'source-list') return state;
+      const maxIndex = action.sources.length; // rows = sources + manual-entry row
+      return {
+        ...state,
+        localSources: action.sources,
+        sourcesLoaded: true,
+        sourceListIndex: Math.min(state.sourceListIndex, maxIndex),
+      };
+    }
+
+    case 'SOURCE_LIST_MOVE': {
+      if (state.phase !== 'source-list') return state;
+      const rowCount = state.localSources.length + 1; // + the manual-entry row
+      const next = state.sourceListIndex + action.delta;
+      const clamped = Math.max(0, Math.min(next, rowCount - 1));
+      return { ...state, sourceListIndex: clamped };
+    }
+
+    case 'SOURCE_LIST_PICK': {
+      if (state.phase !== 'source-list') return state;
+      const picked = state.localSources[state.sourceListIndex];
+      if (picked) {
+        // Revalidate through the normal validating phase (the catalog entry
+        // may have gone stale since listing).
+        return {
+          ...state,
+          phase: 'validating',
+          sourceInput: picked.sourcePath,
+          sourceError: '',
+        };
+      }
+      // The manual-entry row: fall back to the typed-path step (arbitrary
+      // local paths must remain possible).
+      return { ...state, phase: 'source', sourceError: '' };
     }
 
     case 'SOURCE_CHAR': {
@@ -403,12 +456,16 @@ export function installWizardReducer(
       switch (state.phase) {
         case 'kind':
           return { ...initialInstallWizardState() };
-        case 'source':
+        case 'source-list':
           return { ...state, phase: 'kind' };
+        case 'source':
+          // Manual entry is the fallback row of the source list — esc returns
+          // to the list, not the kind picker.
+          return { ...state, phase: 'source-list' };
         case 'validating':
-          return { ...state, phase: 'source' };
+          return { ...state, phase: 'source-list' };
         case 'mode':
-          return { ...state, phase: 'source' };
+          return { ...state, phase: 'source-list' };
         case 'confirming':
           return state.kind === 'remote'
             ? { ...state, phase: 'source-remote' }

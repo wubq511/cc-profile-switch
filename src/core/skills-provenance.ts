@@ -18,6 +18,7 @@ import {
   type SkillsProvenanceManifest,
 } from '../schemas/skills-provenance';
 import { CcpsError } from '../utils/errors';
+import { isNodeError } from '../utils/type-guards';
 import { loadVersionedJson, saveVersionedJson, type VersionedJsonSpec } from './versioned-json';
 import { type Clock } from './types';
 
@@ -521,8 +522,4 @@ export async function inspectSkills(
 
 function toPosix(value: string): string {
   return value.replace(/\\/g, '/');
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error;
 }

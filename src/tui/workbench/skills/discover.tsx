@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Box, Text, useInput, useStdin } from 'ink';
 
-import { useI18n } from '../i18n/react';
+import { useI18n, type I18nParams } from '../i18n/react';
 import type { LocaleKey } from '../i18n/en';
 import type { AuditView } from '../../../schemas/skills-provenance';
 import {
@@ -85,34 +85,40 @@ export function DiscoverView({
     }
   }, [session]);
 
-  const runSearch = useCallback(async (rawQuery: string) => {
-    const q = rawQuery.trim();
-    if (q.length === 0) {
-      void loadBrowse();
-      return;
-    }
-    const seq = ++requestSeq.current;
-    setLoading(true);
-    setCatalog(null);
-    try {
-      const result = await session.search(q);
-      if (seq !== requestSeq.current) return;
-      setCatalog(result);
-      setSelectedIndex(0);
-    } catch {
-      if (seq !== requestSeq.current) return;
-      setCatalog(failureCatalog());
-    } finally {
-      if (seq === requestSeq.current) setLoading(false);
-    }
-  }, [session, loadBrowse]);
+  const runSearch = useCallback(
+    async (rawQuery: string) => {
+      const q = rawQuery.trim();
+      if (q.length === 0) {
+        void loadBrowse();
+        return;
+      }
+      const seq = ++requestSeq.current;
+      setLoading(true);
+      setCatalog(null);
+      try {
+        const result = await session.search(q);
+        if (seq !== requestSeq.current) return;
+        setCatalog(result);
+        setSelectedIndex(0);
+      } catch {
+        if (seq !== requestSeq.current) return;
+        setCatalog(failureCatalog());
+      } finally {
+        if (seq === requestSeq.current) setLoading(false);
+      }
+    },
+    [session, loadBrowse],
+  );
 
-  const scheduleSearch = useCallback((nextQuery: string) => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      void runSearch(nextQuery);
-    }, SEARCH_DEBOUNCE_MS);
-  }, [runSearch]);
+  const scheduleSearch = useCallback(
+    (nextQuery: string) => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        void runSearch(nextQuery);
+      }, SEARCH_DEBOUNCE_MS);
+    },
+    [runSearch],
+  );
 
   // Load the curated backbone floor on mount.
   useEffect(() => {
@@ -122,108 +128,111 @@ export function DiscoverView({
     };
   }, [loadBrowse]);
 
-  useInput((input: string, key: Record<string, boolean>) => {
-    if (key.ctrl && input === 'c') return; // app-level exit handles this
+  useInput(
+    (input: string, key: Record<string, boolean>) => {
+      if (key.ctrl && input === 'c') return; // app-level exit handles this
 
-    // Source entry mode (the zero-config floor).
-    if (mode === 'source') {
-      if (key.escape) {
-        setMode('results');
-        setSourceInput('');
+      // Source entry mode (the zero-config floor).
+      if (mode === 'source') {
+        if (key.escape) {
+          setMode('results');
+          setSourceInput('');
+          return;
+        }
+        if (key.return) {
+          const source = sourceInput.trim();
+          setMode('results');
+          setSourceInput('');
+          if (source.length > 0) onInstallSource(source);
+          return;
+        }
+        if (key.backspace || key.delete) {
+          setSourceInput((s) => s.slice(0, -1));
+          return;
+        }
+        if (!key.ctrl && !key.meta && input.length === 1) {
+          setSourceInput((s) => s + input);
+        }
         return;
       }
-      if (key.return) {
-        const source = sourceInput.trim();
-        setMode('results');
-        setSourceInput('');
-        if (source.length > 0) onInstallSource(source);
-        return;
-      }
-      if (key.backspace || key.delete) {
-        setSourceInput((s) => s.slice(0, -1));
-        return;
-      }
-      if (!key.ctrl && !key.meta && input.length === 1) {
-        setSourceInput((s) => s + input);
-      }
-      return;
-    }
 
-    // Search input.
-    if (searchFocused) {
+      // Search input.
+      if (searchFocused) {
+        if (key.escape) {
+          setSearchFocused(false);
+          setQuery('');
+          setStatus(null);
+          void loadBrowse();
+          return;
+        }
+        if (key.return) {
+          setSearchFocused(false);
+          return;
+        }
+        if (key.backspace || key.delete) {
+          const next = query.slice(0, -1);
+          setQuery(next);
+          setSelectedIndex(0);
+          scheduleSearch(next);
+          return;
+        }
+        if (!key.ctrl && !key.meta && input.length === 1) {
+          const next = query + input;
+          setQuery(next);
+          setSelectedIndex(0);
+          scheduleSearch(next);
+        }
+        return;
+      }
+
+      // Results mode.
       if (key.escape) {
-        setSearchFocused(false);
-        setQuery('');
+        onBack();
+        return;
+      }
+      if (key.upArrow) {
+        const count = catalog?.results.length ?? 0;
+        setSelectedIndex((i) => (i > 0 ? i - 1 : Math.max(0, count - 1)));
+        return;
+      }
+      if (key.downArrow) {
+        const count = catalog?.results.length ?? 0;
+        setSelectedIndex((i) => (i < count - 1 ? i + 1 : 0));
+        return;
+      }
+      if (input === '/') {
+        setSearchFocused(true);
         setStatus(null);
-        void loadBrowse();
         return;
       }
       if (key.return) {
-        setSearchFocused(false);
+        const skill = catalog?.results[selectedIndex];
+        if (skill) onInstallSource(skill.installSource, skill.skill);
         return;
       }
-      if (key.backspace || key.delete) {
-        const next = query.slice(0, -1);
-        setQuery(next);
-        setSelectedIndex(0);
-        scheduleSearch(next);
+      if (input === 's') {
+        setMode('source');
+        setSourceInput('');
+        setStatus(null);
         return;
       }
-      if (!key.ctrl && !key.meta && input.length === 1) {
-        const next = query + input;
-        setQuery(next);
-        setSelectedIndex(0);
-        scheduleSearch(next);
+      if (input === 'b') {
+        onOpenBrowser(SKILLSHUB_URL);
+        setStatus(t('discover.browser.opened'));
+        return;
       }
-      return;
-    }
-
-    // Results mode.
-    if (key.escape) {
-      onBack();
-      return;
-    }
-    if (key.upArrow) {
-      const count = catalog?.results.length ?? 0;
-      setSelectedIndex((i) => (i > 0 ? i - 1 : Math.max(0, count - 1)));
-      return;
-    }
-    if (key.downArrow) {
-      const count = catalog?.results.length ?? 0;
-      setSelectedIndex((i) => (i < count - 1 ? i + 1 : 0));
-      return;
-    }
-    if (input === '/') {
-      setSearchFocused(true);
-      setStatus(null);
-      return;
-    }
-    if (key.return) {
-      const skill = catalog?.results[selectedIndex];
-      if (skill) onInstallSource(skill.installSource, skill.skill);
-      return;
-    }
-    if (input === 's') {
-      setMode('source');
-      setSourceInput('');
-      setStatus(null);
-      return;
-    }
-    if (input === 'b') {
-      onOpenBrowser(SKILLSHUB_URL);
-      setStatus(t('discover.browser.opened'));
-      return;
-    }
-    if (input === 'r') {
-      setStatus(null);
-      if (query.trim().length > 0) {
-        void runSearch(query);
-      } else {
-        void loadBrowse();
+      if (input === 'r') {
+        setStatus(null);
+        if (query.trim().length > 0) {
+          void runSearch(query);
+        } else {
+          void loadBrowse();
+        }
+        return;
       }
-      return;
-    }
-  }, { isActive: canUseInput });
+    },
+    { isActive: canUseInput },
+  );
 
   const experimentalEnabled = session.experimentalEnabled;
   const results = catalog?.results ?? [];
@@ -241,9 +250,7 @@ export function DiscoverView({
             [{t('discover.experimental.badge')}]
           </Text>
         )}
-        {!experimentalEnabled && (
-          <Text dimColor> ({t('discover.experimental.off')})</Text>
-        )}
+        {!experimentalEnabled && <Text dimColor> ({t('discover.experimental.off')})</Text>}
       </Box>
 
       {/* Search / source line */}
@@ -274,9 +281,7 @@ export function DiscoverView({
       <Box flexDirection="column" height={listHeight}>
         {loading ? (
           <Text color="yellow">
-            {query.trim().length > 0
-              ? t('discover.loading.search')
-              : t('discover.loading.browse')}
+            {query.trim().length > 0 ? t('discover.loading.search') : t('discover.loading.browse')}
           </Text>
         ) : results.length > 0 ? (
           renderWindow(results, selectedIndex, listHeight, width, t).map((row) => row)
@@ -293,9 +298,7 @@ export function DiscoverView({
       <Box flexDirection="column" marginTop={1}>
         <StatusLine catalog={catalog} t={t} />
         {status && <Text color="yellow">{status}</Text>}
-        {mode !== 'source' && !searchFocused && (
-          <Text dimColor>{t('discover.actions')}</Text>
-        )}
+        {mode !== 'source' && !searchFocused && <Text dimColor>{t('discover.actions')}</Text>}
       </Box>
     </Box>
   );
@@ -306,7 +309,7 @@ function renderWindow(
   selectedIndex: number,
   listHeight: number,
   width: number,
-  t: (key: LocaleKey) => string,
+  t: (key: LocaleKey, params?: I18nParams) => string,
 ): React.ReactElement[] {
   const windowSize = Math.max(1, listHeight);
   const start = Math.max(0, selectedIndex - Math.floor(windowSize / 2));
@@ -319,9 +322,11 @@ function renderWindow(
     const meta = [
       skill.repository,
       audit.label,
-      skill.installs !== undefined ? t('discover.installs').replace('{count}', formatCount(skill.installs)) : '',
+      skill.installs !== undefined
+        ? t('discover.installs', { count: formatCount(skill.installs) })
+        : '',
       skill.trending ? t('discover.trending') : '',
-      t('discover.fetchedAt').replace('{time}', formatTime(skill.fetchedAt)),
+      t('discover.fetchedAt', { time: formatTime(skill.fetchedAt) }),
     ]
       .filter(Boolean)
       .join(' · ');
@@ -354,7 +359,7 @@ function StatusLine({
   t,
 }: {
   catalog: DiscoveryCatalog | null;
-  t: (key: LocaleKey) => string;
+  t: (key: LocaleKey, params?: I18nParams) => string;
 }): React.ReactElement | null {
   if (!catalog || catalog.results.length === 0) return null;
   const unavailable = catalog.layers.filter((l: LayerStatus) => l.unavailable);
@@ -383,7 +388,7 @@ function StatusLine({
     const fetchedAt = stale[0]!.fetchedAt;
     return (
       <Text dimColor wrap="wrap">
-        {t('discover.cachedStale').replace('{time}', fetchedAt ? formatTime(fetchedAt) : '')}
+        {t('discover.cachedStale', { time: fetchedAt ? formatTime(fetchedAt) : '' })}
       </Text>
     );
   }
@@ -394,7 +399,7 @@ function StatusLine({
 function formatLayerNote(
   layers: LayerStatus[],
   template: 'discover.unavailable' | 'discover.partial',
-  t: (key: LocaleKey) => string,
+  t: (key: LocaleKey, params?: I18nParams) => string,
 ): string {
   const names = layers
     .map((l) => t(`discover.unavailable.layer.${l.layer}` as LocaleKey))
@@ -408,7 +413,7 @@ function formatLayerNote(
       ),
     ),
   ].join(', ');
-  return t(template).replace('{layers}', names).replace('{reason}', reasons);
+  return t(template, { layers: names, reason: reasons });
 }
 
 /** A catalog that read "catalog unavailable" for an unexpected (non-classified)
@@ -416,7 +421,9 @@ function formatLayerNote(
 function failureCatalog(): DiscoveryCatalog {
   return {
     results: [],
-    layers: [{ layer: 'backbone', state: 'unavailable', unavailable: true, errorCode: 'unavailable' }],
+    layers: [
+      { layer: 'backbone', state: 'unavailable', unavailable: true, errorCode: 'unavailable' },
+    ],
     fetchedAt: new Date().toISOString(),
   };
 }

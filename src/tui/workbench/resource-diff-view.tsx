@@ -1,7 +1,7 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 
-import { useI18n } from './i18n/react';
+import { useI18n, type I18nParams } from './i18n/react';
 import type { LocaleKey } from './i18n/en';
 import type { WorkbenchProfile } from './profile-data';
 import type { UserMemoryDiff, AgentsDiff } from '../../core/resource';
@@ -52,25 +52,21 @@ export function ResourceDiffView({
   const { t } = useI18n();
 
   if (diff === null) {
-    const counterpartNames = profiles
-      .map((p) => p.name)
-      .filter((name) => name !== profile.name);
+    const counterpartNames = profiles.map((p) => p.name).filter((name) => name !== profile.name);
     return React.createElement(
       Box,
       { flexDirection: 'column', width, height, paddingX: 1 },
       React.createElement(Text, { bold: true }, t('resource.diff.title')),
-      React.createElement(Box, { marginTop: 1 },
+      React.createElement(
+        Box,
+        { marginTop: 1 },
         React.createElement(Text, { dimColor: true }, t('resource.diff.selectProfile')),
       ),
       React.createElement(
         Box,
         { marginTop: 1, flexDirection: 'column' },
         ...counterpartNames.map((name) =>
-          React.createElement(
-            Text,
-            { key: name, color: 'cyan' },
-            `  ${name}`,
-          ),
+          React.createElement(Text, { key: name, color: 'cyan' }, `  ${name}`),
         ),
       ),
     );
@@ -89,8 +85,7 @@ export function ResourceDiffView({
       { bold: true, wrap: 'truncate' },
       `${profile.name} → ${counterpartName}`,
     ),
-    summary &&
-      React.createElement(Text, { dimColor: true, wrap: 'truncate' }, summary),
+    summary && React.createElement(Text, { dimColor: true, wrap: 'truncate' }, summary),
     React.createElement(
       Box,
       { marginTop: 1, flexDirection: 'column' },
@@ -117,42 +112,67 @@ export function ResourceDiffView({
     }
   }
 
-  function renderMemoryRows(memoryDiff: UserMemoryDiff): { summary: string | null; rows: React.ReactElement[] } {
+  function renderMemoryRows(memoryDiff: UserMemoryDiff): {
+    summary: string | null;
+    rows: React.ReactElement[];
+  } {
     const { add, del } = countChanges(memoryDiff.lines);
     return {
       summary: `${t('resource.diff.added')} ${add} · ${t('resource.diff.removed')} ${del}`,
       rows: memoryDiff.lines.map((line, i) =>
         React.createElement(
           Text,
-          { key: i, color: line.type === 'add' ? 'green' : line.type === 'del' ? 'red' : undefined, wrap: 'truncate' },
+          {
+            key: i,
+            color: line.type === 'add' ? 'green' : line.type === 'del' ? 'red' : undefined,
+            wrap: 'truncate',
+          },
           `${line.type === 'add' ? '+' : line.type === 'del' ? '-' : ' '} ${line.text}`,
         ),
       ),
     };
   }
 
-  function renderAgentsRows(agentsDiff: AgentsDiff): { summary: string | null; rows: React.ReactElement[] } {
+  function renderAgentsRows(agentsDiff: AgentsDiff): {
+    summary: string | null;
+    rows: React.ReactElement[];
+  } {
     const rows: React.ReactElement[] = [];
     for (const file of agentsDiff.files) {
       const marker =
-        file.verdict === 'added' ? '+' :
-        file.verdict === 'removed' ? '-' :
-        file.verdict === 'changed' ? '≠' : '=';
+        file.verdict === 'added'
+          ? '+'
+          : file.verdict === 'removed'
+            ? '-'
+            : file.verdict === 'changed'
+              ? '≠'
+              : '=';
       const color =
-        file.verdict === 'added' ? 'green' :
-        file.verdict === 'removed' ? 'red' :
-        file.verdict === 'changed' ? 'yellow' : undefined;
+        file.verdict === 'added'
+          ? 'green'
+          : file.verdict === 'removed'
+            ? 'red'
+            : file.verdict === 'changed'
+              ? 'yellow'
+              : undefined;
       const label =
-        file.verdict === 'added' ? t('resource.diff.added') :
-        file.verdict === 'removed' ? t('resource.diff.removed') :
-        file.verdict === 'changed' ? t('resource.diff.changed') :
-        t('resource.diff.same');
+        file.verdict === 'added'
+          ? t('resource.diff.added')
+          : file.verdict === 'removed'
+            ? t('resource.diff.removed')
+            : file.verdict === 'changed'
+              ? t('resource.diff.changed')
+              : t('resource.diff.same');
 
       rows.push(
         React.createElement(
           Box,
           { key: file.name, gap: 1 },
-          React.createElement(Text, { color, wrap: 'truncate' }, `${marker} ${file.name} (${label})`),
+          React.createElement(
+            Text,
+            { color, wrap: 'truncate' },
+            `${marker} ${file.name} (${label})`,
+          ),
           file.verdict === 'changed' &&
             React.createElement(Text, { dimColor: true }, t('resource.diff.drillIn')),
         ),
@@ -162,7 +182,11 @@ export function ResourceDiffView({
           ...file.lines.map((line, i) =>
             React.createElement(
               Text,
-              { key: `${file.name}:${i}`, color: line.type === 'add' ? 'green' : line.type === 'del' ? 'red' : undefined, wrap: 'truncate' },
+              {
+                key: `${file.name}:${i}`,
+                color: line.type === 'add' ? 'green' : line.type === 'del' ? 'red' : undefined,
+                wrap: 'truncate',
+              },
               `    ${line.type === 'add' ? '+' : line.type === 'del' ? '-' : ' '} ${line.text}`,
             ),
           ),
@@ -176,7 +200,10 @@ export function ResourceDiffView({
     };
   }
 
-  function renderSettingsRows(entries: SettingsDiffEntry[]): { summary: string | null; rows: React.ReactElement[] } {
+  function renderSettingsRows(entries: SettingsDiffEntry[]): {
+    summary: string | null;
+    rows: React.ReactElement[];
+  } {
     return {
       summary: t('resource.diff.settingsRedacted'),
       rows: entries.map((entry) => {
@@ -195,20 +222,27 @@ export function ResourceDiffView({
     };
   }
 
-  function renderMcpRows(mcpDiff: McpInventoryDiff): { summary: string | null; rows: React.ReactElement[] } {
+  function renderMcpRows(mcpDiff: McpInventoryDiff): {
+    summary: string | null;
+    rows: React.ReactElement[];
+  } {
     return {
       summary: t('resource.diff.mcpInventory'),
       rows: mcpDiff.rows.map((row) => {
         const cellA = row.inA ? `${row.transportA}·${row.connectionA}` : '—';
         const cellB = row.inB ? `${row.transportB}·${row.connectionB}` : '—';
         const differs =
-          row.inA && row.inB &&
+          row.inA &&
+          row.inB &&
           (row.transportA !== row.transportB || row.connectionA !== row.connectionB);
         const mark = differs ? '≠' : row.inA && row.inB ? ' ' : row.inA ? '-' : '+';
-        const color =
-          differs ? 'yellow' :
-          row.inA && !row.inB ? 'red' :
-          !row.inA && row.inB ? 'green' : undefined;
+        const color = differs
+          ? 'yellow'
+          : row.inA && !row.inB
+            ? 'red'
+            : !row.inA && row.inB
+              ? 'green'
+              : undefined;
         let suffix = '';
         if (!row.inA) suffix = `  ${onlyIn(counterpartName)}`;
         else if (!row.inB) suffix = `  ${onlyIn(profile.name)}`;
@@ -221,7 +255,10 @@ export function ResourceDiffView({
     };
   }
 
-  function renderSkillsRows(skillsDiff: CopiedSkillsDiff): { summary: string | null; rows: React.ReactElement[] } {
+  function renderSkillsRows(skillsDiff: CopiedSkillsDiff): {
+    summary: string | null;
+    rows: React.ReactElement[];
+  } {
     const rows: React.ReactElement[] = [];
     for (const row of skillsDiff.skills) {
       if (!row.inB) {
@@ -232,7 +269,9 @@ export function ResourceDiffView({
             `- ${row.name}  ${onlyIn(profile.name)}`,
           ),
         );
-        rows.push(...perSideSkillRows(`${row.name}:a`, profile.name, row.aVsSource, row.aDisabledReason));
+        rows.push(
+          ...perSideSkillRows(`${row.name}:a`, profile.name, row.aVsSource, row.aDisabledReason),
+        );
         continue;
       }
       if (!row.inA) {
@@ -243,7 +282,9 @@ export function ResourceDiffView({
             `+ ${row.name}  ${onlyIn(counterpartName)}`,
           ),
         );
-        rows.push(...perSideSkillRows(`${row.name}:b`, counterpartName, row.bVsSource, row.bDisabledReason));
+        rows.push(
+          ...perSideSkillRows(`${row.name}:b`, counterpartName, row.bVsSource, row.bDisabledReason),
+        );
         continue;
       }
 
@@ -259,8 +300,12 @@ export function ResourceDiffView({
             `${unavailable ? '≠' : ' '} ${row.name}  (${unavailable ? t('resource.diff.diffUnavailable') : t('resource.diff.inSync')})`,
           ),
         );
-        rows.push(...perSideSkillRows(`${row.name}:a`, profile.name, row.aVsSource, row.aDisabledReason));
-        rows.push(...perSideSkillRows(`${row.name}:b`, counterpartName, row.bVsSource, row.bDisabledReason));
+        rows.push(
+          ...perSideSkillRows(`${row.name}:a`, profile.name, row.aVsSource, row.aDisabledReason),
+        );
+        rows.push(
+          ...perSideSkillRows(`${row.name}:b`, counterpartName, row.bVsSource, row.bDisabledReason),
+        );
         continue;
       }
 
@@ -271,8 +316,12 @@ export function ResourceDiffView({
           `≠ ${row.name}`,
         ),
       );
-      rows.push(...perSideSkillRows(`${row.name}:a`, profile.name, row.aVsSource, row.aDisabledReason));
-      rows.push(...perSideSkillRows(`${row.name}:b`, counterpartName, row.bVsSource, row.bDisabledReason));
+      rows.push(
+        ...perSideSkillRows(`${row.name}:a`, profile.name, row.aVsSource, row.aDisabledReason),
+      );
+      rows.push(
+        ...perSideSkillRows(`${row.name}:b`, counterpartName, row.bVsSource, row.bDisabledReason),
+      );
     }
     return { summary: null, rows };
   }
@@ -294,7 +343,10 @@ export function ResourceDiffView({
     return [];
   }
 
-  function renderLaunchRows(entries: LaunchConfigDiffEntry[]): { summary: string | null; rows: React.ReactElement[] } {
+  function renderLaunchRows(entries: LaunchConfigDiffEntry[]): {
+    summary: string | null;
+    rows: React.ReactElement[];
+  } {
     return {
       summary: null,
       rows: entries.map((entry) => {
@@ -311,17 +363,13 @@ export function ResourceDiffView({
         } else {
           content = `${mark} ${entry.key}: ${formatValue(entry.valueB)}  ${onlyIn(counterpartName)}${warn}`;
         }
-        return React.createElement(
-          Text,
-          { key: entry.key, color, wrap: 'truncate' },
-          content,
-        );
+        return React.createElement(Text, { key: entry.key, color, wrap: 'truncate' }, content);
       }),
     };
   }
 
   function onlyIn(name: string): string {
-    return t('resource.diff.onlyIn').replace('{profile}', name);
+    return t('resource.diff.onlyIn', { profile: name });
   }
 }
 
@@ -330,7 +378,7 @@ function skillTreeRows(
   keyPrefix: string,
   profileName: string,
   vsSource: NonNullable<SkillVsSourceRow['aVsSource']>,
-  t: (key: LocaleKey) => string,
+  t: (key: LocaleKey, params?: I18nParams) => string,
 ): React.ReactElement[] {
   const rows: React.ReactElement[] = [];
   if (vsSource.sourceMissing) {
@@ -347,16 +395,19 @@ function skillTreeRows(
     React.createElement(
       Text,
       { key: `${keyPrefix}:head`, dimColor: true, wrap: 'truncate' },
-      `  ${t('resource.diff.skillsSection').replace('{profile}', profileName).replace('{source}', vsSource.sourceDescription)}`,
+      `  ${t('resource.diff.skillsSection', { profile: profileName, source: vsSource.sourceDescription })}`,
     ),
   );
   for (const entry of vsSource.entries) {
     const mark = entry.verdict === 'changed' ? '≠' : entry.verdict === 'new-at-source' ? '+' : '-';
-    const color = entry.verdict === 'changed' ? 'yellow' : entry.verdict === 'new-at-source' ? 'green' : 'red';
+    const color =
+      entry.verdict === 'changed' ? 'yellow' : entry.verdict === 'new-at-source' ? 'green' : 'red';
     const label =
-      entry.verdict === 'changed' ? t('resource.diff.sourceMovedOn') :
-      entry.verdict === 'new-at-source' ? t('resource.diff.newAtSource') :
-      t('resource.diff.goneAtSource');
+      entry.verdict === 'changed'
+        ? t('resource.diff.sourceMovedOn')
+        : entry.verdict === 'new-at-source'
+          ? t('resource.diff.newAtSource')
+          : t('resource.diff.goneAtSource');
     rows.push(
       React.createElement(
         Text,
@@ -375,9 +426,11 @@ function disabledNote(
   t: (key: LocaleKey) => string,
 ): React.ReactElement {
   const label =
-    reason === 'link-mode' ? t('resource.diff.linkedSource') :
-    reason === 'no-source' ? t('resource.diff.noSource') :
-    t('resource.diff.diffUnavailable');
+    reason === 'link-mode'
+      ? t('resource.diff.linkedSource')
+      : reason === 'no-source'
+        ? t('resource.diff.noSource')
+        : t('resource.diff.diffUnavailable');
   return React.createElement(
     Text,
     { key, dimColor: true, wrap: 'truncate' },

@@ -10,6 +10,12 @@ import {
   getRecoveryItem,
 } from './recovery-bin';
 import {
+  applySkillTransaction,
+  stageSkillTree,
+  type FaultPoint,
+  type ReplaceOldDisposition,
+} from './skills-transaction';
+import {
   createRecordForInstall,
   discoverLocalSkillRepo,
   getSkillsDirectoryPath,
@@ -30,6 +36,7 @@ import {
   readLinkTarget,
 } from '../platform/link';
 import { CcpsError } from '../utils/errors';
+import { isNodeError } from '../utils/type-guards';
 import { type CaptureProcess } from '../platform/process';
 import { type Clock } from './types';
 
@@ -103,6 +110,12 @@ export type InstallOptions = {
    * git CLI via discoverLocalSkillRepo's default. See spec §7.1.
    */
   gitCaptureProcess?: CaptureProcess;
+  /**
+   * @internal Test-only. Simulates a process crash mid-apply (forwarded to the
+   * transaction engine), leaving sidecar residue for crash-reconciliation
+   * tests of the install replace path.
+   */
+  __fault?: FaultPoint;
 };
 
 export type InstallResult = {
@@ -163,6 +176,77 @@ export async function validateLocalSkillSource(
   }
 
   return { sourcePath, readable, skillMdPresent, suggestedName };
+}
+
+// ─── Local source catalog (install wizard step 1, spec §7.2) ────────────
+
+/**
+ * A local Skill source discovered on disk, ready to pick in the install
+ * wizard. `LocalSkillSourceInfo` carries the validity marks (spec §7.2 step 1:
+ * "invalid sources (no SKILL.md) are marked at this step").
+ */
+export type CatalogedLocalSkillSource = LocalSkillSourceInfo & {
+  /** Profile whose skills directory holds this source (display label). */
+  originProfile: string;
+};
+
+/**
+ * Catalog the local Skill sources the wizard can offer for picking (spec §7.2
+ * step 1). The discovery layer (§7.4) catalogs remote sources only, so the
+ * honest local catalog is the Skills already installed in the *other*
+ * Profiles under this app home — real on-disk directories a Copy install can
+ * snapshot (the "equip another Profile" semantic). The real user ~/.claude is
+ * never scanned. The target Profile's own Skills are excluded (reinstalling a
+ * Skill onto itself is pointless), and entries are validated so sources
+ * without a SKILL.md arrive pre-marked. Listing is best-effort: an unreadable
+ * Profile or skills directory is skipped, not fatal.
+ */
+export async function listLocalSkillSources(options: {
+  appHomePath: string;
+  /** Install target Profile — its own Skills are excluded from the list. */
+  excludeProfileName?: string;
+}): Promise<CatalogedLocalSkillSource[]> {
+  const { profilesPath } = getAppHomePaths(options.appHomePath);
+  let profileDirs: fs.Dirent[];
+  try {
+    profileDirs = await fs.readdir(profilesPath, { withFileTypes: true });
+  } catch (error) {
+    if (isNodeError(error) && error.code === 'ENOENT') return [];
+    throw error;
+  }
+
+  const sources: CatalogedLocalSkillSource[] = [];
+  for (const profileDir of profileDirs) {
+    if (!profileDir.isDirectory() || profileDir.name === options.excludeProfileName) {
+      continue;
+    }
+    const skillsDir = resolveInside(
+      path.join(profilesPath, profileDir.name),
+      'claude-home',
+      'skills',
+    );
+    let entries: fs.Dirent[];
+    try {
+      entries = await fs.readdir(skillsDir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      // Skip transaction residue (.ccps-tmp-*/.ccps-old-*/.ccps-tx-*.json).
+      if (entry.name.startsWith('.ccps-')) continue;
+      const info = await validateLocalSkillSource(path.join(skillsDir, entry.name)).catch(
+        () => undefined,
+      );
+      if (info) sources.push({ ...info, originProfile: profileDir.name });
+    }
+  }
+
+  sources.sort(
+    (a, b) =>
+      a.originProfile.localeCompare(b.originProfile) ||
+      a.suggestedName.localeCompare(b.suggestedName),
+  );
+  return sources;
 }
 
 // ─── Skill directory name validation ────────────────────────────────────
@@ -362,51 +446,72 @@ export async function installLocalSkill(options: InstallOptions): Promise<Instal
     );
   }
 
-  // Collision handling at apply time.
-  if (await fs.pathExists(targetPath)) {
-    if (options.collisionResolution !== 'replace') {
-      // 'rename' resolution means the caller already picked a non-colliding
-      // name; reaching here means the name still collides — refuse.
-      throw new CcpsError(
-        'SKILL_INSTALL_COLLISION',
-        `A Skill named "${options.name}" already exists.`,
-        {
-          guidance: 'Choose rename or replace on the confirm step to resolve the collision.',
-        },
-      );
-    }
-    await binExistingSkillEntry({
-      appHomePath: options.appHomePath,
-      profileName: options.profileName,
-      profileRootPath: options.profileRootPath,
-      name: options.name,
-      targetPath,
-      clock,
-    });
+  // Collision handling at apply time: refuse unless the caller chose replace.
+  // The replace itself is the transaction engine's rename-swap below (spec
+  // §7.1) — crash-safe, with sidecar residue the startup sweep reconciles.
+  if ((await fs.pathExists(targetPath)) && options.collisionResolution !== 'replace') {
+    // 'rename' resolution means the caller already picked a non-colliding
+    // name; reaching here means the name still collides — refuse.
+    throw new CcpsError(
+      'SKILL_INSTALL_COLLISION',
+      `A Skill named "${options.name}" already exists.`,
+      {
+        guidance: 'Choose rename or replace on the confirm step to resolve the collision.',
+      },
+    );
   }
+
+  // Replaced entries are always binned (spec §7.2: the old copy goes to the
+  // Recovery Bin). The disposition is passed unconditionally so that even a
+  // fresh install racing a late-appearing entry bins it instead of deleting.
+  const replaceOld: ReplaceOldDisposition = {
+    kind: 'bin',
+    origin: 'remove',
+    appHomePath: options.appHomePath,
+    profileName: options.profileName,
+  };
+  const source = await buildSkillSource(options);
 
   if (options.mode === 'copy') {
-    await installCopy(options, targetPath);
-  } else {
-    await installLink(options, targetPath);
+    // Stage outside the Profile (same partition), then rename-swap apply.
+    const { stagedPath } = await stageSkillTree({
+      appHomePath: options.appHomePath,
+      localSourcePath: options.sourcePath,
+    });
+    try {
+      const result = await applySkillTransaction({
+        profileRootPath: options.profileRootPath,
+        profileName: options.profileName,
+        name: options.name,
+        mode: 'copy',
+        stagedPath,
+        source,
+        replaceOld,
+        clock,
+        __fault: options.__fault,
+      });
+      return { name: options.name, mode: options.mode, targetPath, record: result.record };
+    } finally {
+      // A pre-swap failure leaves the staged tree behind; reap it (a no-op
+      // once the swap consumed it). Stale staging is also swept on next stage.
+      await fs.remove(stagedPath).catch(() => {});
+    }
   }
 
-  // Compute the provenance record against the installed tree (hash follows
-  // links for link-mode, so the source fingerprint is recorded).
-  const source = await buildSkillSource(options);
-  const record = await createRecordForInstall({
-    skillDirPath: targetPath,
-    mode: options.mode,
+  // Link mode: the swap is one atomic symlink creation; the old entry still
+  // renames to .ccps-old inside the transaction, so replace is crash-safe.
+  const result = await applySkillTransaction({
+    profileRootPath: options.profileRootPath,
+    profileName: options.profileName,
+    name: options.name,
+    mode: 'link',
+    linkTargetPath: resolveFilesystemPath(options.sourcePath),
     source,
-    linkTargetPath: options.mode === 'link' ? resolveFilesystemPath(options.sourcePath) : undefined,
+    replaceOld,
     clock,
+    __fault: options.__fault,
   });
-
-  const manifest = await loadSkillsProvenance(options.profileRootPath);
-  manifest.skills[options.name] = record;
-  await saveSkillsProvenance(options.profileRootPath, manifest);
-
-  return { name: options.name, mode: options.mode, targetPath, record };
+  return { name: options.name, mode: options.mode, targetPath, record: result.record };
 }
 
 async function buildSkillSource(options: InstallOptions): Promise<SkillSource> {
@@ -427,39 +532,11 @@ async function buildSkillSource(options: InstallOptions): Promise<SkillSource> {
   return source;
 }
 
-async function installCopy(options: InstallOptions, targetPath: string): Promise<void> {
-  // Rename-swap: stage the new tree under the Profile root (same filesystem as
-  // the target, so the rename is atomic), then rename into place.
-  const stageId = randomBytes(6).toString('hex');
-  const stagePath = resolveInside(options.profileRootPath, `.ccps-skill-stage-${stageId}`);
-  try {
-    // fs.copy follows a symlinked source root by default, which is the desired
-    // snapshot semantic — the copy is content, not a link.
-    await fs.copy(options.sourcePath, stagePath, { overwrite: false, errorOnExist: true });
-    await fs.rename(stagePath, targetPath);
-  } catch (error) {
-    await fs.remove(stagePath).catch(() => {});
-    if (isNodeError(error) && error.code === 'ENOTEMPTY') {
-      throw new CcpsError(
-        'SKILL_INSTALL_COLLISION',
-        `A Skill named "${options.name}" already exists.`,
-        { guidance: 'Resolve the collision on the confirm step.' },
-      );
-    }
-    throw error;
-  }
-}
-
-async function installLink(options: InstallOptions, targetPath: string): Promise<void> {
-  const absoluteTarget = resolveFilesystemPath(options.sourcePath);
-  // createSkillLink enforces absolute target and creates the link atomically.
-  await createSkillLink({ targetPath: absoluteTarget, linkPath: targetPath });
-}
-
 // Bin an existing Skill entry (link or copy) as a Recovery Bin item and remove
-// it from the Profile, so a rename-swap install can land on an empty target.
-// Shared by the local install (§7.2) and the remote install (§7.3) collision
-// path. The caller writes the new provenance record after the swap.
+// it from the Profile, so the caller can land a new entry on an empty target.
+// Used by the bulk-remove flow for Copied Skills; the install replace paths
+// instead bin inside the §7.1 transaction engine (crash-safe swap with sidecar
+// reconciliation). The caller writes the new provenance record after the swap.
 export async function binExistingSkillEntry(options: {
   appHomePath: string;
   profileName: string;
@@ -587,8 +664,9 @@ export async function copySkillToProfile(
   // Snapshot the tree — dereference so a linked source lands as a real
   // directory in the target (the "equip a new Profile" semantic). Stage under
   // the target Profile root (same filesystem as the target, so the rename is
-  // atomic) then rename into place, mirroring installCopy's rename-swap so a
-  // mid-copy failure never leaves a partial `skills/<name>` tree.
+  // atomic) then rename into place, so a mid-copy failure never leaves a
+  // partial `skills/<name>` tree. (copySkillToProfile refuses collisions up
+  // front, so it needs no replace swap and stays outside the §7.1 engine.)
   const stageId = randomBytes(6).toString('hex');
   const stagePath = resolveInside(targetRoot.profileRootPath, `.ccps-skill-copy-${stageId}`);
   try {
@@ -795,10 +873,4 @@ export async function restoreLinkedSkillItem(
   await fs.remove(item.itemDirPath);
 
   return { restoredName: restoreName, consumed: true };
-}
-
-// ─── Helpers ────────────────────────────────────────────────────────────
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error;
 }

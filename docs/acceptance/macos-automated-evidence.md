@@ -5,6 +5,10 @@
 **Date:** 2026-08-02
 **ccps branch:** ticket/79-performance-acceptance
 
+> **Node version deviation:** this evidence was captured on Node v26.0.0, not
+> the spec §15.4 acceptance matrix (Node 22/24 LTS). Node 22/24 are covered by
+> the CI gates; the numbers below are indicative, not a matrix substitute.
+
 ---
 
 ## Automated Test Suite
@@ -22,7 +26,9 @@ npm run check → lint ✓ | 1263 tests ✓ | build ✓
 | Search filtering per keystroke | ≤ 100 ms | 0.02 ms | ✓ |
 | Content search | ≤ 2000 ms (loading rule) | 5.31 ms | ✓ |
 
-Full results: [`baseline-perf.json`](baseline-perf.json)
+Full results: `baseline-perf.json` — local-only artifact (gitignored via
+`docs/acceptance/*-perf.json`); regenerate with
+`npm run perf:harness -- --tier baseline --out docs/acceptance/baseline-perf.json`.
 
 ## Performance Thresholds — 3× Tier (60×150)
 
@@ -33,7 +39,9 @@ Full results: [`baseline-perf.json`](baseline-perf.json)
 | Search filtering | ≤ 100 ms | 0.04 ms | ✓ |
 | Content search | ≤ 2000 ms (loading rule) | 5.83 ms | ✓ |
 
-Full results: [`3x-perf.json`](3x-perf.json)
+Full results: `3x-perf.json` — local-only artifact (gitignored via
+`docs/acceptance/*-perf.json`); regenerate with
+`npm run perf:harness -- --tier 3x --out docs/acceptance/3x-perf.json`.
 
 ## Fixture Generation
 

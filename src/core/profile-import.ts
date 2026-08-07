@@ -30,6 +30,7 @@ import {
 } from '../schemas/profile-bundle';
 import type { McpAddOptions } from '../schemas/mcp';
 import { CcpsError } from '../utils/errors';
+import { isRecord } from '../utils/type-guards';
 
 /**
  * Profile import — creates a new Profile from a portable `.tar.gz` bundle
@@ -465,8 +466,4 @@ function errorMessage(error: unknown): string {
     return error.message;
   }
   return 'unknown error';
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

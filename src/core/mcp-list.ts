@@ -16,6 +16,7 @@ import fs from 'fs-extra';
 import { join } from 'node:path';
 
 import { getProfileTemplatePaths } from './profile-template';
+import { isRecord } from '../utils/type-guards';
 
 export type McpServerState = {
   name: string;
@@ -156,8 +157,4 @@ export function parseFailedMcpNames(
   }
 
   return failed;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

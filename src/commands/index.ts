@@ -3,6 +3,7 @@ import fs from 'fs-extra';
 import { createInterface } from 'node:readline/promises';
 
 import { getAppHomePaths, loadAppConfig } from '../core/app-config';
+import { listBackups, restoreProfileFromBackup } from '../core/backup';
 import { buildLaunchPlan, formatLaunchDryRun, launchProfile } from '../core/launcher';
 import { backupProfile, createProfile, initProfiles, type Clock } from '../core/profile';
 import { ensureProfileCreator } from '../core/profile-creator';
@@ -38,8 +39,14 @@ import {
   updatePlugin,
 } from '../core/plugins';
 import {
-  listRecoveryBinItems,
+  changeRetentionSetting,
+  emptyRecoveryBin,
+  formatBytes,
+  getRecoveryItem,
+  listRecoveryBinWithSizes,
+  permanentlyDeleteItem,
   restoreRecoveryItem,
+  runStartupSweep,
   type CollisionResolution,
 } from '../core/recovery-bin';
 import { validateProfile, type ValidationFinding } from '../core/validator';
@@ -59,6 +66,7 @@ import {
 } from '../schemas/profile';
 import { runTerminalTui, type RunTerminalTuiOptions } from '../tui/terminal';
 import { CcpsError } from '../utils/errors';
+import { isNodeError } from '../utils/type-guards';
 
 export type CommandRuntime = {
   writeOut: (value: string) => void;
@@ -75,6 +83,18 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
     ...defaultRuntime,
     ...options,
   };
+
+  // Spec §9.4: lazy Recovery Bin sweep on every ccps startup (any command),
+  // which also reconciles §7.1 transaction crash states. Runs once per
+  // invocation before the command action, fully failure-isolated so a sweep
+  // problem never blocks or breaks the command. When a previous sweep deleted
+  // something, its one-line summary (count + space reclaimed) prints here.
+  program.hook('preAction', async () => {
+    const report = await runStartupSweep(getAppHomePaths().appHomePath, runtime.clock);
+    if (report.pendingSummary !== null) {
+      runtime.writeOut(`${report.pendingSummary}\n`);
+    }
+  });
 
   program
     .command('init')
@@ -213,7 +233,7 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
       }
     });
 
-  program
+  const backup = program
     .command('backup <name>')
     .description('Copy a profile to a timestamped backup directory.')
     .action(async (name: string) => {
@@ -221,6 +241,52 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
 
       runtime.writeOut(`Backup created: ${result.backupPath}\n`);
       runtime.writeOut(`Source profile unchanged: ${result.sourcePath}\n`);
+    });
+
+  backup
+    .command('list')
+    .description('List profile backups with per-entry sizes and a total.')
+    .action(async () => {
+      const appHomePath = getAppHomePaths().appHomePath;
+      const list = await listBackups(appHomePath);
+
+      if (list.entries.length === 0) {
+        runtime.writeOut('No backups found.\n');
+        return;
+      }
+
+      runtime.writeOut(
+        `Backups: ${list.entries.length} backup(s), ${formatBytes(list.totalSizeBytes)} total\n`,
+      );
+      for (const entry of list.entries) {
+        runtime.writeOut(`  ${entry.id}\t${formatBytes(entry.sizeBytes)}\n`);
+      }
+    });
+
+  backup
+    .command('restore <backup-id>')
+    .description(
+      'Restore a profile from a backup. Auto-backs-up current state first and never consumes the backup.',
+    )
+    .option(
+      '--new-name <name>',
+      'Restore as a new profile name instead of replacing the recorded profile.',
+    )
+    .action(async (backupId: string, cmdOptions: { newName?: string }) => {
+      const appHomePath = getAppHomePaths().appHomePath;
+      const result = await restoreProfileFromBackup({
+        appHomePath,
+        backupId,
+        newName: cmdOptions.newName,
+        clock: runtime.clock,
+      });
+
+      runtime.writeOut(`Restored profile "${result.restoredProfile}" from backup ${backupId}.\n`);
+      if (result.preRestoreBackupPath !== null) {
+        runtime.writeOut(`Previous state backed up: ${result.preRestoreBackupPath}\n`);
+      }
+      runtime.writeOut(`Backup kept: ${result.backupPath}\n`);
+      runtime.writeOut(`Next: ccps launch ${result.restoredProfile} --dry-run\n`);
     });
 
   program
@@ -523,13 +589,19 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
 
   plugin
     .command('list <profile>')
-    .description('List installed plugins with enable state, or marketplace-available entries with --available.')
-    .option('--available', 'List plugins available from the profile\'s configured marketplaces.')
+    .description(
+      'List installed plugins with enable state, or marketplace-available entries with --available.',
+    )
+    .option('--available', "List plugins available from the profile's configured marketplaces.")
     .action(async (profile: string, options: { available?: boolean }) => {
       const appHomePath = getAppHomePaths().appHomePath;
 
       if (options.available) {
-        const result = await listAvailablePlugins({ appHomePath, profileName: profile, captureProcess: runtime.captureProcess });
+        const result = await listAvailablePlugins({
+          appHomePath,
+          profileName: profile,
+          captureProcess: runtime.captureProcess,
+        });
         if (result.available.length === 0) {
           runtime.writeOut(`No plugins available for profile "${profile}".\n`);
           return;
@@ -541,7 +613,11 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
         return;
       }
 
-      const plugins = await listPlugins({ appHomePath, profileName: profile, captureProcess: runtime.captureProcess });
+      const plugins = await listPlugins({
+        appHomePath,
+        profileName: profile,
+        captureProcess: runtime.captureProcess,
+      });
       if (plugins.length === 0) {
         runtime.writeOut(`No plugins installed for profile "${profile}".\n`);
         return;
@@ -558,7 +634,12 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
     .description('Show the component inventory for an installed plugin.')
     .action(async (profile: string, selector: string) => {
       const appHomePath = getAppHomePaths().appHomePath;
-      const details = await getPluginDetails({ appHomePath, profileName: profile, selector, captureProcess: runtime.captureProcess });
+      const details = await getPluginDetails({
+        appHomePath,
+        profileName: profile,
+        selector,
+        captureProcess: runtime.captureProcess,
+      });
       runtime.writeOut(details.raw);
       if (!details.raw.endsWith('\n')) {
         runtime.writeOut('\n');
@@ -575,13 +656,23 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
       for (const pair of options.config) {
         const eq = pair.indexOf('=');
         if (eq <= 0) {
-          throw new CcpsError('PLUGIN_INVALID_CONFIG', `Plugin config must be key=value: "${pair}".`, {
-            guidance: 'Use --config key=value, for example: --config model=fast',
-          });
+          throw new CcpsError(
+            'PLUGIN_INVALID_CONFIG',
+            `Plugin config must be key=value: "${pair}".`,
+            {
+              guidance: 'Use --config key=value, for example: --config model=fast',
+            },
+          );
         }
         config[pair.slice(0, eq)] = pair.slice(eq + 1);
       }
-      await installPlugin({ appHomePath, profileName: profile, selector, config, captureProcess: runtime.captureProcess });
+      await installPlugin({
+        appHomePath,
+        profileName: profile,
+        selector,
+        config,
+        captureProcess: runtime.captureProcess,
+      });
       runtime.writeOut(`Installed ${selector} for profile "${profile}".\n`);
     });
 
@@ -590,7 +681,12 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
     .description('Enable an installed plugin.')
     .action(async (profile: string, selector: string) => {
       const appHomePath = getAppHomePaths().appHomePath;
-      await enablePlugin({ appHomePath, profileName: profile, selector, captureProcess: runtime.captureProcess });
+      await enablePlugin({
+        appHomePath,
+        profileName: profile,
+        selector,
+        captureProcess: runtime.captureProcess,
+      });
       runtime.writeOut(`Enabled ${selector} for profile "${profile}".\n`);
     });
 
@@ -599,7 +695,12 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
     .description('Disable an installed plugin.')
     .action(async (profile: string, selector: string) => {
       const appHomePath = getAppHomePaths().appHomePath;
-      await disablePlugin({ appHomePath, profileName: profile, selector, captureProcess: runtime.captureProcess });
+      await disablePlugin({
+        appHomePath,
+        profileName: profile,
+        selector,
+        captureProcess: runtime.captureProcess,
+      });
       runtime.writeOut(`Disabled ${selector} for profile "${profile}".\n`);
     });
 
@@ -608,7 +709,12 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
     .description('Update an installed plugin; prints a restart notice when one is required.')
     .action(async (profile: string, selector: string) => {
       const appHomePath = getAppHomePaths().appHomePath;
-      const result = await updatePlugin({ appHomePath, profileName: profile, selector, captureProcess: runtime.captureProcess });
+      const result = await updatePlugin({
+        appHomePath,
+        profileName: profile,
+        selector,
+        captureProcess: runtime.captureProcess,
+      });
       runtime.writeOut(`Updated ${selector} for profile "${profile}".\n`);
       if (result.restartRequired) {
         runtime.writeOut('Restart to apply changes.\n');
@@ -618,7 +724,12 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
   plugin
     .command('uninstall <profile> <plugin>')
     .description('Uninstall a plugin and create a Recovery Bin item that restores it.')
-    .option('--config-key <name>', 'Record a userConfig key name on the Recovery item (repeatable).', collectOption, [])
+    .option(
+      '--config-key <name>',
+      'Record a userConfig key name on the Recovery item (repeatable).',
+      collectOption,
+      [],
+    )
     .action(async (profile: string, selector: string, options: { configKey: string[] }) => {
       const appHomePath = getAppHomePaths().appHomePath;
       const result = await uninstallPlugin({
@@ -656,7 +767,7 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
         const source =
           entry.sourceKind === 'directory' && entry.sourcePath
             ? entry.sourcePath
-            : entry.sourceUrl ?? entry.sourceKind;
+            : (entry.sourceUrl ?? entry.sourceKind);
         runtime.writeOut(`  ${entry.name}\t${source}\n`);
       }
     });
@@ -666,7 +777,12 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
     .description('Add a marketplace: owner/repo, https://…, or a local directory path.')
     .action(async (profile: string, source: string) => {
       const appHomePath = getAppHomePaths().appHomePath;
-      await addMarketplace({ appHomePath, profileName: profile, source, captureProcess: runtime.captureProcess });
+      await addMarketplace({
+        appHomePath,
+        profileName: profile,
+        source,
+        captureProcess: runtime.captureProcess,
+      });
       runtime.writeOut(`Added marketplace from "${source}" for profile "${profile}".\n`);
     });
 
@@ -675,7 +791,12 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
     .description('Refresh a configured marketplace.')
     .action(async (profile: string, name: string) => {
       const appHomePath = getAppHomePaths().appHomePath;
-      await updateMarketplace({ appHomePath, profileName: profile, name, captureProcess: runtime.captureProcess });
+      await updateMarketplace({
+        appHomePath,
+        profileName: profile,
+        name,
+        captureProcess: runtime.captureProcess,
+      });
       runtime.writeOut(`Updated marketplace "${name}" for profile "${profile}".\n`);
     });
 
@@ -684,7 +805,12 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
     .description('Remove a configured marketplace.')
     .action(async (profile: string, name: string) => {
       const appHomePath = getAppHomePaths().appHomePath;
-      await removeMarketplace({ appHomePath, profileName: profile, name, captureProcess: runtime.captureProcess });
+      await removeMarketplace({
+        appHomePath,
+        profileName: profile,
+        name,
+        captureProcess: runtime.captureProcess,
+      });
       runtime.writeOut(`Removed marketplace "${name}" for profile "${profile}".\n`);
     });
 
@@ -692,23 +818,106 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
 
   bin
     .command('list')
-    .description('List Recovery Bin items.')
+    .description('List Recovery Bin items with per-entry sizes and a total.')
     .action(async () => {
       const appHomePath = getAppHomePaths().appHomePath;
-      const items = await listRecoveryBinItems(appHomePath);
-      if (items.length === 0) {
+      const list = await listRecoveryBinWithSizes(appHomePath);
+
+      if (list.entries.length === 0) {
         runtime.writeOut('Recovery Bin is empty.\n');
         return;
       }
-      runtime.writeOut('Recovery Bin items:\n');
-      for (const item of items) {
-        runtime.writeOut(`  ${item.id}\t${item.profile}\t${item.kind}\n`);
+
+      runtime.writeOut(
+        `Recovery Bin: ${list.entries.length} item(s), ${formatBytes(list.totalSizeBytes)} total\n`,
+      );
+      for (const entry of list.entries) {
+        runtime.writeOut(
+          `  ${entry.item.id}\t${entry.item.profile}\t${entry.item.kind}\t${formatBytes(entry.sizeBytes)}\n`,
+        );
       }
     });
 
   bin
+    .command('remove <item-id>')
+    .description('Permanently delete one Recovery Bin item; this cannot be undone.')
+    .option('--yes', 'Skip the confirmation prompt.')
+    .action(async (itemId: string, cmdOptions: { yes?: boolean }) => {
+      const appHomePath = getAppHomePaths().appHomePath;
+      const item = await getRecoveryItem(itemId, appHomePath);
+
+      if (!cmdOptions.yes) {
+        const answer = await runtime.readInput(
+          `Permanently delete Recovery Bin item "${item.id}" (profile "${item.profile}", ${item.kind})? This is permanent and unrecoverable. [y/N]: `,
+        );
+        if (!answer.trim().toLowerCase().startsWith('y')) {
+          runtime.writeOut('Aborted.\n');
+          return;
+        }
+      }
+
+      await permanentlyDeleteItem(itemId, appHomePath);
+      runtime.writeOut(`Permanently deleted Recovery Bin item "${item.id}".\n`);
+    });
+
+  bin
+    .command('empty')
+    .description('Permanently delete ALL Recovery Bin items; this cannot be undone.')
+    .option('--yes', 'Skip the confirmation prompt.')
+    .action(async (cmdOptions: { yes?: boolean }) => {
+      const appHomePath = getAppHomePaths().appHomePath;
+      const list = await listRecoveryBinWithSizes(appHomePath);
+
+      if (list.entries.length === 0) {
+        runtime.writeOut('Recovery Bin is already empty.\n');
+        return;
+      }
+
+      if (!cmdOptions.yes) {
+        const answer = await runtime.readInput(
+          `Permanently delete ALL ${list.entries.length} Recovery Bin item(s) (${formatBytes(list.totalSizeBytes)} total)? This is permanent and unrecoverable. [y/N]: `,
+        );
+        if (!answer.trim().toLowerCase().startsWith('y')) {
+          runtime.writeOut('Aborted.\n');
+          return;
+        }
+      }
+
+      await emptyRecoveryBin(appHomePath);
+      runtime.writeOut(`Permanently deleted ${list.entries.length} Recovery Bin item(s).\n`);
+    });
+
+  bin
+    .command('retention [days]')
+    .description(
+      'Show or set Recovery Bin retention (7, 30, 90 days, or never). A change reports how many existing items would expire under it.',
+    )
+    .action(async (days: string | undefined) => {
+      const appHomePath = getAppHomePaths().appHomePath;
+
+      if (days === undefined) {
+        const config = await loadAppConfig(appHomePath);
+        const current = config.recovery.retentionDays;
+        const label = current === null ? 'never (items never expire)' : `${current} days`;
+        runtime.writeOut(`Recovery Bin retention: ${label}\n`);
+        runtime.writeOut('Change: ccps bin retention 7|30|90|never\n');
+        return;
+      }
+
+      const retentionDays = parseRetentionDays(days);
+      const impact = await changeRetentionSetting(retentionDays, appHomePath, runtime.clock);
+      const label = retentionDays === null ? 'never' : `${retentionDays} days`;
+      runtime.writeOut(`Recovery Bin retention set to ${label}.\n`);
+      runtime.writeOut(
+        `${impact.wouldExpireCount} existing item(s) would expire under this setting.\n`,
+      );
+    });
+
+  bin
     .command('restore <item-id>')
-    .description('Restore a Recovery Bin item; consumes it on success. Plugin items reinstall from their marketplace.')
+    .description(
+      'Restore a Recovery Bin item; consumes it on success. Plugin items reinstall from their marketplace.',
+    )
     .option(
       '--resolve <mode>',
       'Collision resolution for file-tree/fragment items: refuse, restore-as-new-name, delete-and-restore.',
@@ -727,7 +936,11 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
         newName: options.newName,
         pluginRestore: async (item) => {
           const coords = item.coordinates as PluginCoordinates;
-          const outcome = await restorePluginItem({ item, appHomePath, captureProcess: runtime.captureProcess });
+          const outcome = await restorePluginItem({
+            item,
+            appHomePath,
+            captureProcess: runtime.captureProcess,
+          });
           runtime.writeOut(
             `Restored ${coords.plugin}@${coords.marketplace} version ${outcome.installedVersion} (marketplace current).\n`,
           );
@@ -735,9 +948,7 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
             runtime.writeOut('Re-enabled plugin.\n');
           }
           if (outcome.userConfigKeys.length > 0) {
-            runtime.writeOut(
-              `Re-enter these config keys: ${outcome.userConfigKeys.join(', ')}\n`,
-            );
+            runtime.writeOut(`Re-enter these config keys: ${outcome.userConfigKeys.join(', ')}\n`);
           }
         },
       });
@@ -799,6 +1010,20 @@ function parseCollisionResolution(value: string | undefined): CollisionResolutio
 
   throw new CcpsError('INVALID_COLLISION_RESOLUTION', 'Unknown collision resolution mode.', {
     guidance: 'Use one of: refuse, restore-as-new-name, delete-and-restore.',
+  });
+}
+
+function parseRetentionDays(value: string): 7 | 30 | 90 | null {
+  if (value === '7' || value === '30' || value === '90') {
+    return Number(value) as 7 | 30 | 90;
+  }
+
+  if (value.toLowerCase() === 'never') {
+    return null;
+  }
+
+  throw new CcpsError('INVALID_RETENTION_DAYS', 'Recovery Bin retention is not supported.', {
+    guidance: 'Use one of: 7, 30, 90, never.',
   });
 }
 
@@ -942,13 +1167,7 @@ function formatFindings(findings: ValidationFinding[]): string {
   return `${lines.join('\n')}\n`;
 }
 
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error;
-}
-
-function countStrippedKeys(
-  entries: { keys: string[] }[],
-): number {
+function countStrippedKeys(entries: { keys: string[] }[]): number {
   return entries.reduce((sum, entry) => sum + entry.keys.length, 0);
 }
 
@@ -957,7 +1176,9 @@ function formatImportPreview(preview: ImportPreview): string {
   const r = m.resources;
   const lines: string[] = [];
 
-  lines.push(`Bundle: ccps profile-bundle (exporter ccps ${m.exporterVersion}, exported ${m.exportedAt})`);
+  lines.push(
+    `Bundle: ccps profile-bundle (exporter ccps ${m.exporterVersion}, exported ${m.exportedAt})`,
+  );
   lines.push(`Source profile: ${m.profileName}`);
   lines.push(`Import as: ${preview.targetName}${preview.collision ? ' (NAME EXISTS)' : ''}`);
   lines.push(

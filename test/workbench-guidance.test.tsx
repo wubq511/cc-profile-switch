@@ -11,7 +11,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { WorkbenchApp, resetWelcomeSessionForTests } from '../src/tui/workbench/app';
 import { MainPane } from '../src/tui/workbench/main-pane';
 import { initialResourceNavState } from '../src/tui/workbench/resource-nav';
-import { I18nProvider } from '../src/tui/workbench/i18n/react';
 import { KeymapOverlay } from '../src/tui/workbench/keymap';
 import { createAppConfig } from '../src/core/app-config';
 import {
@@ -34,6 +33,7 @@ import {
 } from '../src/tui/workbench/guidance';
 import type { WorkbenchProfile, WorkbenchData } from '../src/tui/workbench/profile-data';
 import type { McpServerState } from '../src/core/mcp-list';
+import { flatten, renderWithLocale, stripAnsi } from './render-helpers';
 
 class FakeTtyStdout extends Writable {
   public readonly isTTY = true;
@@ -122,20 +122,6 @@ const sampleData: WorkbenchData = {
   customTemplates: [],
 };
 
-function stripAnsi(text: string): string {
-  // eslint-disable-next-line no-control-regex
-  return text.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '').replace(/\r/g, '');
-}
-
-/** Flatten wrapped render output (borders included) for substring assertions. */
-function flatten(text: string): string {
-  return stripAnsi(text)
-    .replace(/[│╭╰╮╯─┌┐└┘┃┏┓┗┛]/g, ' ')
-    .replace(/\n/g, ' ')
-    .replace(/[ ]+/g, ' ')
-    .trim();
-}
-
 describe('welcome card', () => {
   it('shows once per session and explains Profiles plus the three keys', async () => {
     resetWelcomeSessionForTests();
@@ -181,15 +167,10 @@ describe('welcome card', () => {
 
 describe('? help sheet', () => {
   it('includes the concepts section (concepts, no filesystem paths)', async () => {
-    const stdout = new FakeTtyStdout();
-    const instance = await renderTree(
-      React.createElement(
-        I18nProvider,
-        { initialLocale: 'en' },
-        React.createElement(KeymapOverlay, { visible: true }),
-      ),
-      stdout,
+    const { instance, stdout } = renderWithLocale(
+      React.createElement(KeymapOverlay, { visible: true }),
     );
+    await instance.waitUntilRenderFlush();
     const output = stripAnsi(stdout.output);
     expect(output).toContain('Keyboard Shortcuts');
     expect(output).toContain('Concepts');
@@ -207,19 +188,14 @@ describe('? help sheet', () => {
 
 describe('error panel', () => {
   it('renders a boxed panel with numbered recovery steps', async () => {
-    const stdout = new FakeTtyStdout();
-    const instance = await renderTree(
-      React.createElement(
-        I18nProvider,
-        { initialLocale: 'en' },
-        React.createElement(ErrorPanel, {
-          message: 'Profile removal confirmation did not match.',
-          code: 'PROFILE_DELETE_CONFIRMATION_MISMATCH',
-          guidance: 'Type the exact profile name to remove it: coding',
-        }),
-      ),
-      stdout,
+    const { instance, stdout } = renderWithLocale(
+      React.createElement(ErrorPanel, {
+        message: 'Profile removal confirmation did not match.',
+        code: 'PROFILE_DELETE_CONFIRMATION_MISMATCH',
+        guidance: 'Type the exact profile name to remove it: coding',
+      }),
     );
+    await instance.waitUntilRenderFlush();
     const output = stripAnsi(stdout.output);
     expect(output).toContain('PROFILE_DELETE_CONFIRMATION_MISMATCH');
     expect(output).toContain('1.');
@@ -229,19 +205,14 @@ describe('error panel', () => {
   });
 
   it('numbers each recovery step when guidance has several sentences', async () => {
-    const stdout = new FakeTtyStdout();
-    const instance = await renderTree(
-      React.createElement(
-        I18nProvider,
-        { initialLocale: 'en' },
-        React.createElement(ErrorPanel, {
-          message: 'Launch blocked.',
-          code: 'LAUNCH_BLOCKED',
-          guidance: 'Run ccps validate coding. Fix every error finding. Then retry the launch.',
-        }),
-      ),
-      stdout,
+    const { instance, stdout } = renderWithLocale(
+      React.createElement(ErrorPanel, {
+        message: 'Launch blocked.',
+        code: 'LAUNCH_BLOCKED',
+        guidance: 'Run ccps validate coding. Fix every error finding. Then retry the launch.',
+      }),
     );
+    await instance.waitUntilRenderFlush();
     const flat = flatten(stripAnsi(stdout.output));
     expect(flat).toContain('1.');
     expect(flat).toContain('2.');
@@ -254,15 +225,10 @@ describe('error panel', () => {
 
 describe('destructive panel', () => {
   it('renders the graduated options [y]/[u]/[esc] with a consequence line', async () => {
-    const stdout = new FakeTtyStdout();
-    const instance = await renderTree(
-      React.createElement(
-        I18nProvider,
-        { initialLocale: 'en' },
-        React.createElement(RemoveProfilePanel, { profile: codingProfile }),
-      ),
-      stdout,
+    const { instance, stdout } = renderWithLocale(
+      React.createElement(RemoveProfilePanel, { profile: codingProfile }),
     );
+    await instance.waitUntilRenderFlush();
     const output = stripAnsi(stdout.output);
     expect(output).toContain('Remove Profile "coding"?');
     expect(output).toContain('[y] back up first, then remove');
@@ -276,18 +242,13 @@ describe('destructive panel', () => {
 
 describe('save-template panel', () => {
   it('renders the stripping summary with a single light [y]/[esc] confirm (S102)', async () => {
-    const stdout = new FakeTtyStdout();
-    const instance = await renderTree(
-      React.createElement(
-        I18nProvider,
-        { initialLocale: 'en' },
-        React.createElement(SaveTemplatePanel, {
-          templateName: 'team-base',
-          strippedCount: 3,
-        }),
-      ),
-      stdout,
+    const { instance, stdout } = renderWithLocale(
+      React.createElement(SaveTemplatePanel, {
+        templateName: 'team-base',
+        strippedCount: 3,
+      }),
     );
+    await instance.waitUntilRenderFlush();
     const output = stripAnsi(stdout.output);
     expect(output).toContain('Save template "team-base"?');
     expect(output).toContain('3 secret fields stripped, Auto Memory not included');
@@ -298,18 +259,14 @@ describe('save-template panel', () => {
   });
 
   it('renders the stripping summary in Chinese', async () => {
-    const stdout = new FakeTtyStdout();
-    const instance = await renderTree(
-      React.createElement(
-        I18nProvider,
-        { initialLocale: 'zh' },
-        React.createElement(SaveTemplatePanel, {
-          templateName: 'team-base',
-          strippedCount: 2,
-        }),
-      ),
-      stdout,
+    const { instance, stdout } = renderWithLocale(
+      React.createElement(SaveTemplatePanel, {
+        templateName: 'team-base',
+        strippedCount: 2,
+      }),
+      'zh',
     );
+    await instance.waitUntilRenderFlush();
     const output = stripAnsi(stdout.output);
     expect(output).toContain('已剔除 2 个机密字段，不包含 Auto Memory');
     instance.unmount();
@@ -352,15 +309,10 @@ describe('hint retirement', () => {
 
 describe('empty states', () => {
   it('zero-Profile state is a recipe offering [n]', async () => {
-    const stdout = new FakeTtyStdout();
-    const instance = await renderTree(
-      React.createElement(
-        I18nProvider,
-        { initialLocale: 'en' },
-        React.createElement(ZeroProfilesEmptyState, null),
-      ),
-      stdout,
+    const { instance, stdout } = renderWithLocale(
+      React.createElement(ZeroProfilesEmptyState, null),
     );
+    await instance.waitUntilRenderFlush();
     const output = stripAnsi(stdout.output);
     expect(output).toContain('No Profiles yet.');
     expect(output).toContain('Press [n] to create your first Profile');
@@ -387,15 +339,10 @@ describe('empty states', () => {
   });
 
   it('no-match search state explains what search covers and how to clear', async () => {
-    const stdout = new FakeTtyStdout();
-    const instance = await renderTree(
-      React.createElement(
-        I18nProvider,
-        { initialLocale: 'en' },
-        React.createElement(NoMatchEmptyState, { query: 'xyz' }),
-      ),
-      stdout,
+    const { instance, stdout } = renderWithLocale(
+      React.createElement(NoMatchEmptyState, { query: 'xyz' }),
     );
+    await instance.waitUntilRenderFlush();
     const output = stripAnsi(stdout.output);
     expect(output).toContain('Nothing matches "xyz".');
     expect(flatten(output)).toContain('Search covers profiles, resource items, and memory/agent content.');
@@ -405,19 +352,14 @@ describe('empty states', () => {
   });
 
   it('guidance copy wraps at ~26 columns without truncation', async () => {
-    const stdout = new FakeTtyStdout();
-    const instance = await renderTree(
+    const { instance, stdout } = renderWithLocale(
       React.createElement(
-        I18nProvider,
-        { initialLocale: 'en' },
-        React.createElement(
-          Box,
-          { width: 26, flexDirection: 'column' },
-          React.createElement(ZeroProfilesEmptyState, null),
-        ),
+        Box,
+        { width: 26, flexDirection: 'column' },
+        React.createElement(ZeroProfilesEmptyState, null),
       ),
-      stdout,
     );
+    await instance.waitUntilRenderFlush();
     const output = stripAnsi(stdout.output);
     // The full recipe survives a 26-column width (wrapped, never truncated).
     const flat = flatten(output);
@@ -432,35 +374,31 @@ describe('empty states', () => {
       ...codingProfile,
       resourceCounts: { userMemory: 1, autoMemory: 1, skills: 0, agents: 2, mcp: 1, settings: 1, launchConfig: 1 },
     };
-    const stdout = new FakeTtyStdout();
-    const instance = await renderTree(
+    const { instance, stdout } = renderWithLocale(
       React.createElement(
-        I18nProvider,
-        { initialLocale: 'en' },
-        React.createElement(
-          HintsProvider,
-          null,
-          React.createElement(MainPane, {
-            profile,
-            profiles: [profile],
-            nav: initialResourceNavState(),
-            mcpFailed: [],
-            width: 60,
-            height: 20,
-            sessionFor: () => undefined,
-            content: null,
-            diff: null,
-            drilledAgent: null,
-            agentFrontmatter: null,
-            searchResults: [],
-            onSaveFrontmatter: () => {},
-            onBack: () => {},
-            hintLine: '',
-          }),
-        ),
+        HintsProvider,
+        null,
+        React.createElement(MainPane, {
+          profile,
+          profiles: [profile],
+          nav: initialResourceNavState(),
+          mcpFailed: [],
+          width: 60,
+          height: 20,
+          sessionFor: () => undefined,
+          editFallback: { systemEditor: () => {}, retry: () => {}, dismiss: () => {} },
+          content: null,
+          diff: null,
+          drilledAgent: null,
+          agentFrontmatter: null,
+          searchResults: [],
+          onSaveFrontmatter: () => {},
+          onBack: () => {},
+          hintLine: '',
+        }),
       ),
-      stdout,
     );
+    await instance.waitUntilRenderFlush();
     const output = stripAnsi(stdout.output);
     const flat = flatten(output);
     // The offer and the Skills-specific "copy or link" hint both render (the

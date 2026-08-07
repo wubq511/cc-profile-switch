@@ -10,6 +10,7 @@ import {
   removeProfile,
   renameProfile,
   setDefaultProfile,
+  updateProfileDescription,
 } from '../../core/profile-management';
 import { buildLaunchPlan, type LaunchPlan } from '../../core/launcher';
 import { validateProfile, type ValidationFinding } from '../../core/validator';
@@ -22,6 +23,7 @@ import {
 } from '../../core/profile-template';
 import {
   installLocalSkill,
+  listLocalSkillSources,
   previewInstall,
   validateLocalSkillSource,
 } from '../../core/skills-install';
@@ -29,10 +31,8 @@ import {
   acquireAndPreviewRemoteInstall,
   installRemoteSkill,
 } from '../../core/skills-remote-install';
-import {
-  SkillsDiscoverySession,
-} from '../../core/skills-discovery';
-import { openUrlInBrowser } from '../../platform/editor';
+import { SkillsDiscoverySession } from '../../core/skills-discovery';
+import { openUrlInBrowser, openWithSystemEditor } from '../../platform/editor';
 import fs from 'fs-extra';
 import { resolveInside } from '../../platform/path';
 import { CcpsError } from '../../utils/errors';
@@ -56,7 +56,11 @@ import {
   type SearchResult,
   type ResourceCategory,
 } from '../../core/resource';
-import { diffResources, type ResourceDiffResult, type DiffCategory } from '../../core/resource/diff-all';
+import {
+  diffResources,
+  type ResourceDiffResult,
+  type DiffCategory,
+} from '../../core/resource/diff-all';
 import {
   effectiveDiffCategory,
   initialResourceNavState,
@@ -71,11 +75,13 @@ import {
   saveProfileAsTemplate,
 } from '../../core/custom-template';
 import {
+  getTemplateList,
   initialLifecycleState,
+  initialLaunchState,
   lifecycleReducer,
-  TEMPLATE_LIST,
   type LifecycleAction,
   type LifecyclePromptKind,
+  type LifecycleState,
   type LaunchState,
   type RecentDir,
 } from './lifecycle';
@@ -94,10 +100,19 @@ import { DiscoverView } from './skills/discover';
 import type { InstallSourceRef } from './skills/install-wizard-reducer';
 import { AutoMemoryView } from './resources/auto-memory-view';
 import { BulkOpsView, type BulkCategory } from './resources/bulk-ops-view';
-import { ErrorPanel, HintsProvider, RemoveProfilePanel, SaveTemplatePanel, useHints } from './guidance';
+import {
+  ErrorPanel,
+  HintsProvider,
+  RemoveProfilePanel,
+  SaveTemplatePanel,
+  useHints,
+} from './guidance';
 import { type CaptureProcess } from '../../platform/process';
 
-type DrillDown = { kind: 'none' } | { kind: 'autoMemory' } | { kind: 'bulk'; category: BulkCategory };
+type DrillDown =
+  | { kind: 'none' }
+  | { kind: 'autoMemory' }
+  | { kind: 'bulk'; category: BulkCategory };
 
 /** Result caps for the Discover catalog (bounded interactive search). */
 const DISCOVER_REPO_SKILL_LIMIT = 50;
@@ -127,6 +142,27 @@ export function resetWelcomeSessionForTests(): void {
   sessionWelcomeShown = false;
 }
 
+/** UI state carried outside the React tree across the launch
+ * unmount/spawn/remount cycle (spec §10): the pre-launch selection plus the
+ * data for the "Claude exited (N)" flash. The entry (index.mts) hands it to
+ * the next WorkbenchApp mount as the `resumeState` prop. */
+export type LaunchResumeState = {
+  selectedIndex: number;
+  profileName: string;
+  dir: string;
+  exitCode: number | null;
+};
+
+let pendingResumeState: LaunchResumeState | null = null;
+
+/** Read and clear the resume state published by the last launch. Called by
+ * the Workbench entry's render loop (index.mts) between cycles. */
+export function takeLaunchResumeState(): LaunchResumeState | null {
+  const state = pendingResumeState;
+  pendingResumeState = null;
+  return state;
+}
+
 type WorkbenchAppProps = {
   data: WorkbenchData;
   onLocaleChange?: (locale: Locale) => void;
@@ -135,6 +171,9 @@ type WorkbenchAppProps = {
   skipWelcome?: boolean;
   /** Called when the Workbench needs to unmount, spawn Claude, and remount. */
   onLaunch?: (plan: LaunchPlan, appHomePath: string) => number | null;
+  /** Resume state handed back by the entry's render loop after a launch
+   * remount (spec §10): restores selection and shows the exit flash. */
+  resumeState?: LaunchResumeState | null;
   /** Override the MCP connection-state probe (tests). */
   mcpProbe?: (appHomePath: string, profileName: string) => Promise<McpServerState[]>;
   /** Override the sidebar cross-Profile content search (tests, #83). */
@@ -148,27 +187,106 @@ type WorkbenchAppProps = {
   configLoader?: (appHomePath: string) => Promise<ReturnType<typeof loadAppConfig>>;
   /** Injected process capture for MCP remove / Skill update (hermetic tests). */
   captureProcess?: CaptureProcess;
+  /** Persisted hint use-counts from state.json (issue #76); absent = the
+   * provider tracks counts for this session only. */
+  initialHintUsage?: Record<string, number>;
+  /** Persist hook fired on each hint-key use (state.json, issue #76). */
+  onHintUsed?: (key: string) => void;
+  /** `workbench.editor` from config.json (§13.2): editor command override for
+   * the external-edit handoff, e.g. "code -w". Undefined = VS Code default. */
+  editorOverride?: string;
 };
 
-export function WorkbenchApp({ data, onLocaleChange, initialLocale, headless, skipWelcome, onLaunch, mcpProbe, searchContent, discoverySessionFactory, configLoader, captureProcess }: WorkbenchAppProps): React.ReactElement {
-  const inner = React.createElement(WorkbenchInner, { data, headless, skipWelcome, onLaunch, mcpProbe, searchContent, discoverySessionFactory, configLoader, captureProcess });
+export function WorkbenchApp({
+  data,
+  onLocaleChange,
+  initialLocale,
+  headless,
+  skipWelcome,
+  onLaunch,
+  resumeState,
+  mcpProbe,
+  searchContent,
+  discoverySessionFactory,
+  configLoader,
+  captureProcess,
+  initialHintUsage,
+  onHintUsed,
+  editorOverride,
+}: WorkbenchAppProps): React.ReactElement {
+  const inner = React.createElement(WorkbenchInner, {
+    data,
+    headless,
+    skipWelcome,
+    onLaunch,
+    resumeState,
+    mcpProbe,
+    searchContent,
+    discoverySessionFactory,
+    configLoader,
+    captureProcess,
+    editorOverride,
+  });
   return React.createElement(
     I18nProvider,
     { initialLocale, onLocaleChange },
-    React.createElement(HintsProvider, null, inner),
+    React.createElement(
+      HintsProvider,
+      { initialUsage: initialHintUsage, onMarkUsed: onHintUsed },
+      inner,
+    ),
   );
 }
 
-function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searchContent, discoverySessionFactory, configLoader, captureProcess }: { data: WorkbenchData; headless?: boolean; skipWelcome?: boolean; onLaunch?: (plan: LaunchPlan, appHomePath: string) => number | null; mcpProbe?: (appHomePath: string, profileName: string) => Promise<McpServerState[]>; searchContent?: (query: string) => Promise<SearchResult[]>; discoverySessionFactory?: (appHomePath: string, experimentalEnabled: boolean) => SkillsDiscoverySession; configLoader?: (appHomePath: string) => Promise<ReturnType<typeof loadAppConfig>>; captureProcess?: CaptureProcess }): React.ReactElement {
-  const { t, locale } = useI18n();
+function WorkbenchInner({
+  data,
+  headless,
+  skipWelcome,
+  onLaunch,
+  resumeState,
+  mcpProbe,
+  searchContent,
+  discoverySessionFactory,
+  configLoader,
+  captureProcess,
+  editorOverride,
+}: {
+  data: WorkbenchData;
+  headless?: boolean;
+  skipWelcome?: boolean;
+  onLaunch?: (plan: LaunchPlan, appHomePath: string) => number | null;
+  resumeState?: LaunchResumeState | null;
+  mcpProbe?: (appHomePath: string, profileName: string) => Promise<McpServerState[]>;
+  searchContent?: (query: string) => Promise<SearchResult[]>;
+  discoverySessionFactory?: (
+    appHomePath: string,
+    experimentalEnabled: boolean,
+  ) => SkillsDiscoverySession;
+  configLoader?: (appHomePath: string) => Promise<ReturnType<typeof loadAppConfig>>;
+  captureProcess?: CaptureProcess;
+  editorOverride?: string;
+}): React.ReactElement {
+  const { t, locale, switchLocale } = useI18n();
   const { exit } = useApp();
   const { stdout } = useStdout();
   const { stdin: inkStdin } = useStdin();
   const { markUsed } = useHints();
 
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [selectedIndex, setSelectedIndex] = useState(() => {
+    if (!resumeState) return 0;
+    // Clamp: the profile list may have changed while Claude ran.
+    return Math.min(resumeState.selectedIndex, Math.max(0, data.profiles.length - 1));
+  });
   const [helpVisible, setHelpVisible] = useState(false);
   const [capture, setCapture] = useState(false);
+  // Sidebar search-box focus, lifted here (issue #83/#84): Ink's useInput
+  // broadcasts every keypress to all active handlers, so while the search box
+  // owns input the app-level letter/action keys (q, e, u, a, ?, …) must stay
+  // suppressed or they fire on top of the typed query.
+  const [sidebarSearchFocused, setSidebarSearchFocused] = useState(false);
+  const handleSearchFocusChange = useCallback((focused: boolean) => {
+    setSidebarSearchFocused(focused);
+  }, []);
   const [welcomeVisible, setWelcomeVisible] = useState(() => {
     if (skipWelcome) return false;
     if (sessionWelcomeShown) return false;
@@ -177,7 +295,23 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
   });
   const [, forceRerender] = useState(0);
   const [workbenchData, setWorkbenchData] = useState(data);
-  const [lifecycle, setLifecycle] = useState(initialLifecycleState);
+  const [lifecycle, setLifecycle] = useState<LifecycleState>(() => {
+    if (resumeState) {
+      // Resumed after a launch: come up in the 'exited' phase so the
+      // "Claude exited (N)" flash shows (spec §10.4).
+      return {
+        ...initialLifecycleState(),
+        profileName: resumeState.profileName,
+        launch: {
+          ...initialLaunchState(),
+          phase: 'exited' as const,
+          dir: resumeState.dir,
+          exitCode: resumeState.exitCode,
+        },
+      };
+    }
+    return initialLifecycleState();
+  });
   // Skill install wizard overlay (issue #64, spec §7.2)
   const [wizardProfileName, setWizardProfileName] = useState<string | null>(null);
   // Discover-surface install entry (issue #68, spec §7.4): when set, the wizard
@@ -207,6 +341,7 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
   const persistedSelection = useRef(selectedIndex);
   const sessionManagerRef = useRef(
     new EditSessionManager({
+      editorOverride,
       onChange: () => forceRerender((n: number) => n + 1),
     }),
   );
@@ -216,6 +351,7 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
   const editSessionManagerRef = useRef<EditSessionManager | null>(null);
   if (editSessionManagerRef.current === null) {
     editSessionManagerRef.current = new EditSessionManager({
+      editorOverride,
       onChange: () => forceRerender((n: number) => n + 1),
     });
   }
@@ -255,7 +391,9 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
     if (mcpFailedByProfile[profile.name]) return; // already probed this session
 
     let cancelled = false;
-    const probe = mcpProbe ?? ((appHomePath: string, name: string) => listMcpServers({ appHomePath, profileName: name }));
+    const probe =
+      mcpProbe ??
+      ((appHomePath: string, name: string) => listMcpServers({ appHomePath, profileName: name }));
     (async () => {
       try {
         const states = await probe(getAppHomePaths().appHomePath, profile.name);
@@ -271,139 +409,192 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
     };
   }, [selectedIndex, workbenchData.profiles, mcpFailedByProfile, mcpProbe]);
 
-  useInput((input: string, key: Record<string, boolean>) => {
-    if (key.ctrl && input === 'c') {
-      exit();
-      return;
-    }
-
-    if (welcomeVisible) {
-      setWelcomeVisible(false);
-      return;
-    }
-
-    if (helpVisible) {
-      if (key.escape || input === '?') {
-        setHelpVisible(false);
-        setCapture(false);
-      }
-      return;
-    }
-
-    if (capture) return;
-
-    // The install wizard owns its own input; let it handle everything else.
-    if (wizardOpen) return;
-
-    // The Discover surface owns its own input while open.
-    if (discoverActive) return;
-
-    // Resource navigation input handling
-    if (resourceNav.phase !== 'idle') {
-      handleResourceInput(input, key);
-      return;
-    }
-
-    // Grid: drill into User Memory or Agents categories
-    if (input === 'u') {
-      setResourceNav((prev) => resourceNavReducer(prev, { type: 'OPEN_CATEGORY', category: 'user-memory' }));
-      setResourceContent(null);
-      setDiffResult(null);
-      setDrilledAgent(null);
-      setAgentFrontmatter(null);
-      return;
-    }
-    if (input === 'a') {
-      setResourceNav((prev) => resourceNavReducer(prev, { type: 'OPEN_CATEGORY', category: 'agents' }));
-      setResourceContent(null);
-      setDiffResult(null);
-      setDrilledAgent(null);
-      setAgentFrontmatter(null);
-      return;
-    }
-
-    // Destructive-action panel input (§9.1)
-    if (lifecycle.phase === 'confirm') {
-      handleConfirmInput(input, key);
-      return;
-    }
-
-    if (input === 'q') {
-      exit();
-      return;
-    }
-    if (input === '?') {
-      markUsed('?');
-      setCapture(true); // the full-pane help sheet owns all input while open
-      setHelpVisible(true);
-      return;
-    }
-
-    // Launch flow input handling (highest priority when active)
-    if (launchActive) {
-      handleLaunchInput(input, key);
-      return;
-    }
-
-    // Top-level `e`: open the selected Profile's User Memory (CLAUDE.md) in
-    // VS Code (§4.3 `e`, §8 watching). Lives with the grid's other idle action
-    // keys, before the category-focus block, so it stays live while the grid
-    // is focused — matching how `u`/`a` keep working there. Resource views and
-    // the wizard return earlier and own their own `e`.
-    if (input === 'e' && lifecycle.phase === 'idle') {
-      markUsed('e');
-      void handleTopLevelEdit();
-      return;
-    }
-
-    // Tab toggles main-pane category focus (only at lifecycle idle)
-    if (key.tab && lifecycle.phase === 'idle') {
-      if (!mainPaneFocus && workbenchData.profiles.length > 0) {
-        setMainPaneFocus(true);
-      } else if (mainPaneFocus) {
-        setMainPaneFocus(false);
-      }
-      return;
-    }
-
-    // Main-pane category navigation (issue #69 drill-down entry)
-    if (mainPaneFocus && lifecycle.phase === 'idle') {
-      if (key.escape || key.leftArrow) {
-        setMainPaneFocus(false);
+  useInput(
+    (input: string, key: Record<string, boolean>) => {
+      if (key.ctrl && input === 'c') {
+        exit();
         return;
       }
-      if (key.upArrow) {
-        setSelectedCategoryIndex((prev) => (prev > 0 ? prev - 1 : CATEGORY_COUNT - 1));
+
+      if (welcomeVisible) {
+        setWelcomeVisible(false);
         return;
       }
-      if (key.downArrow) {
-        setSelectedCategoryIndex((prev) => (prev < CATEGORY_COUNT - 1 ? prev + 1 : 0));
-        return;
-      }
-      if (key.return) {
-        const catKey = categoryKeyAt(selectedCategoryIndex);
-        if (catKey === 'autoMemory' || catKey === 'skills' || catKey === 'mcp' || catKey === 'agents') {
-          setDrillDown({ kind: 'bulk', category: catKey });
-          setCapture(true);
+
+      // The sidebar search box owns every key while focused (issue #83/#84) —
+      // typing a query must not reach the app-level actions below (`q` quit,
+      // `e` edit, `u`/`a` category drill, `?` help). Ctrl+C stays a hard quit.
+      if (sidebarSearchFocused) return;
+
+      if (helpVisible) {
+        if (key.escape || input === '?') {
+          setHelpVisible(false);
+          setCapture(false);
+          return;
+        }
+        // In-Workbench language switch (issue #54, spec §14.10): [l] toggles
+        // zh↔en from the help sheet. switchLocale re-renders immediately and
+        // the entry's onLocaleChange writes back to config.json.
+        if (input === 'l') {
+          switchLocale(locale === 'zh' ? 'en' : 'zh');
         }
         return;
       }
-      if (input === 'd') {
-        // Single Diff entry point (spec §12): diff the focused category vs the
-        // first other Profile, switchable in place. Auto Memory has no diff.
-        const catKey = categoryKeyAt(selectedCategoryIndex);
-        const diffCat = catKey ? diffCategoryFor(catKey) : undefined;
-        if (diffCat) {
-          markUsed('d');
-          void openDiff(diffCat);
-        } else {
-          flash(t('resource.diff.noAutoMemory'));
+
+      // Profile description inline edit (S5) owns all input while active —
+      // handled before the capture check because the edit itself sets capture.
+      if (editingDescription) {
+        if (key.escape) {
+          cancelDescriptionEdit();
+          return;
+        }
+        if (key.return) {
+          void submitDescriptionEdit();
+          return;
+        }
+        if (key.backspace || key.delete) {
+          setDescriptionDraft((d) => d.slice(0, -1));
+          return;
+        }
+        if (!key.ctrl && !key.meta && input.length === 1) {
+          setDescriptionDraft((d) => d + input);
         }
         return;
       }
-      return;
-    }
-  }, { isActive: canUseInput });
+
+      if (capture) return;
+
+      // The install wizard owns its own input; let it handle everything else.
+      if (wizardOpen) return;
+
+      // The Discover surface owns its own input while open.
+      if (discoverActive) return;
+
+      // Resource navigation input handling
+      if (resourceNav.phase !== 'idle') {
+        handleResourceInput(input, key);
+        return;
+      }
+
+      // Grid: drill into User Memory or Agents categories
+      if (input === 'u') {
+        setResourceNav((prev) =>
+          resourceNavReducer(prev, { type: 'OPEN_CATEGORY', category: 'user-memory' }),
+        );
+        setResourceContent(null);
+        setDiffResult(null);
+        setDrilledAgent(null);
+        setAgentFrontmatter(null);
+        return;
+      }
+      if (input === 'a') {
+        setResourceNav((prev) =>
+          resourceNavReducer(prev, { type: 'OPEN_CATEGORY', category: 'agents' }),
+        );
+        setResourceContent(null);
+        setDiffResult(null);
+        setDrilledAgent(null);
+        setAgentFrontmatter(null);
+        return;
+      }
+
+      // Destructive-action panel input (§9.1)
+      if (lifecycle.phase === 'confirm') {
+        handleConfirmInput(input, key);
+        return;
+      }
+
+      if (input === 'q') {
+        exit();
+        return;
+      }
+      if (input === '?') {
+        markUsed('?');
+        setCapture(true); // the full-pane help sheet owns all input while open
+        setHelpVisible(true);
+        return;
+      }
+
+      // Launch flow input handling (highest priority when active)
+      if (launchActive) {
+        handleLaunchInput(input, key);
+        return;
+      }
+
+      // Top-level `e`: open the selected Profile's User Memory (CLAUDE.md) in
+      // VS Code (§4.3 `e`, §8 watching). Lives with the grid's other idle action
+      // keys, before the category-focus block, so it stays live while the grid
+      // is focused — matching how `u`/`a` keep working there. Resource views and
+      // the wizard return earlier and own their own `e`.
+      if (input === 'e' && lifecycle.phase === 'idle') {
+        markUsed('e');
+        void handleTopLevelEdit();
+        return;
+      }
+
+      // Top-level `D`: edit the selected Profile's description inline on the
+      // card (S5) — structured metadata edits stay inside the Workbench (§8).
+      if (input === 'D' && lifecycle.phase === 'idle') {
+        markUsed('D');
+        startDescriptionEdit();
+        return;
+      }
+
+      // Tab toggles main-pane category focus (only at lifecycle idle)
+      if (key.tab && lifecycle.phase === 'idle') {
+        if (!mainPaneFocus && workbenchData.profiles.length > 0) {
+          setMainPaneFocus(true);
+        } else if (mainPaneFocus) {
+          setMainPaneFocus(false);
+        }
+        return;
+      }
+
+      // Main-pane category navigation (issue #69 drill-down entry)
+      if (mainPaneFocus && lifecycle.phase === 'idle') {
+        if (key.escape || key.leftArrow) {
+          setMainPaneFocus(false);
+          return;
+        }
+        if (key.upArrow) {
+          setSelectedCategoryIndex((prev) => (prev > 0 ? prev - 1 : CATEGORY_COUNT - 1));
+          return;
+        }
+        if (key.downArrow) {
+          setSelectedCategoryIndex((prev) => (prev < CATEGORY_COUNT - 1 ? prev + 1 : 0));
+          return;
+        }
+        if (key.return) {
+          const catKey = categoryKeyAt(selectedCategoryIndex);
+          if (
+            catKey === 'autoMemory' ||
+            catKey === 'skills' ||
+            catKey === 'mcp' ||
+            catKey === 'agents'
+          ) {
+            setDrillDown({ kind: 'bulk', category: catKey });
+            setCapture(true);
+          }
+          return;
+        }
+        if (input === 'd') {
+          // Single Diff entry point (spec §12): diff the focused category vs the
+          // first other Profile, switchable in place. Auto Memory has no diff.
+          const catKey = categoryKeyAt(selectedCategoryIndex);
+          const diffCat = catKey ? diffCategoryFor(catKey) : undefined;
+          if (diffCat) {
+            markUsed('d');
+            void openDiff(diffCat);
+          } else {
+            flash(t('resource.diff.noAutoMemory'));
+          }
+          return;
+        }
+        return;
+      }
+    },
+    { isActive: canUseInput },
+  );
 
   const handleExitDrillDown = useCallback(() => {
     setDrillDown({ kind: 'none' });
@@ -412,96 +603,100 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
     setMainPaneFocus(true);
   }, []);
 
-  const handleLaunchInput = useCallback((input: string, key: Record<string, boolean>) => {
-    const launch = lifecycle.launch;
-    // Helper to dispatch through the reducer
-    const dispatch = (action: LifecycleAction) => {
-      setLifecycle((prev) => lifecycleReducer(prev, action));
-    };
+  const handleLaunchInput = useCallback(
+    (input: string, key: Record<string, boolean>) => {
+      const launch = lifecycle.launch;
+      // Helper to dispatch through the reducer
+      const dispatch = (action: LifecycleAction) => {
+        setLifecycle((prev) => lifecycleReducer(prev, action));
+      };
 
-    if (launch.phase === 'bar') {
-      if (key.escape) {
-        dispatch({ type: 'LAUNCH_DISMISS' });
-        return;
-      }
-      if (key.return) {
-        dispatch({ type: 'LAUNCH_CONFIRM' });
-        // performLaunch reads current state; the reducer transition
-        // to 'launching' happens inside performLaunch after plan builds.
-        const hasErrors = launch.validationFindings.some((f) => f.severity === 'error');
-        if (!hasErrors) {
-          performLaunch();
+      if (launch.phase === 'bar') {
+        if (key.escape) {
+          dispatch({ type: 'LAUNCH_DISMISS' });
+          return;
+        }
+        if (key.return) {
+          dispatch({ type: 'LAUNCH_CONFIRM' });
+          // performLaunch reads current state; the reducer transition
+          // to 'launching' happens inside performLaunch after plan builds.
+          const hasErrors = launch.validationFindings.some((f) => f.severity === 'error');
+          if (!hasErrors) {
+            performLaunch();
+          }
+          return;
+        }
+        if (input === 'd') {
+          handleLaunchDryRun(lifecycle.profileName);
+          return;
         }
         return;
       }
-      if (input === 'd') {
-        handleLaunchDryRun(lifecycle.profileName);
-        return;
-      }
-      return;
-    }
 
-    if (launch.phase === 'dir-screen') {
-      if (key.escape) {
-        // Return to bar — clear dirInput
-        dispatch({ type: 'CANCEL' });
+      if (launch.phase === 'dir-screen') {
+        if (key.escape) {
+          // Return to bar — clear dirInput
+          dispatch({ type: 'CANCEL' });
+          return;
+        }
+        if (key.return) {
+          // Use typed path or selected recent
+          const selectedRecent =
+            launch.recentIndex >= 0 ? launch.recentDirs[launch.recentIndex] : null;
+          const chosenDir = selectedRecent ? selectedRecent.path : launch.dirInput || launch.dir;
+          dispatch({ type: 'LAUNCH_SET_DIR', dir: chosenDir });
+          return;
+        }
+        if (key.tab) {
+          dispatch({ type: 'LAUNCH_DIR_TAB' });
+          return;
+        }
+        if (key.backspace || key.delete) {
+          dispatch({ type: 'LAUNCH_DIR_BACKSPACE' });
+          return;
+        }
+        // Digit pick (1-9)
+        if (!key.ctrl && !key.meta && input.length === 1 && /^[1-9]$/.test(input)) {
+          const idx = parseInt(input, 10) - 1;
+          dispatch({ type: 'LAUNCH_DIR_PICK', index: idx });
+          return;
+        }
+        if (!key.ctrl && !key.meta && input.length === 1) {
+          dispatch({ type: 'LAUNCH_DIR_INPUT_CHAR', char: input });
+          return;
+        }
         return;
       }
-      if (key.return) {
-        // Use typed path or selected recent
-        const selectedRecent = launch.recentIndex >= 0 ? launch.recentDirs[launch.recentIndex] : null;
-        const chosenDir = selectedRecent ? selectedRecent.path : (launch.dirInput || launch.dir);
-        dispatch({ type: 'LAUNCH_SET_DIR', dir: chosenDir });
-        return;
-      }
-      if (key.tab) {
-        dispatch({ type: 'LAUNCH_DIR_TAB' });
-        return;
-      }
-      if (key.backspace || key.delete) {
-        dispatch({ type: 'LAUNCH_DIR_BACKSPACE' });
-        return;
-      }
-      // Digit pick (1-9)
-      if (!key.ctrl && !key.meta && input.length === 1 && /^[1-9]$/.test(input)) {
-        const idx = parseInt(input, 10) - 1;
-        dispatch({ type: 'LAUNCH_DIR_PICK', index: idx });
-        return;
-      }
-      if (!key.ctrl && !key.meta && input.length === 1) {
-        dispatch({ type: 'LAUNCH_DIR_INPUT_CHAR', char: input });
-        return;
-      }
-      return;
-    }
 
-    if (launch.phase === 'dry-run') {
-      if (key.escape) {
-        // Return to bar from dry-run
-        setLifecycle((prev) => ({
-          ...prev,
-          launch: { ...prev.launch, phase: 'bar', dryRunPlan: null },
-        }));
+      if (launch.phase === 'dry-run') {
+        if (key.escape) {
+          // Return to bar from dry-run
+          setLifecycle((prev) => ({
+            ...prev,
+            launch: { ...prev.launch, phase: 'bar', dryRunPlan: null },
+          }));
+          return;
+        }
+        if (key.return) {
+          dispatch({ type: 'LAUNCH_START' });
+          performLaunch();
+          return;
+        }
         return;
       }
-      if (key.return) {
-        dispatch({ type: 'LAUNCH_START' });
-        performLaunch();
-        return;
-      }
-      return;
-    }
 
-    if (launch.phase === 'exited') {
-      if (key.escape || key.return || input === ' ') {
-        dispatch({ type: 'LAUNCH_DISMISS' });
-        // Restore persisted selection after exit flash dismiss
-        setSelectedIndex(persistedSelection.current);
+      if (launch.phase === 'exited') {
+        if (key.escape || key.return || input === ' ') {
+          dispatch({ type: 'LAUNCH_DISMISS' });
+          // Restore persisted selection after exit flash dismiss
+          setSelectedIndex(persistedSelection.current);
+          return;
+        }
         return;
       }
-      return;
-    }
-  }, [lifecycle]);
+    },
+    [lifecycle],
+  );
 
   // ─── Resource navigation helpers ──────────────────────────────────────
 
@@ -519,7 +714,10 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
     return resolveInside(paths.agentsPath, `${resourceName}.md`);
   };
 
-  const selectedResourceName = (profile: WorkbenchProfile, category: 'user-memory' | 'agents'): string => {
+  const selectedResourceName = (
+    profile: WorkbenchProfile,
+    category: 'user-memory' | 'agents',
+  ): string => {
     if (category === 'user-memory') return 'CLAUDE.md';
     const agent = profile.resourceDetails.agents[resourceNav.selectedIndex];
     return agent?.name ?? 'agent';
@@ -548,15 +746,18 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
 
   // Zero-confirm removal of a user-created template (S104), same flash pattern
   // as the other zero-confirm resource removals.
-  const handleRemoveCustomTemplate = useCallback(async (templateName: string) => {
-    try {
-      await removeCustomTemplate({ appHomePath, templateName });
-      flash(t('lifecycle.success.templateRemoved').replace('{name}', templateName));
-      await refreshData();
-    } catch (error) {
-      flash(error instanceof Error ? error.message : String(error));
-    }
-  }, [appHomePath, flash, refreshData, t]);
+  const handleRemoveCustomTemplate = useCallback(
+    async (templateName: string) => {
+      try {
+        await removeCustomTemplate({ appHomePath, templateName });
+        flash(t('lifecycle.success.templateRemoved', { name: templateName }));
+        await refreshData();
+      } catch (error) {
+        flash(error instanceof Error ? error.message : String(error));
+      }
+    },
+    [appHomePath, flash, refreshData, t],
+  );
 
   const openPreview = useCallback(async () => {
     const profile = currentProfile();
@@ -607,6 +808,30 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
     }
   }, [selectedIndex, workbenchData, appHomePath, flash, t]);
 
+  // §8 fallback actions when the editor handoff fails (VS Code unavailable) —
+  // surfaced through FallbackMenu wherever the failed session is visible.
+  const handleFallbackSystemEditor = useCallback(
+    async (filePath: string) => {
+      try {
+        await openWithSystemEditor(filePath);
+        // Handed off — end the session so the menu dismisses. No watcher: the
+        // system editor is outside the VS Code watching/refresh contract.
+        sessionManagerRef.current.endSession(filePath);
+      } catch (error) {
+        flash(error instanceof Error ? error.message : String(error));
+      }
+    },
+    [flash],
+  );
+
+  const handleFallbackRetry = useCallback((filePath: string) => {
+    void sessionManagerRef.current.open(filePath);
+  }, []);
+
+  const handleFallbackDismiss = useCallback((filePath: string) => {
+    sessionManagerRef.current.endSession(filePath);
+  }, []);
+
   const removeSelectedResource = useCallback(async () => {
     const profile = currentProfile();
     if (!profile || !resourceNav.category) return;
@@ -623,7 +848,7 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
       sessionManagerRef.current.endSession(resourceFilePath(profile.name, category, resourceName));
       flash(
         category === 'agents'
-          ? t('resource.agents.removed').replace('{name}', resourceName)
+          ? t('resource.agents.removed', { name: resourceName })
           : t('resource.userMemory.removed'),
       );
       await refreshData();
@@ -633,35 +858,42 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
     }
   }, [resourceNav, selectedIndex, workbenchData, refreshData, flash, t]);
 
-  const openDiff = useCallback(async (category: DiffCategory, profileOverride?: string) => {
-    const profile = currentProfile();
-    if (!profile) return;
-    const appHome = getAppHomePaths().appHomePath;
+  const openDiff = useCallback(
+    async (category: DiffCategory, profileOverride?: string) => {
+      const profile = currentProfile();
+      if (!profile) return;
+      const appHome = getAppHomePaths().appHomePath;
 
-    const others = workbenchData.profiles.map((p) => p.name).filter((n) => n !== profile.name);
-    if (others.length === 0) {
-      flash(t('resource.diff.noOtherProfile'));
-      return;
-    }
-    const counterpart = profileOverride ?? resourceNav.diffProfile ?? others[0];
-
-    try {
-      const result = await diffResources(appHome, profile.name, counterpart, category);
-      setDiffResult(result);
-      setDrilledAgent(null);
-      // Enter the diff phase: from the category grid use OPEN_DIFF_CATEGORY
-      // (Esc → grid), from a resource list/preview keep OPEN_DIFF (Esc → list).
-      // An in-diff counterpart switch only reloads the result (phase unchanged).
-      if (resourceNav.phase === 'idle') {
-        setResourceNav((prev) => resourceNavReducer(prev, { type: 'OPEN_DIFF_CATEGORY', category }));
-      } else if (resourceNav.phase === 'list' || resourceNav.phase === 'preview') {
-        setResourceNav((prev) => resourceNavReducer(prev, { type: 'OPEN_DIFF' }));
+      const others = workbenchData.profiles.map((p) => p.name).filter((n) => n !== profile.name);
+      if (others.length === 0) {
+        flash(t('resource.diff.noOtherProfile'));
+        return;
       }
-      setResourceNav((prev) => resourceNavReducer(prev, { type: 'SET_DIFF_PROFILE', profile: counterpart }));
-    } catch (error) {
-      flash(error instanceof Error ? error.message : String(error));
-    }
-  }, [resourceNav, selectedIndex, workbenchData, flash, t]);
+      const counterpart = profileOverride ?? resourceNav.diffProfile ?? others[0];
+
+      try {
+        const result = await diffResources(appHome, profile.name, counterpart, category);
+        setDiffResult(result);
+        setDrilledAgent(null);
+        // Enter the diff phase: from the category grid use OPEN_DIFF_CATEGORY
+        // (Esc → grid), from a resource list/preview keep OPEN_DIFF (Esc → list).
+        // An in-diff counterpart switch only reloads the result (phase unchanged).
+        if (resourceNav.phase === 'idle') {
+          setResourceNav((prev) =>
+            resourceNavReducer(prev, { type: 'OPEN_DIFF_CATEGORY', category }),
+          );
+        } else if (resourceNav.phase === 'list' || resourceNav.phase === 'preview') {
+          setResourceNav((prev) => resourceNavReducer(prev, { type: 'OPEN_DIFF' }));
+        }
+        setResourceNav((prev) =>
+          resourceNavReducer(prev, { type: 'SET_DIFF_PROFILE', profile: counterpart }),
+        );
+      } catch (error) {
+        flash(error instanceof Error ? error.message : String(error));
+      }
+    },
+    [resourceNav, selectedIndex, workbenchData, flash, t],
+  );
 
   const openAgentEdit = useCallback(() => {
     const profile = currentProfile();
@@ -671,28 +903,31 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
     setResourceNav((prev) => resourceNavReducer(prev, { type: 'OPEN_AGENT_EDIT' }));
   }, [resourceNav, selectedIndex, workbenchData]);
 
-  const saveAgentFrontmatter = useCallback(async (updates: Partial<AgentFrontmatter>) => {
-    const profile = currentProfile();
-    if (!profile || resourceNav.category !== 'agents') return;
-    const resourceName = selectedResourceName(profile, 'agents');
-    const filePath = resourceFilePath(profile.name, 'agents', resourceName);
-    const appHome = getAppHomePaths().appHomePath;
+  const saveAgentFrontmatter = useCallback(
+    async (updates: Partial<AgentFrontmatter>) => {
+      const profile = currentProfile();
+      if (!profile || resourceNav.category !== 'agents') return;
+      const resourceName = selectedResourceName(profile, 'agents');
+      const filePath = resourceFilePath(profile.name, 'agents', resourceName);
+      const appHome = getAppHomePaths().appHomePath;
 
-    // Dual-channel block: refuse Workbench writes while VS Code holds the file.
-    if (sessionManagerRef.current.isFileUnderSession(filePath)) {
-      flash(t('resource.agent.frontmatter.blocked'));
-      return;
-    }
+      // Dual-channel block: refuse Workbench writes while VS Code holds the file.
+      if (sessionManagerRef.current.isFileUnderSession(filePath)) {
+        flash(t('resource.agent.frontmatter.blocked'));
+        return;
+      }
 
-    try {
-      await updateAgentFrontmatter(appHome, profile.name, resourceName, updates);
-      flash(t('resource.agent.frontmatter.saved'));
-      setResourceNav((prev) => resourceNavReducer(prev, { type: 'BACK' }));
-      await refreshData();
-    } catch (error) {
-      flash(error instanceof Error ? error.message : String(error));
-    }
-  }, [resourceNav, selectedIndex, workbenchData, refreshData, flash, t]);
+      try {
+        await updateAgentFrontmatter(appHome, profile.name, resourceName, updates);
+        flash(t('resource.agent.frontmatter.saved'));
+        setResourceNav((prev) => resourceNavReducer(prev, { type: 'BACK' }));
+        await refreshData();
+      } catch (error) {
+        flash(error instanceof Error ? error.message : String(error));
+      }
+    },
+    [resourceNav, selectedIndex, workbenchData, refreshData, flash, t],
+  );
 
   const confirmCopy = useCallback(async () => {
     const profile = currentProfile();
@@ -708,7 +943,7 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
       } else {
         await copyUserMemoryToProfile(appHome, profile.name, target);
       }
-      flash(t('resource.copy.success').replace('{profile}', target));
+      flash(t('resource.copy.success', { profile: target }));
       setResourceNav((prev) => resourceNavReducer(prev, { type: 'CLOSE' }));
       await refreshData();
     } catch (error) {
@@ -736,13 +971,15 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
 
     try {
       const filePath = await createAgent(appHome, profile.name, name);
-      flash(t('resource.agents.createSuccess').replace('{name}', name));
+      flash(t('resource.agents.createSuccess', { name }));
       await refreshData();
       // Hand off the new agent body to VS Code (spec S36).
       sessionManagerRef.current.open(filePath);
       // Return to the agents list so the new row is visible.
       setResourceNav((prev) => resourceNavReducer(prev, { type: 'CLOSE' }));
-      setResourceNav((prev) => resourceNavReducer(prev, { type: 'OPEN_CATEGORY', category: 'agents' }));
+      setResourceNav((prev) =>
+        resourceNavReducer(prev, { type: 'OPEN_CATEGORY', category: 'agents' }),
+      );
     } catch (error) {
       flash(error instanceof Error ? error.message : String(error));
     }
@@ -762,6 +999,46 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
     }
   }, [selectedIndex, workbenchData, refreshData, flash, t]);
 
+  // Profile description inline edit (S5): the draft state lives here; the
+  // input row renders on the Profile card in place of the description line.
+  const [editingDescription, setEditingDescription] = useState(false);
+  const [descriptionDraft, setDescriptionDraft] = useState('');
+
+  const startDescriptionEdit = useCallback(() => {
+    const profile = currentProfile();
+    if (!profile) return;
+    setDescriptionDraft(profile.description);
+    setEditingDescription(true);
+    // Own every key while the inline edit is active — the sidebar's lifecycle
+    // letters (n/c/r/d/…) must not fire on top of the typed draft.
+    setCapture(true);
+  }, [selectedIndex, workbenchData]);
+
+  const cancelDescriptionEdit = useCallback(() => {
+    setEditingDescription(false);
+    setDescriptionDraft('');
+    setCapture(false);
+  }, []);
+
+  const submitDescriptionEdit = useCallback(async () => {
+    const profile = currentProfile();
+    setEditingDescription(false);
+    setCapture(false);
+    if (!profile) return;
+    const description = descriptionDraft.trim();
+    setDescriptionDraft('');
+    if (description === profile.description) return;
+
+    try {
+      await updateProfileDescription({ appHomePath, name: profile.name, description });
+      flash(t('main.description.saved'));
+      // Reload so the saved description is reflected on the card (S5).
+      await refreshData();
+    } catch (error) {
+      flash(error instanceof Error ? error.message : String(error));
+    }
+  }, [descriptionDraft, selectedIndex, workbenchData, appHomePath, flash, refreshData, t]);
+
   const runSearch = useCallback(async (query: string) => {
     const q = query.trim();
     if (!q) {
@@ -777,345 +1054,387 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
     }
   }, []);
 
-  const jumpToSearchHit = useCallback(async (hit: SearchResult) => {
-    const profileIndex = workbenchData.profiles.findIndex((p) => p.name === hit.profileName);
-    if (profileIndex >= 0) setSelectedIndex(profileIndex);
+  const jumpToSearchHit = useCallback(
+    async (hit: SearchResult) => {
+      const profileIndex = workbenchData.profiles.findIndex((p) => p.name === hit.profileName);
+      if (profileIndex >= 0) setSelectedIndex(profileIndex);
 
-    const appHome = getAppHomePaths().appHomePath;
-    let content: string | null = null;
-    if (hit.category === 'agents') {
-      content = await readAgentContent(appHome, hit.profileName, hit.itemName);
-    } else {
-      content = await readUserMemoryContent(appHome, hit.profileName);
-    }
-    setResourceContent(content);
-    setResourceNav((prev) => resourceNavReducer(prev, { type: 'CLOSE' }));
-    setResourceNav((prev) => resourceNavReducer(prev, { type: 'OPEN_CATEGORY', category: hit.category }));
-
-    // Position the list selection on the hit's own row so preview/actions
-    // operate on the matched item, not the first one in the list.
-    if (hit.category === 'agents') {
-      const targetProfile = workbenchData.profiles[profileIndex];
-      const itemIndex = targetProfile?.resourceDetails.agents.findIndex((a) => a.name === hit.itemName);
-      if (itemIndex !== undefined && itemIndex >= 0) {
-        setResourceNav((prev) => resourceNavReducer(prev, { type: 'SET_SELECTED_INDEX', index: itemIndex }));
+      const appHome = getAppHomePaths().appHomePath;
+      let content: string | null = null;
+      if (hit.category === 'agents') {
+        content = await readAgentContent(appHome, hit.profileName, hit.itemName);
+      } else {
+        content = await readUserMemoryContent(appHome, hit.profileName);
       }
-    }
+      setResourceContent(content);
+      setResourceNav((prev) => resourceNavReducer(prev, { type: 'CLOSE' }));
+      setResourceNav((prev) =>
+        resourceNavReducer(prev, { type: 'OPEN_CATEGORY', category: hit.category }),
+      );
 
-    setResourceNav((prev) => resourceNavReducer(prev, { type: 'OPEN_PREVIEW' }));
-  }, [workbenchData]);
+      // Position the list selection on the hit's own row so preview/actions
+      // operate on the matched item, not the first one in the list.
+      if (hit.category === 'agents') {
+        const targetProfile = workbenchData.profiles[profileIndex];
+        const itemIndex = targetProfile?.resourceDetails.agents.findIndex(
+          (a) => a.name === hit.itemName,
+        );
+        if (itemIndex !== undefined && itemIndex >= 0) {
+          setResourceNav((prev) =>
+            resourceNavReducer(prev, { type: 'SET_SELECTED_INDEX', index: itemIndex }),
+          );
+        }
+      }
+
+      setResourceNav((prev) => resourceNavReducer(prev, { type: 'OPEN_PREVIEW' }));
+    },
+    [workbenchData],
+  );
 
   // Sidebar tree drill-down (issue #83): Enter on a category or item row opens
   // the category's existing surface — resource list/preview for User Memory and
   // Agents (#60), the Auto Memory view (#69), or the main-pane category grid.
-  const handleDrillCategory = useCallback(async (profileName: string, categoryKey: CategoryKey, itemName?: string) => {
-    const profileIndex = workbenchData.profiles.findIndex((p) => p.name === profileName);
-    if (profileIndex < 0) return;
-    setSelectedIndex(profileIndex);
+  const handleDrillCategory = useCallback(
+    async (profileName: string, categoryKey: CategoryKey, itemName?: string) => {
+      const profileIndex = workbenchData.profiles.findIndex((p) => p.name === profileName);
+      if (profileIndex < 0) return;
+      setSelectedIndex(profileIndex);
 
-    if (categoryKey === 'userMemory' || categoryKey === 'agents') {
-      const category: ResourceCategory = categoryKey === 'userMemory' ? 'user-memory' : 'agents';
-      const profile = workbenchData.profiles[profileIndex];
-      setResourceNav((prev) => resourceNavReducer(prev, { type: 'CLOSE' }));
-      setResourceNav((prev) => resourceNavReducer(prev, { type: 'OPEN_CATEGORY', category }));
-      setDiffResult(null);
-      setDrilledAgent(null);
-      setAgentFrontmatter(null);
-      if (!itemName) {
-        setResourceContent(null);
-        return;
-      }
-      const appHome = getAppHomePaths().appHomePath;
-      let content: string | null;
-      if (category === 'agents') {
-        const itemIndex = profile.resourceDetails.agents.findIndex((a) => a.name === itemName);
-        if (itemIndex < 0) {
+      if (categoryKey === 'userMemory' || categoryKey === 'agents') {
+        const category: ResourceCategory = categoryKey === 'userMemory' ? 'user-memory' : 'agents';
+        const profile = workbenchData.profiles[profileIndex];
+        setResourceNav((prev) => resourceNavReducer(prev, { type: 'CLOSE' }));
+        setResourceNav((prev) => resourceNavReducer(prev, { type: 'OPEN_CATEGORY', category }));
+        setDiffResult(null);
+        setDrilledAgent(null);
+        setAgentFrontmatter(null);
+        if (!itemName) {
           setResourceContent(null);
           return;
         }
-        setResourceNav((prev) => resourceNavReducer(prev, { type: 'SET_SELECTED_INDEX', index: itemIndex }));
-        content = await readAgentContent(appHome, profileName, itemName);
-      } else {
-        content = await readUserMemoryContent(appHome, profileName);
+        const appHome = getAppHomePaths().appHomePath;
+        let content: string | null;
+        if (category === 'agents') {
+          const itemIndex = profile.resourceDetails.agents.findIndex((a) => a.name === itemName);
+          if (itemIndex < 0) {
+            setResourceContent(null);
+            return;
+          }
+          setResourceNav((prev) =>
+            resourceNavReducer(prev, { type: 'SET_SELECTED_INDEX', index: itemIndex }),
+          );
+          content = await readAgentContent(appHome, profileName, itemName);
+        } else {
+          content = await readUserMemoryContent(appHome, profileName);
+        }
+        setResourceContent(content);
+        setResourceNav((prev) => resourceNavReducer(prev, { type: 'OPEN_PREVIEW' }));
+        return;
       }
-      setResourceContent(content);
-      setResourceNav((prev) => resourceNavReducer(prev, { type: 'OPEN_PREVIEW' }));
-      return;
-    }
 
-    if (categoryKey === 'autoMemory') {
-      setDrillDown({ kind: 'autoMemory' });
-      setCapture(true);
-      return;
-    }
+      if (categoryKey === 'autoMemory') {
+        setDrillDown({ kind: 'autoMemory' });
+        setCapture(true);
+        return;
+      }
 
-    // Skills / MCP drill into the bulk-ops surface (spec §11.1); Settings and
-    // launchConfig have no dedicated drill surface — focus the card instead.
-    if (categoryKey === 'skills' || categoryKey === 'mcp') {
-      setDrillDown({ kind: 'bulk', category: categoryKey });
-      setCapture(true);
-      return;
-    }
+      // Skills / MCP drill into the bulk-ops surface (spec §11.1); Settings and
+      // launchConfig have no dedicated drill surface — focus the card instead.
+      if (categoryKey === 'skills' || categoryKey === 'mcp') {
+        setDrillDown({ kind: 'bulk', category: categoryKey });
+        setCapture(true);
+        return;
+      }
 
-    const categoryIndex = SIDEBAR_CATEGORY_KEYS.indexOf(categoryKey);
-    if (categoryIndex >= 0) {
-      setSelectedCategoryIndex(categoryIndex);
-      setMainPaneFocus(true);
-    }
-  }, [workbenchData]);
+      const categoryIndex = SIDEBAR_CATEGORY_KEYS.indexOf(categoryKey);
+      if (categoryIndex >= 0) {
+        setSelectedCategoryIndex(categoryIndex);
+        setMainPaneFocus(true);
+      }
+    },
+    [workbenchData],
+  );
 
   // Cross-Profile content search backing the sidebar search box (§4.2, #83).
   const handleSearchContent = useCallback(
     (query: string): Promise<SearchResult[]> =>
-      searchContent ? searchContent(query) : searchAllResources({ appHomePath: getAppHomePaths().appHomePath, query }),
+      searchContent
+        ? searchContent(query)
+        : searchAllResources({ appHomePath: getAppHomePaths().appHomePath, query }),
     [searchContent],
   );
 
-  const handleResourceInput = useCallback((input: string, key: Record<string, boolean>) => {
-    const profile = currentProfile();
-    if (!profile) return;
-    const nav = resourceNav;
-    const category = nav.category;
+  const handleResourceInput = useCallback(
+    (input: string, key: Record<string, boolean>) => {
+      const profile = currentProfile();
+      if (!profile) return;
+      const nav = resourceNav;
+      const category = nav.category;
 
-    // Agent-name creation prompt input
-    if (promptingAgentName) {
-      if (key.escape) {
-        setPromptingAgentName(false);
-        return;
-      }
-      if (key.return) {
-        submitCreateAgent();
-        return;
-      }
-      if (key.backspace || key.delete) {
-        setAgentNameDraft((d) => d.slice(0, -1));
-        return;
-      }
-      if (!key.ctrl && !key.meta && input.length === 1) {
-        setAgentNameDraft((d) => d + input);
-      }
-      return;
-    }
-
-    const dispatchNav = (action: ResourceNavAction) =>
-      setResourceNav((prev) => resourceNavReducer(prev, action));
-
-    // Cross-Profile resource search phase
-    if (nav.phase === 'search') {
-      if (key.escape) {
-        dispatchNav({ type: 'BACK' });
-        return;
-      }
-      if (key.return) {
-        const hit = searchResults[nav.searchSelectedIndex];
-        if (hit) {
-          jumpToSearchHit(hit);
+      // Agent-name creation prompt input
+      if (promptingAgentName) {
+        if (key.escape) {
+          setPromptingAgentName(false);
+          return;
+        }
+        if (key.return) {
+          submitCreateAgent();
+          return;
+        }
+        if (key.backspace || key.delete) {
+          setAgentNameDraft((d) => d.slice(0, -1));
+          return;
+        }
+        if (!key.ctrl && !key.meta && input.length === 1) {
+          setAgentNameDraft((d) => d + input);
         }
         return;
       }
-      if (key.upArrow) {
-        dispatchNav({ type: 'SEARCH_NAV_UP' });
-        return;
-      }
-      if (key.downArrow) {
-        dispatchNav({ type: 'SEARCH_NAV_DOWN' });
-        return;
-      }
-      if (key.backspace || key.delete) {
-        const nextQuery = nav.searchQuery.slice(0, -1);
-        dispatchNav({ type: 'SEARCH_BACKSPACE' });
-        runSearch(nextQuery);
-        return;
-      }
-      if (!key.ctrl && !key.meta && input.length === 1) {
-        const nextQuery = nav.searchQuery + input;
-        dispatchNav({ type: 'SEARCH_INPUT', char: input });
-        runSearch(nextQuery);
-        return;
-      }
-      return;
-    }
 
-    // List phase
-    if (nav.phase === 'list' && category) {
-      const itemCount =
-        category === 'agents'
-          ? profile.resourceDetails.agents.length
-          : profile.resourceDetails.userMemory.exists
-            ? 1
-            : 0;
+      const dispatchNav = (action: ResourceNavAction) =>
+        setResourceNav((prev) => resourceNavReducer(prev, action));
 
-      if (key.upArrow) {
-        dispatchNav({ type: 'NAV_UP' });
-        return;
-      }
-      if (key.downArrow) {
-        if (nav.selectedIndex < itemCount - 1) dispatchNav({ type: 'NAV_DOWN' });
-        return;
-      }
-      if (key.escape) {
-        dispatchNav({ type: 'CLOSE' });
-        setResourceContent(null);
-        setDiffResult(null);
-        setDrilledAgent(null);
-        return;
-      }
-      if (input === '/') {
-        dispatchNav({ type: 'OPEN_SEARCH' });
-        setSearchResults([]);
-        return;
-      }
-      if (key.return && itemCount > 0) {
-        openPreview();
-        return;
-      }
-      if (input === 'e' && itemCount > 0) {
-        editSelectedResource();
-        return;
-      }
-      if (input === 'x' && itemCount > 0) {
-        removeSelectedResource();
-        return;
-      }
-      if (input === 'c' && itemCount > 0) {
-        dispatchNav({ type: 'OPEN_COPY' });
-        return;
-      }
-      if (input === 'd' && itemCount > 0 && category) {
-        openDiff(category);
-        return;
-      }
-      if (category === 'agents' && input === 'a') {
-        startCreateAgent();
-        return;
-      }
-      if (category === 'agents' && input === 'f' && itemCount > 0) {
-        openAgentEdit();
-        return;
-      }
-      if (category === 'user-memory' && !profile.resourceDetails.userMemory.exists && input === 'n') {
-        recreateUserMemory();
-        return;
-      }
-      return;
-    }
-
-    // Preview phase
-    if (nav.phase === 'preview') {
-      if (key.escape) {
-        dispatchNav({ type: 'BACK' });
-        return;
-      }
-      if (key.upArrow) {
-        dispatchNav({ type: 'SCROLL_UP' });
-        return;
-      }
-      if (key.downArrow) {
-        dispatchNav({ type: 'SCROLL_DOWN' });
-        return;
-      }
-      if (input === 'e') {
-        editSelectedResource();
-        return;
-      }
-      if (input === 'x') {
-        removeSelectedResource();
-        return;
-      }
-      if (input === 'c') {
-        dispatchNav({ type: 'OPEN_COPY' });
-        return;
-      }
-      if (input === 'd' && category) {
-        openDiff(category);
-        return;
-      }
-      return;
-    }
-
-    // Diff phase
-    if (nav.phase === 'diff') {
-      const diffCategory = effectiveDiffCategory(nav);
-      if (!diffCategory) return;
-      const others = workbenchData.profiles.map((p) => p.name).filter((n) => n !== profile.name);
-      if (others.length === 0) return;
-
-      if (key.escape) {
-        dispatchNav({ type: 'BACK' });
-        setDiffResult(null);
-        setDrilledAgent(null);
-        return;
-      }
-      if (key.upArrow) {
-        const idx = others.indexOf(nav.diffProfile ?? others[0]);
-        const next = others[(idx - 1 + others.length) % others.length];
-        dispatchNav({ type: 'SET_DIFF_PROFILE', profile: next });
-        openDiff(diffCategory, next);
-        return;
-      }
-      if (key.downArrow) {
-        const idx = others.indexOf(nav.diffProfile ?? others[0]);
-        const next = others[(idx + 1) % others.length];
-        dispatchNav({ type: 'SET_DIFF_PROFILE', profile: next });
-        openDiff(diffCategory, next);
-        return;
-      }
-      // ↑/↓ switch the counterpart; PgUp/PgDn scroll long diff bodies (spec §4.3).
-      if (key.pageUp) {
-        dispatchNav({ type: 'SCROLL_UP' });
-        return;
-      }
-      if (key.pageDown) {
-        dispatchNav({ type: 'SCROLL_DOWN' });
-        return;
-      }
-      if (
-        key.return &&
-        diffCategory === 'agents' &&
-        diffResult &&
-        diffResult.category === 'agents'
-      ) {
-        const changed = diffResult.diff.files.filter((f) => f.verdict === 'changed');
-        if (changed.length === 0) return;
-        // Enter cycles through the changed files; wrapping around closes drill-in.
-        if (drilledAgent === null) {
-          setDrilledAgent(changed[0].name);
-        } else {
-          const idx = changed.findIndex((f) => f.name === drilledAgent);
-          const nextIdx = (idx + 1) % changed.length;
-          setDrilledAgent(nextIdx === 0 ? null : changed[nextIdx].name);
+      // Cross-Profile resource search phase
+      if (nav.phase === 'search') {
+        if (key.escape) {
+          dispatchNav({ type: 'BACK' });
+          return;
+        }
+        if (key.return) {
+          const hit = searchResults[nav.searchSelectedIndex];
+          if (hit) {
+            jumpToSearchHit(hit);
+          }
+          return;
+        }
+        if (key.upArrow) {
+          dispatchNav({ type: 'SEARCH_NAV_UP' });
+          return;
+        }
+        if (key.downArrow) {
+          dispatchNav({ type: 'SEARCH_NAV_DOWN' });
+          return;
+        }
+        if (key.backspace || key.delete) {
+          const nextQuery = nav.searchQuery.slice(0, -1);
+          dispatchNav({ type: 'SEARCH_BACKSPACE' });
+          runSearch(nextQuery);
+          return;
+        }
+        if (!key.ctrl && !key.meta && input.length === 1) {
+          const nextQuery = nav.searchQuery + input;
+          dispatchNav({ type: 'SEARCH_INPUT', char: input });
+          runSearch(nextQuery);
+          return;
         }
         return;
       }
-      return;
-    }
 
-    // Copy phase
-    if (nav.phase === 'copy') {
-      const targets = workbenchData.profiles.map((p) => p.name).filter((n) => n !== profile.name);
-      if (key.escape) {
-        dispatchNav({ type: 'BACK' });
+      // List phase
+      if (nav.phase === 'list' && category) {
+        const itemCount =
+          category === 'agents'
+            ? profile.resourceDetails.agents.length
+            : profile.resourceDetails.userMemory.exists
+              ? 1
+              : 0;
+
+        if (key.upArrow) {
+          dispatchNav({ type: 'NAV_UP' });
+          return;
+        }
+        if (key.downArrow) {
+          if (nav.selectedIndex < itemCount - 1) dispatchNav({ type: 'NAV_DOWN' });
+          return;
+        }
+        if (key.escape) {
+          dispatchNav({ type: 'CLOSE' });
+          setResourceContent(null);
+          setDiffResult(null);
+          setDrilledAgent(null);
+          return;
+        }
+        if (input === '/') {
+          dispatchNav({ type: 'OPEN_SEARCH' });
+          setSearchResults([]);
+          return;
+        }
+        if (key.return && itemCount > 0) {
+          openPreview();
+          return;
+        }
+        if (input === 'e' && itemCount > 0) {
+          editSelectedResource();
+          return;
+        }
+        if (input === 'x' && itemCount > 0) {
+          removeSelectedResource();
+          return;
+        }
+        if (input === 'c' && itemCount > 0) {
+          dispatchNav({ type: 'OPEN_COPY' });
+          return;
+        }
+        if (input === 'd' && itemCount > 0 && category) {
+          openDiff(category);
+          return;
+        }
+        if (category === 'agents' && input === 'a') {
+          startCreateAgent();
+          return;
+        }
+        if (category === 'agents' && input === 'f' && itemCount > 0) {
+          openAgentEdit();
+          return;
+        }
+        if (
+          category === 'user-memory' &&
+          !profile.resourceDetails.userMemory.exists &&
+          input === 'n'
+        ) {
+          recreateUserMemory();
+          return;
+        }
         return;
       }
-      if (key.upArrow) {
-        const idx = targets.indexOf(nav.targetProfile ?? targets[0]);
-        const next = targets[(idx - 1 + targets.length) % targets.length];
-        dispatchNav({ type: 'SET_TARGET_PROFILE', profile: next });
+
+      // Preview phase
+      if (nav.phase === 'preview') {
+        if (key.escape) {
+          dispatchNav({ type: 'BACK' });
+          return;
+        }
+        if (key.upArrow) {
+          dispatchNav({ type: 'SCROLL_UP' });
+          return;
+        }
+        if (key.downArrow) {
+          dispatchNav({ type: 'SCROLL_DOWN' });
+          return;
+        }
+        if (input === 'e') {
+          editSelectedResource();
+          return;
+        }
+        if (input === 'x') {
+          removeSelectedResource();
+          return;
+        }
+        if (input === 'c') {
+          dispatchNav({ type: 'OPEN_COPY' });
+          return;
+        }
+        if (input === 'd' && category) {
+          openDiff(category);
+          return;
+        }
         return;
       }
-      if (key.downArrow) {
-        const idx = targets.indexOf(nav.targetProfile ?? targets[0]);
-        const next = targets[(idx + 1) % targets.length];
-        dispatchNav({ type: 'SET_TARGET_PROFILE', profile: next });
+
+      // Diff phase
+      if (nav.phase === 'diff') {
+        const diffCategory = effectiveDiffCategory(nav);
+        if (!diffCategory) return;
+        const others = workbenchData.profiles.map((p) => p.name).filter((n) => n !== profile.name);
+        if (others.length === 0) return;
+
+        if (key.escape) {
+          dispatchNav({ type: 'BACK' });
+          setDiffResult(null);
+          setDrilledAgent(null);
+          return;
+        }
+        if (key.upArrow) {
+          const idx = others.indexOf(nav.diffProfile ?? others[0]);
+          const next = others[(idx - 1 + others.length) % others.length];
+          dispatchNav({ type: 'SET_DIFF_PROFILE', profile: next });
+          openDiff(diffCategory, next);
+          return;
+        }
+        if (key.downArrow) {
+          const idx = others.indexOf(nav.diffProfile ?? others[0]);
+          const next = others[(idx + 1) % others.length];
+          dispatchNav({ type: 'SET_DIFF_PROFILE', profile: next });
+          openDiff(diffCategory, next);
+          return;
+        }
+        // ↑/↓ switch the counterpart; PgUp/PgDn scroll long diff bodies (spec §4.3).
+        if (key.pageUp) {
+          dispatchNav({ type: 'SCROLL_UP' });
+          return;
+        }
+        if (key.pageDown) {
+          dispatchNav({ type: 'SCROLL_DOWN' });
+          return;
+        }
+        if (
+          key.return &&
+          diffCategory === 'agents' &&
+          diffResult &&
+          diffResult.category === 'agents'
+        ) {
+          const changed = diffResult.diff.files.filter((f) => f.verdict === 'changed');
+          if (changed.length === 0) return;
+          // Enter cycles through the changed files; wrapping around closes drill-in.
+          if (drilledAgent === null) {
+            setDrilledAgent(changed[0].name);
+          } else {
+            const idx = changed.findIndex((f) => f.name === drilledAgent);
+            const nextIdx = (idx + 1) % changed.length;
+            setDrilledAgent(nextIdx === 0 ? null : changed[nextIdx].name);
+          }
+          return;
+        }
         return;
       }
-      if (key.return && nav.targetProfile) {
-        confirmCopy();
+
+      // Copy phase
+      if (nav.phase === 'copy') {
+        const targets = workbenchData.profiles.map((p) => p.name).filter((n) => n !== profile.name);
+        if (key.escape) {
+          dispatchNav({ type: 'BACK' });
+          return;
+        }
+        if (key.upArrow) {
+          const idx = targets.indexOf(nav.targetProfile ?? targets[0]);
+          const next = targets[(idx - 1 + targets.length) % targets.length];
+          dispatchNav({ type: 'SET_TARGET_PROFILE', profile: next });
+          return;
+        }
+        if (key.downArrow) {
+          const idx = targets.indexOf(nav.targetProfile ?? targets[0]);
+          const next = targets[(idx + 1) % targets.length];
+          dispatchNav({ type: 'SET_TARGET_PROFILE', profile: next });
+          return;
+        }
+        if (key.return && nav.targetProfile) {
+          confirmCopy();
+          return;
+        }
         return;
       }
-      return;
-    }
-  }, [resourceNav, selectedIndex, workbenchData, promptingAgentName, agentNameDraft, openPreview, editSelectedResource, removeSelectedResource, openDiff, confirmCopy, openAgentEdit, saveAgentFrontmatter, startCreateAgent, submitCreateAgent, recreateUserMemory, runSearch, jumpToSearchHit, searchResults]);
+    },
+    [
+      resourceNav,
+      selectedIndex,
+      workbenchData,
+      promptingAgentName,
+      agentNameDraft,
+      openPreview,
+      editSelectedResource,
+      removeSelectedResource,
+      openDiff,
+      confirmCopy,
+      openAgentEdit,
+      saveAgentFrontmatter,
+      startCreateAgent,
+      submitCreateAgent,
+      recreateUserMemory,
+      runSearch,
+      jumpToSearchHit,
+      searchResults,
+    ],
+  );
 
   const performLaunch = useCallback(async () => {
     const launch = lifecycle.launch;
@@ -1131,12 +1450,8 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
       });
 
       // Run async side effects before spawning
-      await ensureProfileClaudeMdExcludes(
-        resolveInside(plan.claudeHomePath, 'settings.json'),
-      );
-      await ensureCcpsProfileRule(
-        resolveInside(plan.claudeHomePath, 'rules', 'ccps-profile.md'),
-      );
+      await ensureProfileClaudeMdExcludes(resolveInside(plan.claudeHomePath, 'settings.json'));
+      await ensureCcpsProfileRule(resolveInside(plan.claudeHomePath, 'rules', 'ccps-profile.md'));
 
       // Transition to launching state
       setLifecycle((prev) => ({
@@ -1144,20 +1459,33 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
         launch: { ...prev.launch, phase: 'launching' },
       }));
 
-      // Persist selection across remount
+      // Persist selection across the launch remount
       persistedSelection.current = selectedIndex;
 
-      // Call the external launch handler (which unmounts Ink, spawns, remounts)
-      // or fall back to workbenchLaunchSync for the real spawn
       if (onLaunch) {
+        // Publish the UI state that must survive the unmount/remount cycle
+        // (spec §10) outside the React tree; the entry (index.mts) hands it
+        // to the next WorkbenchApp mount as the `resumeState` prop.
+        pendingResumeState = {
+          selectedIndex,
+          profileName,
+          dir: launch.dir,
+          exitCode: null,
+        };
+        // The entry's handler unmounts Ink, spawns Claude synchronously, and
+        // returns Claude's exit code. In production this state update lands
+        // on the unmounted tree, so the remounted Workbench reads the same
+        // data from pendingResumeState; in tests (handler does not unmount)
+        // it drives the 'exited' flash directly.
         const exitCode = onLaunch(plan, appHomePath);
+        pendingResumeState = { ...pendingResumeState, exitCode };
         setLifecycle((prev) => ({
           ...prev,
           launch: { ...prev.launch, phase: 'exited', exitCode },
         }));
       }
-      // When onLaunch is not provided, the Workbench entry (index.mts)
-      // handles the unmount-spawn-remount cycle.
+      // onLaunch is always provided by the Workbench entry (index.mts);
+      // without it there is no spawn and the phase stays 'launching'.
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setLifecycle((prev) => ({
@@ -1165,9 +1493,7 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
         launch: {
           ...prev.launch,
           phase: 'bar', // stay in bar on error
-          validationFindings: [
-            { severity: 'error' as const, code: 'LAUNCH_FAILED', message },
-          ],
+          validationFindings: [{ severity: 'error' as const, code: 'LAUNCH_FAILED', message }],
         },
       }));
     }
@@ -1177,172 +1503,250 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
     setLifecycle((prev) => lifecycleReducer(prev, action));
   }, []);
 
-  const handleLifecycleAction = useCallback(async (
-    action: LifecycleAction,
-    profileName: string,
-    input: string,
-    selectedTemplate: string | null,
-  ) => {
-    if (action.type !== 'SUBMIT' && action.type !== 'START_IMMEDIATE' && action.type !== 'CONFIRM_CHOICE') return;
+  const handleLifecycleAction = useCallback(
+    async (
+      action: LifecycleAction,
+      profileName: string,
+      input: string,
+      selectedTemplate: string | null,
+    ) => {
+      if (
+        action.type !== 'SUBMIT' &&
+        action.type !== 'START_IMMEDIATE' &&
+        action.type !== 'CONFIRM_CHOICE'
+      )
+        return;
 
-    const appHomePath = getAppHomePaths().appHomePath;
-    // For SUBMIT actions, kind comes from the current lifecycle state
-    const kind = (action.type === 'START_IMMEDIATE' ? action.kind : lifecycle.kind) as LifecyclePromptKind;
+      const appHomePath = getAppHomePaths().appHomePath;
+      // For SUBMIT actions, kind comes from the current lifecycle state
+      const kind = (
+        action.type === 'START_IMMEDIATE' ? action.kind : lifecycle.kind
+      ) as LifecyclePromptKind;
 
-    try {
-      if (kind === 'create') {
-        const customTemplate = workbenchData.customTemplates.find((c) => c.name === selectedTemplate);
-        if (customTemplate) {
-          // Create from a custom template (§11.3): stripped tree lands, MCP
-          // servers re-register via delegation, secret keys need re-entry.
-          const result = await createProfileFromCustomTemplate({
-            appHomePath,
-            templateName: customTemplate.name,
-            name: input,
-          });
-          const reenterKeys = [...new Set([
-            ...result.settingsSecretKeysToReenter,
-            ...result.mcpServers.flatMap((s) => s.envKeysToReenter),
-            ...result.legacyMcpEnvKeysToReenter.flatMap((s) => s.keys),
-          ])].sort((a, b) => a.localeCompare(b));
-          const failedServers = result.mcpServers.filter((s) => !s.reRegistered).map((s) => s.name);
-          const parts = [
-            t('lifecycle.success.createdFromTemplate')
-              .replace('{name}', input)
-              .replace('{template}', customTemplate.name),
-          ];
-          if (reenterKeys.length > 0) {
-            parts.push(
-              t('template.reenterSecrets')
-                .replace('{count}', String(reenterKeys.length))
-                .replace('{keys}', reenterKeys.join(', ')),
+      try {
+        if (kind === 'create') {
+          const customTemplate = workbenchData.customTemplates.find(
+            (c) => c.name === selectedTemplate,
+          );
+          if (customTemplate) {
+            // Create from a custom template (§11.3): stripped tree lands, MCP
+            // servers re-register via delegation, secret keys need re-entry.
+            const result = await createProfileFromCustomTemplate({
+              appHomePath,
+              templateName: customTemplate.name,
+              name: input,
+            });
+            const reenterKeys = [
+              ...new Set([
+                ...result.settingsSecretKeysToReenter,
+                ...result.mcpServers.flatMap((s) => s.envKeysToReenter),
+                ...result.legacyMcpEnvKeysToReenter.flatMap((s) => s.keys),
+              ]),
+            ].sort((a, b) => a.localeCompare(b));
+            const failedServers = result.mcpServers
+              .filter((s) => !s.reRegistered)
+              .map((s) => s.name);
+            const parts = [
+              t('lifecycle.success.createdFromTemplate', {
+                name: input,
+                template: customTemplate.name,
+              }),
+            ];
+            if (reenterKeys.length > 0) {
+              parts.push(
+                t('template.reenterSecrets', {
+                  count: String(reenterKeys.length),
+                  keys: reenterKeys.join(', '),
+                }),
+              );
+            }
+            if (failedServers.length > 0) {
+              parts.push(t('template.mcpFailed', { names: failedServers.join(', ') }));
+            }
+            setLifecycle((prev) =>
+              lifecycleReducer(prev, { type: 'EXECUTE_SUCCESS', message: parts.join('. ') }),
+            );
+          } else {
+            // A stale picker selection that matches nothing falls back to the
+            // default built-in rather than crashing the create.
+            const template = (getTemplateList() as readonly string[]).includes(
+              selectedTemplate ?? '',
+            )
+              ? (selectedTemplate as ProfileTemplateName)
+              : 'general';
+            await createProfile({
+              appHomePath,
+              name: input,
+              template,
+            });
+            setLifecycle((prev) =>
+              lifecycleReducer(prev, {
+                type: 'EXECUTE_SUCCESS',
+                message: `"${input}" ${t('lifecycle.success.created')}`,
+              }),
             );
           }
-          if (failedServers.length > 0) {
-            parts.push(t('template.mcpFailed').replace('{names}', failedServers.join(', ')));
+        } else if (kind === 'save-template') {
+          if (action.type === 'SUBMIT') {
+            // Preview only — nothing is saved until the confirm panel's [y].
+            const preview = await previewSaveProfileAsTemplate({ appHomePath, profileName });
+            setLifecycle((prev) =>
+              lifecycleReducer(prev, {
+                type: 'SHOW_TEMPLATE_SUMMARY',
+                summary: {
+                  strippedCount: preview.strippedCount,
+                  autoMemoryExcluded: preview.autoMemoryExcluded,
+                },
+              }),
+            );
+            return;
           }
-          setLifecycle((prev) => lifecycleReducer(prev, { type: 'EXECUTE_SUCCESS', message: parts.join('. ') }));
-        } else {
-          // A stale picker selection that matches nothing falls back to the
-          // default built-in rather than crashing the create.
-          const template = (TEMPLATE_LIST as string[]).includes(selectedTemplate ?? '')
-            ? (selectedTemplate as ProfileTemplateName)
-            : 'general';
-          await createProfile({
+          // CONFIRM_CHOICE: the user accepted the stripping summary — save now.
+          const { manifest } = await saveProfileAsTemplate({
             appHomePath,
-            name: input,
-            template,
+            profileName,
+            templateName: input,
           });
-          setLifecycle((prev) => lifecycleReducer(prev, { type: 'EXECUTE_SUCCESS', message: `"${input}" ${t('lifecycle.success.created')}` }));
-        }
-      } else if (kind === 'save-template') {
-        if (action.type === 'SUBMIT') {
-          // Preview only — nothing is saved until the confirm panel's [y].
-          const preview = await previewSaveProfileAsTemplate({ appHomePath, profileName });
-          setLifecycle((prev) => lifecycleReducer(prev, {
-            type: 'SHOW_TEMPLATE_SUMMARY',
-            summary: {
-              strippedCount: preview.strippedCount,
-              autoMemoryExcluded: preview.autoMemoryExcluded,
-            },
+          setLifecycle((prev) =>
+            lifecycleReducer(prev, {
+              type: 'EXECUTE_SUCCESS',
+              message: t('lifecycle.success.templateSaved', { name: manifest.name }),
+            }),
+          );
+        } else if (kind === 'copy') {
+          await copyProfile({ appHomePath, from: profileName, to: input });
+          setLifecycle((prev) =>
+            lifecycleReducer(prev, {
+              type: 'EXECUTE_SUCCESS',
+              message: `${t('lifecycle.success.copiedTo')} "${input}"`,
+            }),
+          );
+        } else if (kind === 'rename') {
+          await renameProfile({ appHomePath, oldName: profileName, newName: input });
+          setLifecycle((prev) =>
+            lifecycleReducer(prev, {
+              type: 'EXECUTE_SUCCESS',
+              message: `${t('lifecycle.success.renamedTo')} "${input}"`,
+            }),
+          );
+        } else if (kind === 'remove') {
+          // Workbench removal follows §9.1 (graduated options, no exact-name
+          // typing): [y] backup default, [u] no-backup → Recovery Bin.
+          const noBackup = input === 'u';
+          await removeProfile({
+            appHomePath,
+            name: profileName,
+            confirmation: profileName,
+            noBackup,
+          });
+          setLifecycle((prev) =>
+            lifecycleReducer(prev, {
+              type: 'EXECUTE_SUCCESS',
+              message: `"${profileName}" ${t('lifecycle.success.removed')}`,
+            }),
+          );
+        } else if (kind === 'default') {
+          const profile = workbenchData.profiles.find((p) => p.name === profileName);
+          if (profile?.isDefault) {
+            await clearDefaultProfile({ appHomePath });
+            setLifecycle((prev) =>
+              lifecycleReducer(prev, {
+                type: 'EXECUTE_SUCCESS',
+                message: t('lifecycle.default.cleared'),
+              }),
+            );
+          } else {
+            await setDefaultProfile({ appHomePath, name: profileName });
+            setLifecycle((prev) =>
+              lifecycleReducer(prev, {
+                type: 'EXECUTE_SUCCESS',
+                message: t('lifecycle.default.set'),
+              }),
+            );
+          }
+        } else if (kind === 'validate') {
+          const result = await validateProfile({ appHomePath, name: profileName });
+          const findings = result.findings.map((f) => ({
+            severity: f.severity,
+            code: f.code,
+            message: f.message,
           }));
-          return;
+          setLifecycle((prev) => lifecycleReducer(prev, { type: 'SET_FINDINGS', findings }));
+          if (findings.length === 0) {
+            setLifecycle((prev) =>
+              lifecycleReducer(prev, {
+                type: 'EXECUTE_SUCCESS',
+                message: t('lifecycle.success.valid'),
+              }),
+            );
+          } else {
+            const errorCount = findings.filter((f) => f.severity === 'error').length;
+            const warningCount = findings.filter((f) => f.severity === 'warning').length;
+            setLifecycle((prev) =>
+              lifecycleReducer(prev, {
+                type: 'EXECUTE_SUCCESS',
+                message: `${errorCount} ${t('lifecycle.findings.errors')}, ${warningCount} ${t('lifecycle.findings.warnings')}`,
+              }),
+            );
+          }
+        } else if (kind === 'backup') {
+          await backupProfile({ appHomePath, name: profileName });
+          setLifecycle((prev) =>
+            lifecycleReducer(prev, {
+              type: 'EXECUTE_SUCCESS',
+              message: `"${profileName}" ${t('lifecycle.success.backedUp')}`,
+            }),
+          );
         }
-        // CONFIRM_CHOICE: the user accepted the stripping summary — save now.
-        const { manifest } = await saveProfileAsTemplate({
-          appHomePath,
-          profileName,
-          templateName: input,
-        });
-        setLifecycle((prev) => lifecycleReducer(prev, {
-          type: 'EXECUTE_SUCCESS',
-          message: t('lifecycle.success.templateSaved').replace('{name}', manifest.name),
-        }));
-      } else if (kind === 'copy') {
-        await copyProfile({ appHomePath, from: profileName, to: input });
-        setLifecycle((prev) => lifecycleReducer(prev, { type: 'EXECUTE_SUCCESS', message: `${t('lifecycle.success.copiedTo')} "${input}"` }));
-      } else if (kind === 'rename') {
-        await renameProfile({ appHomePath, oldName: profileName, newName: input });
-        setLifecycle((prev) => lifecycleReducer(prev, { type: 'EXECUTE_SUCCESS', message: `${t('lifecycle.success.renamedTo')} "${input}"` }));
-      } else if (kind === 'remove') {
-        // Workbench removal follows §9.1 (graduated options, no exact-name
-        // typing): [y] backup default, [u] no-backup → Recovery Bin.
-        const noBackup = input === 'u';
-        await removeProfile({ appHomePath, name: profileName, confirmation: profileName, noBackup });
-        setLifecycle((prev) => lifecycleReducer(prev, { type: 'EXECUTE_SUCCESS', message: `"${profileName}" ${t('lifecycle.success.removed')}` }));
-      } else if (kind === 'default') {
-        const profile = workbenchData.profiles.find((p) => p.name === profileName);
-        if (profile?.isDefault) {
-          await clearDefaultProfile({ appHomePath });
-          setLifecycle((prev) => lifecycleReducer(prev, { type: 'EXECUTE_SUCCESS', message: t('lifecycle.default.cleared') }));
-        } else {
-          await setDefaultProfile({ appHomePath, name: profileName });
-          setLifecycle((prev) => lifecycleReducer(prev, { type: 'EXECUTE_SUCCESS', message: t('lifecycle.default.set') }));
-        }
-      } else if (kind === 'validate') {
-        const result = await validateProfile({ appHomePath, name: profileName });
-        const findings = result.findings.map((f) => ({
-          severity: f.severity,
-          code: f.code,
-          message: f.message,
-        }));
-        setLifecycle((prev) => lifecycleReducer(prev, { type: 'SET_FINDINGS', findings }));
-        if (findings.length === 0) {
-          setLifecycle((prev) => lifecycleReducer(prev, { type: 'EXECUTE_SUCCESS', message: t('lifecycle.success.valid') }));
-        } else {
-          const errorCount = findings.filter((f) => f.severity === 'error').length;
-          const warningCount = findings.filter((f) => f.severity === 'warning').length;
-          setLifecycle((prev) => lifecycleReducer(prev, {
-            type: 'EXECUTE_SUCCESS',
-            message: `${errorCount} ${t('lifecycle.findings.errors')}, ${warningCount} ${t('lifecycle.findings.warnings')}`,
-          }));
-        }
-      } else if (kind === 'backup') {
-        await backupProfile({ appHomePath, name: profileName });
-        setLifecycle((prev) => lifecycleReducer(prev, { type: 'EXECUTE_SUCCESS', message: `"${profileName}" ${t('lifecycle.success.backedUp')}` }));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const code = error instanceof CcpsError ? error.code : undefined;
+        const guidance = error instanceof CcpsError ? error.guidance : undefined;
+        setLifecycle((prev) =>
+          lifecycleReducer(prev, { type: 'EXECUTE_ERROR', message, code, guidance }),
+        );
+        return;
       }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const code = error instanceof CcpsError ? error.code : undefined;
-      const guidance = error instanceof CcpsError ? error.guidance : undefined;
-      setLifecycle((prev) => lifecycleReducer(prev, { type: 'EXECUTE_ERROR', message, code, guidance }));
-      return;
-    }
 
-    // Refresh data after any mutation
-    if (kind !== 'validate') {
-      try {
-        const freshData = await loadWorkbenchData(appHomePath);
-        setWorkbenchData(freshData);
-        // Clamp selectedIndex if profiles were removed
-        setSelectedIndex((prev) => Math.min(prev, Math.max(0, freshData.profiles.length - 1)));
-      } catch {
-        // refresh failure is non-fatal
+      // Refresh data after any mutation
+      if (kind !== 'validate') {
+        try {
+          const freshData = await loadWorkbenchData(appHomePath);
+          setWorkbenchData(freshData);
+          // Clamp selectedIndex if profiles were removed
+          setSelectedIndex((prev) => Math.min(prev, Math.max(0, freshData.profiles.length - 1)));
+        } catch {
+          // refresh failure is non-fatal
+        }
       }
-    }
-  }, [workbenchData, t, lifecycle.kind]);
+    },
+    [workbenchData, t, lifecycle.kind],
+  );
 
-  const handleConfirmInput = useCallback((input: string, key: Record<string, boolean>) => {
-    if (key.escape) {
-      setLifecycle((prev) => lifecycleReducer(prev, { type: 'CANCEL' }));
-      return;
-    }
-    if (lifecycle.kind === 'save-template') {
-      // Light confirm (§11.3): [y] saves the template; [u] has no meaning here.
+  const handleConfirmInput = useCallback(
+    (input: string, key: Record<string, boolean>) => {
+      if (key.escape) {
+        setLifecycle((prev) => lifecycleReducer(prev, { type: 'CANCEL' }));
+        return;
+      }
+      if (lifecycle.kind === 'save-template') {
+        // Light confirm (§11.3): [y] saves the template; [u] has no meaning here.
+        if (input === 'y') {
+          confirmSaveTemplate();
+        }
+        return;
+      }
       if (input === 'y') {
-        confirmSaveTemplate();
+        confirmRemove(false);
+        return;
       }
-      return;
-    }
-    if (input === 'y') {
-      confirmRemove(false);
-      return;
-    }
-    if (input === 'u') {
-      confirmRemove(true);
-      return;
-    }
-  }, [lifecycle, handleLifecycleAction]);
+      if (input === 'u') {
+        confirmRemove(true);
+        return;
+      }
+    },
+    [lifecycle, handleLifecycleAction],
+  );
 
   const confirmSaveTemplate = useCallback(() => {
     setLifecycle((prev) => lifecycleReducer(prev, { type: 'CONFIRM_CHOICE' }));
@@ -1355,15 +1759,18 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
     );
   }, [lifecycle, handleLifecycleAction]);
 
-  const confirmRemove = useCallback((noBackup: boolean) => {
-    setLifecycle((prev) => lifecycleReducer(prev, { type: 'CONFIRM_CHOICE' }));
-    void handleLifecycleAction(
-      { type: 'CONFIRM_CHOICE' },
-      lifecycle.profileName,
-      noBackup ? 'u' : 'y',
-      null,
-    );
-  }, [lifecycle, handleLifecycleAction]);
+  const confirmRemove = useCallback(
+    (noBackup: boolean) => {
+      setLifecycle((prev) => lifecycleReducer(prev, { type: 'CONFIRM_CHOICE' }));
+      void handleLifecycleAction(
+        { type: 'CONFIRM_CHOICE' },
+        lifecycle.profileName,
+        noBackup ? 'u' : 'y',
+        null,
+      );
+    },
+    [lifecycle, handleLifecycleAction],
+  );
 
   // Launch action handlers
   const handleLaunchBar = useCallback(async (profileName: string) => {
@@ -1398,49 +1805,55 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
     }));
   }, []);
 
-  const handleLaunchDirScreen = useCallback(async (profileName: string) => {
-    // L opens bar first (loading recents + validation), then transitions to dir-screen
-    await handleLaunchBar(profileName);
-    setLifecycle((prev) => ({
-      ...prev,
-      launch: {
-        ...prev.launch,
-        phase: 'dir-screen',
-        dirInput: '',
-        recentIndex: -1,
-      },
-    }));
-  }, [handleLaunchBar]);
+  const handleLaunchDirScreen = useCallback(
+    async (profileName: string) => {
+      // L opens bar first (loading recents + validation), then transitions to dir-screen
+      await handleLaunchBar(profileName);
+      setLifecycle((prev) => ({
+        ...prev,
+        launch: {
+          ...prev.launch,
+          phase: 'dir-screen',
+          dirInput: '',
+          recentIndex: -1,
+        },
+      }));
+    },
+    [handleLaunchBar],
+  );
 
-  const handleLaunchDryRun = useCallback(async (profileName: string) => {
-    const appHomePath = getAppHomePaths().appHomePath;
-    try {
-      const plan = await buildLaunchPlan({
-        appHomePath,
-        profileName,
-        cwd: lifecycle.launch.dir,
-      });
-      setLifecycle((prev) => ({
-        ...prev,
-        launch: {
-          ...prev.launch,
-          phase: 'dry-run',
-          dryRunPlan: plan,
-        },
-      }));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setLifecycle((prev) => ({
-        ...prev,
-        launch: {
-          ...prev.launch,
-          validationFindings: [
-            { severity: 'error' as const, code: 'LAUNCH_PLAN_FAILED', message },
-          ],
-        },
-      }));
-    }
-  }, [lifecycle.launch.dir]);
+  const handleLaunchDryRun = useCallback(
+    async (profileName: string) => {
+      const appHomePath = getAppHomePaths().appHomePath;
+      try {
+        const plan = await buildLaunchPlan({
+          appHomePath,
+          profileName,
+          cwd: lifecycle.launch.dir,
+        });
+        setLifecycle((prev) => ({
+          ...prev,
+          launch: {
+            ...prev.launch,
+            phase: 'dry-run',
+            dryRunPlan: plan,
+          },
+        }));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setLifecycle((prev) => ({
+          ...prev,
+          launch: {
+            ...prev.launch,
+            validationFindings: [
+              { severity: 'error' as const, code: 'LAUNCH_PLAN_FAILED', message },
+            ],
+          },
+        }));
+      }
+    },
+    [lifecycle.launch.dir],
+  );
 
   // Skill install wizard (issue #64, spec §7.2). The wizard overlay drives a
   // 3-step flow: pick a Local Skill Source, choose Copy (default) or Link,
@@ -1475,14 +1888,17 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
   // Install a discovered source through the §7.3 adapter: close Discover and
   // hand the source (owner/repo + optional --skill, or a tree URL) to the
   // install wizard's remote staging phase.
-  const handleDiscoverInstall = useCallback((source: string, skill?: string) => {
-    const profile = workbenchData.profiles[selectedIndex];
-    if (!profile) return;
-    setDiscoverOpen(false);
-    setDiscoverSession(null);
-    setWizardProfileName(profile.name);
-    setWizardInitialRemote({ source, skill });
-  }, [workbenchData, selectedIndex]);
+  const handleDiscoverInstall = useCallback(
+    (source: string, skill?: string) => {
+      const profile = workbenchData.profiles[selectedIndex];
+      if (!profile) return;
+      setDiscoverOpen(false);
+      setDiscoverSession(null);
+      setWizardProfileName(profile.name);
+      setWizardInitialRemote({ source, skill });
+    },
+    [workbenchData, selectedIndex],
+  );
 
   const handleOpenBrowser = useCallback((url: string) => {
     void openUrlInBrowser(url);
@@ -1495,8 +1911,14 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
 
   const wizardCallbacks = useMemo(
     () => ({
-      onResolveSource: async (sourceInput: string) =>
-        validateLocalSkillSource(sourceInput),
+      onListLocalSources: async () => {
+        const appHomePath = getAppHomePaths().appHomePath;
+        return listLocalSkillSources({
+          appHomePath,
+          excludeProfileName: wizardProfileName ?? undefined,
+        });
+      },
+      onResolveSource: async (sourceInput: string) => validateLocalSkillSource(sourceInput),
       onComputePreview: async (input: {
         sourcePath: string;
         mode: 'copy' | 'link';
@@ -1590,7 +2012,8 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
 
   const sidebarWidth = Math.max(26, Math.floor(width * 0.3));
   const mainWidth = width - sidebarWidth - 2;
-  const selectedProfile: WorkbenchProfile | undefined = workbenchData.profiles[selectedIndex] ?? undefined;
+  const selectedProfile: WorkbenchProfile | undefined =
+    workbenchData.profiles[selectedIndex] ?? undefined;
 
   // Active edit session for the selected Profile's CLAUDE.md, so the top-level
   // grid can render the §8 watching banner with its change counter.
@@ -1610,17 +2033,20 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
   }, []);
 
   // Resource view hint line (contextual guidance).
-  const resourceHintLine = resourceNav.phase === 'list'
-    ? resourceNav.category === 'agents'
-      ? `${t('resource.list.hint')}  [a] create  [f] frontmatter`
-      : resourceNav.category === 'user-memory' && selectedProfile && !selectedProfile.resourceDetails.userMemory.exists
-        ? t('resource.userMemory.missing')
-        : t('resource.list.hint')
-    : resourceNav.phase === 'diff'
-      ? t('resource.diff.switchHint')
-      : resourceNav.phase === 'preview' || resourceNav.phase === 'copy'
-        ? t('resource.list.hint')
-        : '';
+  const resourceHintLine =
+    resourceNav.phase === 'list'
+      ? resourceNav.category === 'agents'
+        ? `${t('resource.list.hint')}  [a] create  [f] frontmatter`
+        : resourceNav.category === 'user-memory' &&
+            selectedProfile &&
+            !selectedProfile.resourceDetails.userMemory.exists
+          ? t('resource.userMemory.missing')
+          : t('resource.list.hint')
+      : resourceNav.phase === 'diff'
+        ? t('resource.diff.switchHint')
+        : resourceNav.phase === 'preview' || resourceNav.phase === 'copy'
+          ? t('resource.list.hint')
+          : '';
 
   const mcpFailed = selectedProfile ? (mcpFailedByProfile[selectedProfile.name] ?? []) : [];
 
@@ -1670,84 +2096,102 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
             ? wizardOverlay
             : discoverOverlay
               ? discoverOverlay
-          : launchOverlay
-            ? launchOverlay
-            : React.createElement(
-                Box,
-                { flexDirection: 'column', flexGrow: 1 },
-                React.createElement(
-                  Box,
-                  { flexDirection: 'row', flexGrow: 1 },
-                  React.createElement(Sidebar, {
-                    profiles: workbenchData.profiles,
-                    selectedIndex,
-                    onSelect: setSelectedIndex,
-                    width: sidebarWidth,
-                    height: height - 1,
-                    capture: capture || mainPaneFocus,
-                    headless,
-                    lifecycle,
-                    wizardOpen,
-                    resourceNavActive: resourceNav.phase !== 'idle',
-                    customTemplates: workbenchData.customTemplates,
-                    onLifecycleAction,
-                    onAction: handleLifecycleAction,
-                    onLaunchBar: handleLaunchBar,
-                    onLaunchDirScreen: handleLaunchDirScreen,
-                    onAddSkill: handleAddSkill,
-                    onDrillCategory: handleDrillCategory,
-                    onJumpContentHit: jumpToSearchHit,
-                    onSearchContent: handleSearchContent,
-                    onRemoveCustomTemplate: handleRemoveCustomTemplate,
-                  }),
-                  drillDown.kind === 'autoMemory' && selectedProfile
-                    ? React.createElement(AutoMemoryView, {
-                        profile: selectedProfile,
-                        appHomePath: getAppHomePaths().appHomePath,
-                        profileNames: workbenchData.profiles.map((p) => p.name),
-                        width: mainWidth,
-                        height: height - 1,
-                        editSessionManager,
-                        onBack: handleExitDrillDown,
-                      })
-                    : drillDown.kind === 'bulk' && selectedProfile
-                      ? React.createElement(BulkOpsView, {
-                          profile: selectedProfile,
-                          appHomePath: getAppHomePaths().appHomePath,
-                          profileRootPath: getProfileTemplatePaths(getAppHomePaths().appHomePath, selectedProfile.name).profileRootPath,
-                          profileNames: workbenchData.profiles.map((p) => p.name),
-                          category: drillDown.category,
-                          width: mainWidth,
-                          height: height - 1,
-                          onBack: handleExitDrillDown,
-                          onDataChanged: () => { void refreshData(); },
-                          onDiscover: () => { void openDiscover(); },
-                          captureProcess,
-                          headless,
-                        })
-                      : React.createElement(MainPane, {
-                        profile: selectedProfile,
+              : launchOverlay
+                ? launchOverlay
+                : React.createElement(
+                    Box,
+                    { flexDirection: 'column', flexGrow: 1 },
+                    React.createElement(
+                      Box,
+                      { flexDirection: 'row', flexGrow: 1 },
+                      React.createElement(Sidebar, {
                         profiles: workbenchData.profiles,
-                        nav: resourceNav,
-                        mcpFailed,
-                        width: mainWidth,
+                        selectedIndex,
+                        onSelect: setSelectedIndex,
+                        width: sidebarWidth,
                         height: height - 1,
-                        focused: mainPaneFocus,
-                        selectedCategoryIndex,
-                        editSession: topLevelEditSession,
-                        sessionFor,
-                        content: resourceContent,
-                        diff: diffResult,
-                        drilledAgent,
-                        agentFrontmatter,
-                        searchResults,
-                        onSaveFrontmatter: saveAgentFrontmatter,
-                        onBack: () => setResourceNav((prev) => resourceNavReducer(prev, { type: 'BACK' })),
-                        hintLine: resourceHintLine,
+                        capture: capture || mainPaneFocus,
+                        headless,
+                        lifecycle,
+                        wizardOpen,
+                        resourceNavActive: resourceNav.phase !== 'idle',
+                        customTemplates: workbenchData.customTemplates,
+                        onLifecycleAction,
+                        onAction: handleLifecycleAction,
+                        onLaunchBar: handleLaunchBar,
+                        onLaunchDirScreen: handleLaunchDirScreen,
+                        onAddSkill: handleAddSkill,
+                        onDrillCategory: handleDrillCategory,
+                        onJumpContentHit: jumpToSearchHit,
+                        onSearchContent: handleSearchContent,
+                        onSearchFocusChange: handleSearchFocusChange,
+                        onRemoveCustomTemplate: handleRemoveCustomTemplate,
                       }),
-                ),
-                renderGuidanceDialogs(),
-              ),
+                      drillDown.kind === 'autoMemory' && selectedProfile
+                        ? React.createElement(AutoMemoryView, {
+                            profile: selectedProfile,
+                            appHomePath: getAppHomePaths().appHomePath,
+                            profileNames: workbenchData.profiles.map((p) => p.name),
+                            width: mainWidth,
+                            height: height - 1,
+                            editSessionManager,
+                            onBack: handleExitDrillDown,
+                          })
+                        : drillDown.kind === 'bulk' && selectedProfile
+                          ? React.createElement(BulkOpsView, {
+                              profile: selectedProfile,
+                              appHomePath: getAppHomePaths().appHomePath,
+                              profileRootPath: getProfileTemplatePaths(
+                                getAppHomePaths().appHomePath,
+                                selectedProfile.name,
+                              ).profileRootPath,
+                              profileNames: workbenchData.profiles.map((p) => p.name),
+                              category: drillDown.category,
+                              width: mainWidth,
+                              height: height - 1,
+                              onBack: handleExitDrillDown,
+                              onDataChanged: () => {
+                                void refreshData();
+                              },
+                              onDiscover: () => {
+                                void openDiscover();
+                              },
+                              captureProcess,
+                              headless,
+                            })
+                          : React.createElement(MainPane, {
+                              profile: selectedProfile,
+                              profiles: workbenchData.profiles,
+                              nav: resourceNav,
+                              mcpFailed,
+                              width: mainWidth,
+                              height: height - 1,
+                              focused: mainPaneFocus,
+                              selectedCategoryIndex,
+                              editSession: topLevelEditSession,
+                              sessionFor,
+                              descriptionDraft: editingDescription ? descriptionDraft : null,
+                              editFallback: {
+                                systemEditor: (filePath: string) =>
+                                  void handleFallbackSystemEditor(filePath),
+                                retry: handleFallbackRetry,
+                                dismiss: handleFallbackDismiss,
+                              },
+                              content: resourceContent,
+                              diff: diffResult,
+                              drilledAgent,
+                              agentFrontmatter,
+                              searchResults,
+                              onSaveFrontmatter: saveAgentFrontmatter,
+                              onBack: () =>
+                                setResourceNav((prev) =>
+                                  resourceNavReducer(prev, { type: 'BACK' }),
+                                ),
+                              hintLine: resourceHintLine,
+                            }),
+                    ),
+                    renderGuidanceDialogs(),
+                  ),
       React.createElement(
         Box,
         { width, justifyContent: 'space-between' },
@@ -1755,7 +2199,11 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
           Text,
           { dimColor: true },
           ` ${locale === 'zh' ? 'zh' : 'en'} │ ? ${t('keymap.help')} │ q ${t('app.quit')}` +
-            (mainPaneFocus ? ` │ ${t('main.backToList')}` : (drillDown.kind === 'none' && workbenchData.profiles.length > 0 ? ` │ ${t('main.focusHint')}` : '')),
+            (mainPaneFocus
+              ? ` │ ${t('main.backToList')}`
+              : drillDown.kind === 'none' && workbenchData.profiles.length > 0
+                ? ` │ ${t('main.focusHint')}`
+                : ''),
         ),
         flashMessage
           ? React.createElement(Text, { color: 'green', wrap: 'truncate' }, flashMessage)
@@ -1796,11 +2244,19 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
     return null;
   }
 
-  function renderLaunchOverlay(launch: LaunchState, w: number, h: number): React.ReactElement | null {
+  function renderLaunchOverlay(
+    launch: LaunchState,
+    w: number,
+    h: number,
+  ): React.ReactElement | null {
     if (launch.phase === 'idle' || launch.phase === 'launching') return null;
 
     if (launch.phase === 'bar') {
-      return React.createElement(PreLaunchBar, { launch, width: w, profileName: lifecycle.profileName });
+      return React.createElement(PreLaunchBar, {
+        launch,
+        width: w,
+        profileName: lifecycle.profileName,
+      });
     }
 
     if (launch.phase === 'dir-screen') {
@@ -1813,18 +2269,24 @@ function WorkbenchInner({ data, headless, skipWelcome, onLaunch, mcpProbe, searc
 
     if (launch.phase === 'exited') {
       const code = launch.exitCode;
-      const msg = code === 0
-        ? t('launch.exited.zero')
-        : t('launch.exited').replace('{code}', String(code));
+      const msg = code === 0 ? t('launch.exited.zero') : t('launch.exited', { code: String(code) });
       return React.createElement(
         Box,
-        { flexDirection: 'column', justifyContent: 'center', alignItems: 'center', width: w, height: h },
+        {
+          flexDirection: 'column',
+          justifyContent: 'center',
+          alignItems: 'center',
+          width: w,
+          height: h,
+        },
         React.createElement(
           Box,
           { borderStyle: 'round', paddingX: 2, paddingY: 1 },
           React.createElement(Text, { bold: true, color: code === 0 ? 'green' : 'yellow' }, msg),
         ),
-        React.createElement(Box, { marginTop: 1 },
+        React.createElement(
+          Box,
+          { marginTop: 1 },
           React.createElement(Text, { dimColor: true }, t('keymap.esc')),
         ),
       );
@@ -1844,16 +2306,22 @@ function WelcomeCard({ width, height }: { width: number; height: number }): Reac
       Box,
       { flexDirection: 'column', borderStyle: 'round', paddingX: 2, paddingY: 1 },
       React.createElement(Text, { bold: true }, t('welcome.title')),
-      React.createElement(Box, { marginTop: 1 },
+      React.createElement(
+        Box,
+        { marginTop: 1 },
         React.createElement(Text, null, t('welcome.line1')),
       ),
-      React.createElement(Box, { marginTop: 1 },
+      React.createElement(
+        Box,
+        { marginTop: 1 },
         React.createElement(Text, { bold: true }, t('welcome.keys')),
       ),
       React.createElement(Text, null, t('welcome.key.navigate')),
       React.createElement(Text, null, t('welcome.key.search')),
       React.createElement(Text, null, t('welcome.key.help')),
-      React.createElement(Box, { marginTop: 1 },
+      React.createElement(
+        Box,
+        { marginTop: 1 },
         React.createElement(Text, { dimColor: true }, t('welcome.dismiss')),
       ),
     ),

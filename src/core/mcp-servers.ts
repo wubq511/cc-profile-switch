@@ -4,6 +4,7 @@ import path from 'node:path';
 import { resolveInside } from '../platform/path';
 import { captureProcess as defaultCaptureProcess, type CaptureProcess } from '../platform/process';
 import { CcpsError } from '../utils/errors';
+import { isNodeError, isRecord } from '../utils/type-guards';
 import {
   mcpAddOptionsSchema,
   type McpAddOptions,
@@ -710,14 +711,4 @@ async function isLegacyMcpActiveForProfile(profileRootPath: string): Promise<boo
   } catch {
     return false;
   }
-}
-
-// ─── helpers ─────────────────────────────────────────────────────────────
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error;
 }

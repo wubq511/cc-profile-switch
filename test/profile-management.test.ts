@@ -15,6 +15,7 @@ import {
   renameProfile,
   resolveLaunchProfile,
   setDefaultProfile,
+  updateProfileDescription,
 } from '../src/core/profile-management';
 import {
   createProfileFromTemplate,
@@ -178,6 +179,61 @@ describe('profile management services', () => {
     await expect(fs.readJson(getAppHomePaths(appHome).configPath)).resolves.toMatchObject({
       defaultProfile: 'focus',
       lastUsedProfile: 'focus',
+    });
+  });
+
+  it('updates the profile description in profile.json and reflects it in summaries (S5)', async () => {
+    const appHome = await makeAppHome();
+    await makeProfile(appHome, 'coding', 'coding');
+    const paths = getProfileTemplatePaths(appHome, 'coding');
+
+    await updateProfileDescription({
+      appHomePath: appHome,
+      name: 'coding',
+      description: 'Renamed focus profile',
+      clock: () => new Date('2026-05-20T10:00:00Z'),
+    });
+
+    // Persisted through the schema-validated atomic write: fields preserved,
+    // description replaced, updatedAt bumped, no temp-file residue.
+    await expect(fs.readJson(paths.profileConfigPath)).resolves.toMatchObject({
+      name: 'coding',
+      description: 'Renamed focus profile',
+      createdAt: '2026-05-20T08:00:00.000Z',
+      updatedAt: '2026-05-20T10:00:00.000Z',
+    });
+    await expect(fs.pathExists(`${paths.profileConfigPath}.tmp`)).resolves.toBe(false);
+
+    const summaries = await listProfilesForDisplay({ appHomePath: appHome });
+    expect(summaries[0]).toMatchObject({ name: 'coding', description: 'Renamed focus profile' });
+  });
+
+  it('clears the profile description with an empty value', async () => {
+    const appHome = await makeAppHome();
+    await makeProfile(appHome, 'coding', 'coding');
+    const paths = getProfileTemplatePaths(appHome, 'coding');
+
+    await updateProfileDescription({ appHomePath: appHome, name: 'coding', description: '' });
+
+    await expect(fs.readJson(paths.profileConfigPath)).resolves.toMatchObject({
+      name: 'coding',
+      description: '',
+    });
+  });
+
+  it('refuses the description edit when profile validation blocks mutation', async () => {
+    const appHome = await makeAppHome();
+    await makeProfile(appHome, 'coding', 'coding');
+    const paths = getProfileTemplatePaths(appHome, 'coding');
+    await rm(paths.settingsPath);
+
+    await expect(
+      updateProfileDescription({ appHomePath: appHome, name: 'coding', description: 'x' }),
+    ).rejects.toMatchObject({ code: 'PROFILE_VALIDATION_FAILED' });
+
+    // The blocked edit leaves the manifest untouched.
+    await expect(fs.readJson(paths.profileConfigPath)).resolves.toMatchObject({
+      description: 'Focused software development profile.',
     });
   });
 

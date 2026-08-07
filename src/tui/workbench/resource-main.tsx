@@ -14,6 +14,7 @@ import { ResourcePreview } from './resource-preview';
 import { ResourceDiffView } from './resource-diff-view';
 import { ResourceSearchView } from './resource-search-view';
 import { AgentFrontmatterEditor } from './agent-frontmatter-editor';
+import type { EditFallbackHandlers } from './edit-session/FallbackMenu';
 
 type ResourceMainPaneProps = {
   profile: WorkbenchProfile;
@@ -32,6 +33,8 @@ type ResourceMainPaneProps = {
   onBack: () => void;
   width: number;
   height: number;
+  /** §8 editor-unavailable fallback actions for failed edit sessions. */
+  editFallback: EditFallbackHandlers;
 };
 
 export function ResourceMainPane({
@@ -49,6 +52,7 @@ export function ResourceMainPane({
   onBack,
   width,
   height,
+  editFallback,
 }: ResourceMainPaneProps): React.ReactElement {
   const { phase, category } = nav;
 
@@ -82,6 +86,7 @@ export function ResourceMainPane({
       width,
       height,
       hintLine,
+      editFallback,
     });
   }
 
@@ -101,6 +106,7 @@ export function ResourceMainPane({
       session,
       width,
       height,
+      editFallback,
     });
   }
 

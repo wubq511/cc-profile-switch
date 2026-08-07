@@ -2,6 +2,7 @@ import fs from 'fs-extra';
 
 import { apiSettingsSchema, profileSettingsApiSchema } from '../schemas/api-settings';
 import { CcpsError } from '../utils/errors';
+import { isNodeError } from '../utils/type-guards';
 import { getAppHomePaths } from './app-config';
 import { getProfileTemplatePaths } from './profile-template';
 
@@ -132,8 +133,4 @@ function invalidApiSettings(filePath: string, cause: unknown): CcpsError {
 
 function hasOwnEnv(value: unknown): boolean {
   return typeof value === 'object' && value !== null && Object.hasOwn(value, 'env');
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error;
 }

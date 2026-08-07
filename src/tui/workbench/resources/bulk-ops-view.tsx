@@ -3,11 +3,12 @@ import { Box, Text, useInput, useStdin } from 'ink';
 
 import { useI18n } from '../i18n/react';
 import type { WorkbenchProfile } from '../profile-data';
+import { getSkillsDirectoryPath, inspectSkills } from '../../../core/skills-provenance';
 import {
-  getSkillsDirectoryPath,
-  inspectSkills,
-} from '../../../core/skills-provenance';
-import { binExistingSkillEntry, copySkillToProfile, removeLinkedSkill } from '../../../core/skills-install';
+  binExistingSkillEntry,
+  copySkillToProfile,
+  removeLinkedSkill,
+} from '../../../core/skills-install';
 import { previewSkillUpdate, applySkillUpdate } from '../../../core/skills-update';
 import { listAutoMemoryEntries, removeAutoMemoryEntry } from '../../../core/auto-memory';
 import { previewMcpServer, removeMcpServer } from '../../../core/mcp-servers';
@@ -141,7 +142,14 @@ export function BulkOpsView({
     }
     setItems(next);
     setSelectedIndex((prev) => Math.min(prev, Math.max(0, next.length - 1)));
-  }, [appHomePath, category, profile.name, profile.resourceDetails.agents, profile.mcpServers, profileRootPath]);
+  }, [
+    appHomePath,
+    category,
+    profile.name,
+    profile.resourceDetails.agents,
+    profile.mcpServers,
+    profileRootPath,
+  ]);
 
   useEffect(() => {
     void reload();
@@ -163,7 +171,12 @@ export function BulkOpsView({
         const item = items.find((i) => i.name === name);
         if (category === 'skills') {
           if (item?.mode === 'link') {
-            await removeLinkedSkill({ appHomePath, profileName: profile.name, profileRootPath, name });
+            await removeLinkedSkill({
+              appHomePath,
+              profileName: profile.name,
+              profileRootPath,
+              name,
+            });
           } else {
             await binExistingSkillEntry({
               appHomePath,
@@ -184,10 +197,15 @@ export function BulkOpsView({
         okCount += 1;
         removedNames.push(name);
       } catch (error) {
-        failures.push(t('bulk.remove.failed').replace('{name}', name).replace('{message}', error instanceof Error ? error.message : String(error)));
+        failures.push(
+          t('bulk.remove.failed', {
+            name,
+            message: error instanceof Error ? error.message : String(error),
+          }),
+        );
       }
     }
-    if (okCount > 0) setStatus(t('bulk.remove.done').replace('{count}', String(okCount)));
+    if (okCount > 0) setStatus(t('bulk.remove.done', { count: String(okCount) }));
     for (const f of failures) setStatus(f);
     if (removedNames.length > 0) {
       setSelected((prev) => {
@@ -224,18 +242,18 @@ export function BulkOpsView({
         const result = await applySkillUpdate(applyOptions);
         const primary = result.applied[0];
         if (primary?.noop) {
-          setStatus(t('bulk.update.noop').replace('{name}', name));
+          setStatus(t('bulk.update.noop', { name }));
         } else {
-          setStatus(t('bulk.update.ok').replace('{name}', name));
+          setStatus(t('bulk.update.ok', { name }));
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         if (error instanceof CcpsError && error.code === 'SKILL_UPDATE_DRIFT_CONFIRM_REQUIRED') {
-          setStatus(t('bulk.update.drift').replace('{name}', name));
+          setStatus(t('bulk.update.drift', { name }));
         } else if (error instanceof CcpsError && error.code === 'SKILL_UPDATE_DISABLED') {
-          setStatus(t('bulk.update.disabled').replace('{name}', name).replace('{reason}', message));
+          setStatus(t('bulk.update.disabled', { name, reason: message }));
         } else {
-          setStatus(t('bulk.update.failed').replace('{name}', name).replace('{message}', message));
+          setStatus(t('bulk.update.failed', { name, message }));
         }
       }
     }
@@ -265,16 +283,16 @@ export function BulkOpsView({
           } else if (category === 'agents') {
             await copyAgentToProfile(appHomePath, profile.name, target, name);
           }
-          setStatus(t('bulk.copy.result').replace('{item}', name).replace('{profile}', target));
+          setStatus(t('bulk.copy.result', { item: name, profile: target }));
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           const isCollision =
             error instanceof CcpsError &&
             (error.code === 'RESOURCE_COPY_COLLISION' || error.code === 'SKILL_INSTALL_COLLISION');
           if (isCollision) {
-            setStatus(t('bulk.copy.collision').replace('{item}', name).replace('{profile}', target));
+            setStatus(t('bulk.copy.collision', { item: name, profile: target }));
           } else {
-            failures.push(t('bulk.copy.failed').replace('{item}', name).replace('{profile}', target).replace('{message}', message));
+            failures.push(t('bulk.copy.failed', { item: name, profile: target, message }));
           }
         }
       }
@@ -314,7 +332,9 @@ export function BulkOpsView({
           return;
         }
         if (input === 'a') {
-          setTargetSelected((prev) => (prev.size === targetProfiles.length ? new Set() : new Set(targetProfiles)));
+          setTargetSelected((prev) =>
+            prev.size === targetProfiles.length ? new Set() : new Set(targetProfiles),
+          );
           return;
         }
         if (key.return) {
@@ -353,7 +373,9 @@ export function BulkOpsView({
         return;
       }
       if (input === 'a') {
-        setSelected((prev) => (prev.size === items.length ? new Set() : new Set(items.map((i) => i.name))));
+        setSelected((prev) =>
+          prev.size === items.length ? new Set() : new Set(items.map((i) => i.name)),
+        );
         return;
       }
       if (input === 'x') {
@@ -397,9 +419,7 @@ export function BulkOpsView({
       React.createElement(Text, { bold: true }, t('bulk.title')),
       React.createElement(Text, { dimColor: true }, ` · ${profile.name} · ${t(labelKey)}`),
     ),
-    phase === 'targets'
-      ? renderTargets()
-      : renderList(),
+    phase === 'targets' ? renderTargets() : renderList(),
   );
 
   function renderList(): React.ReactElement {
@@ -422,18 +442,18 @@ export function BulkOpsView({
                   { bold: isCursor, color: isCursor ? 'cyan' : undefined, inverse: isCursor },
                   `${isCursor ? '▸ ' : '  '}${isSel ? '[x]' : '[ ]'} ${item.name}`,
                 ),
-                React.createElement(
-                  Text,
-                  { dimColor: true, wrap: 'truncate' },
-                  `  ${item.detail}`,
-                ),
+                React.createElement(Text, { dimColor: true, wrap: 'truncate' }, `  ${item.detail}`),
               );
             }),
           ),
       React.createElement(
         Box,
         { marginTop: 1 },
-        React.createElement(Text, { dimColor: true }, t('bulk.selected').replace('{count}', String(selectedCount))),
+        React.createElement(
+          Text,
+          { dimColor: true },
+          t('bulk.selected', { count: String(selectedCount) }),
+        ),
       ),
       statusLines.length > 0 &&
         React.createElement(
@@ -463,7 +483,12 @@ export function BulkOpsView({
               const isSel = targetSelected.has(name);
               return React.createElement(
                 Text,
-                { key: name, bold: isCursor, color: isCursor ? 'cyan' : undefined, inverse: isCursor },
+                {
+                  key: name,
+                  bold: isCursor,
+                  color: isCursor ? 'cyan' : undefined,
+                  inverse: isCursor,
+                },
                 `${isCursor ? '▸ ' : '  '}${isSel ? '[x]' : '[ ]'} ${name}`,
               );
             }),

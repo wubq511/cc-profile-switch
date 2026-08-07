@@ -121,7 +121,13 @@ function summarize(name: string, valuesMs: number[]): PerfMeasurement {
  * Avoids importing the ESM Workbench module (Ink dependency).
  */
 function buildSyntheticProfiles(
-  summaries: { name: string; description: string; isDefault: boolean; isLastUsed: boolean; status: string }[],
+  summaries: {
+    name: string;
+    description: string;
+    isDefault: boolean;
+    isLastUsed: boolean;
+    status: string;
+  }[],
   skillsPerProfile: number,
 ): unknown[] {
   return summaries.map((s) => ({
@@ -142,7 +148,10 @@ function buildSyntheticProfiles(
     resourceDetails: {
       userMemory: { exists: true, name: 'CLAUDE.md' },
       agents: [{ name: 'agent-01' }, { name: 'agent-02' }],
-      skills: Array.from({ length: skillsPerProfile }, (_, i) => `skill-${String(i + 1).padStart(String(skillsPerProfile).length, '0')}`),
+      skills: Array.from(
+        { length: skillsPerProfile },
+        (_, i) => `skill-${String(i + 1).padStart(String(skillsPerProfile).length, '0')}`,
+      ),
       autoMemory: ['MEMORY.md', 'topic-01.md'],
       settings: ['autoMemoryDirectory', 'claudeMdExcludes', 'env'],
     },
@@ -169,10 +178,7 @@ async function loadCategoryLabels(): Promise<Record<string, string>> {
  * enumeration that `loadWorkbenchData` performs. We call the same core
  * functions directly to avoid importing the ESM/Ink Workbench module.
  */
-async function measureColdStart(
-  fixtureDir: string,
-  iterations: number,
-): Promise<number[]> {
+async function measureColdStart(fixtureDir: string, iterations: number): Promise<number[]> {
   const { listProfilesForDisplay } = await import('../../src/core/profile-management');
   const { validateProfile } = await import('../../src/core/validator');
   const { getAppHomePaths } = await import('../../src/core/app-config');
@@ -312,10 +318,7 @@ async function measureSearchFilter(
 // Content search
 // ---------------------------------------------------------------------------
 
-async function measureContentSearch(
-  fixtureDir: string,
-  iterations: number,
-): Promise<number[]> {
+async function measureContentSearch(fixtureDir: string, iterations: number): Promise<number[]> {
   const { searchAllResources } = await import('../../src/core/resource');
   const { getAppHomePaths } = await import('../../src/core/app-config');
   const paths = getAppHomePaths(fixtureDir);
@@ -366,6 +369,11 @@ export type HarnessOptions = {
   tier?: PerfTierName;
   iterations?: number;
   outPath?: string;
+  /**
+   * Reuse an already-materialized fixture app-home instead of building a new
+   * one. The directory is left in place — the caller owns its lifecycle.
+   */
+  fixtureDir?: string;
 };
 
 export async function runHarness(options: HarnessOptions = {}): Promise<PerfResult> {
@@ -374,12 +382,16 @@ export async function runHarness(options: HarnessOptions = {}): Promise<PerfResu
   const tierPreset = TIER_PRESETS[tier === '3x' ? '3x' : tier === 'baseline' ? 'baseline' : 'mini'];
   const thresholds = BASELINE_THRESHOLDS;
 
-  // 1. Build and materialize fixture.
+  // 1. Build and materialize fixture, or reuse a caller-provided one.
   const planStart = performance.now();
-  const plan = buildFixturePlan({ tier, pathologies: [] });
-  const fixtureDir = await fs.mkdtemp(path.join(tmpdir(), 'ccps-perf-'));
-  await materializeFixture(plan, fixtureDir);
+  let fixtureDir = options.fixtureDir;
+  if (!fixtureDir) {
+    const plan = buildFixturePlan({ tier, pathologies: [] });
+    fixtureDir = await fs.mkdtemp(path.join(tmpdir(), 'ccps-perf-'));
+    await materializeFixture(plan, fixtureDir);
+  }
   const fixtureMaterializeMs = performance.now() - planStart;
+  const ownsFixture = options.fixtureDir === undefined;
 
   // 2. Run measurements.
   const measurements: PerfMeasurement[] = [];
@@ -388,10 +400,18 @@ export async function runHarness(options: HarnessOptions = {}): Promise<PerfResu
     const coldStartValues = await measureColdStart(fixtureDir, iterations);
     measurements.push(summarize('cold-start', coldStartValues));
 
-    const repaintValues = await measureKeystrokeRepaint(fixtureDir, iterations, tierPreset.skillsPerProfile);
+    const repaintValues = await measureKeystrokeRepaint(
+      fixtureDir,
+      iterations,
+      tierPreset.skillsPerProfile,
+    );
     measurements.push(summarize('keystroke-repaint', repaintValues));
 
-    const searchValues = await measureSearchFilter(fixtureDir, iterations, tierPreset.skillsPerProfile);
+    const searchValues = await measureSearchFilter(
+      fixtureDir,
+      iterations,
+      tierPreset.skillsPerProfile,
+    );
     measurements.push(summarize('search-filter', searchValues));
 
     const contentSearchValues = await measureContentSearch(fixtureDir, iterations);
@@ -413,9 +433,7 @@ export async function runHarness(options: HarnessOptions = {}): Promise<PerfResu
   const coldStartPass = coldStart ? coldStart.p95Ms <= thresholds.coldStartMs : true;
   const keystrokeRepaintPass = keystroke ? keystroke.p95Ms <= thresholds.keystrokeRepaintMs : true;
   const searchFilterPass = search ? search.p95Ms <= thresholds.searchFilterMs : true;
-  const loadingStateRulePass = measurements.every(
-    (m) => m.maxMs <= thresholds.loadingStateRuleMs,
-  );
+  const loadingStateRulePass = measurements.every((m) => m.maxMs <= thresholds.loadingStateRuleMs);
 
   const result: PerfResult = {
     timestamp: new Date().toISOString(),
@@ -430,13 +448,16 @@ export async function runHarness(options: HarnessOptions = {}): Promise<PerfResu
       keystrokeRepaintPass,
       searchFilterPass,
       loadingStateRulePass,
-      overallPass: coldStartPass && keystrokeRepaintPass && searchFilterPass && loadingStateRulePass,
+      overallPass:
+        coldStartPass && keystrokeRepaintPass && searchFilterPass && loadingStateRulePass,
     },
     fixtureMaterializeMs: Math.round(fixtureMaterializeMs * 100) / 100,
   };
 
-  // 4. Clean up fixture.
-  await fs.remove(fixtureDir);
+  // 4. Clean up the fixture only if this run created it.
+  if (ownsFixture) {
+    await fs.remove(fixtureDir);
+  }
 
   // 5. Write output if requested.
   if (options.outPath) {
@@ -557,9 +578,25 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error: unknown) => {
-  process.stderr.write(
-    `perf:harness failed: ${error instanceof Error ? error.message : String(error)}\n`,
-  );
-  process.exit(1);
-});
+// Run the CLI only when this file is executed directly (e.g.
+// `npm run perf:harness` → `tsx test/perf/harness.ts`), not when a test
+// imports runHarness. tsx/node realpath the executed script, so compare
+// realpaths; any mismatch or error means "imported, not executed".
+function isDirectExecution(): boolean {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return fs.realpathSync(path.resolve(entry)) === fs.realpathSync(__filename);
+  } catch {
+    return false;
+  }
+}
+
+if (isDirectExecution()) {
+  main().catch((error: unknown) => {
+    process.stderr.write(
+      `perf:harness failed: ${error instanceof Error ? error.message : String(error)}\n`,
+    );
+    process.exit(1);
+  });
+}

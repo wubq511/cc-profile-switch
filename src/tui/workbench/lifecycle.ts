@@ -1,4 +1,4 @@
-import { listProfileTemplates } from '../../core/profile-template';
+import { listProfileTemplates, type ProfileTemplateName } from '../../core/profile-template';
 import type { LaunchPlan } from '../../core/launcher';
 import type { ValidationFinding } from '../../core/validator';
 
@@ -420,4 +420,11 @@ export const LAUNCH_ACTIONS = [
   { key: 'L', labelKey: 'lifecycle.launchDir' as const },
 ] as const;
 
-export const TEMPLATE_LIST = listProfileTemplates();
+let templateListCache: ProfileTemplateName[] | undefined;
+
+/** Built-in template names, resolved on first use — importing this module must
+ *  not call into core at load time. */
+export function getTemplateList(): readonly ProfileTemplateName[] {
+  templateListCache ??= listProfileTemplates();
+  return templateListCache;
+}

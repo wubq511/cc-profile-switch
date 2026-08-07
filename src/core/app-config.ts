@@ -3,9 +3,12 @@ import fs from 'fs-extra';
 import { getAppHomePath, resolveInside } from '../platform/path';
 import { appConfigV2Schema, appConfigV1Schema, type AppConfig } from '../schemas/config';
 import { CcpsError } from '../utils/errors';
+import { isNodeError } from '../utils/type-guards';
 import {
   loadVersionedJson,
+  loadVersionedJsonSync,
   saveVersionedJson,
+  saveVersionedJsonSync,
   atomicWriteJson,
   cleanupTmpResidue,
   type VersionedJsonSpec,
@@ -117,6 +120,12 @@ export async function loadAppConfig(appHomePath = getAppHomePath()): Promise<App
   return loadVersionedJson(appConfigSpec, configPath);
 }
 
+/** Synchronous variant of loadAppConfig — identical parse/migrate/errors. */
+export function loadAppConfigSync(appHomePath = getAppHomePath()): AppConfig {
+  const { configPath } = getAppHomePaths(appHomePath);
+  return loadVersionedJsonSync(appConfigSpec, configPath);
+}
+
 export async function saveAppConfig(
   appHomePath: string,
   config: AppConfig,
@@ -131,6 +140,40 @@ export async function saveAppConfig(
   await saveVersionedJson(appConfigSpec, paths.configPath, nextConfig);
 
   return nextConfig;
+}
+
+/** Synchronous variant of saveAppConfig — identical schema parse, updatedAt
+ * stamp, and atomic write. Skips ensureAppHomeStructure: the only caller
+ * (Workbench launch, post-spawnSync) runs against an initialized app home. */
+export function saveAppConfigSync(
+  appHomePath: string,
+  config: AppConfig,
+  options: AppConfigWriteOptions = {},
+): AppConfig {
+  const { configPath } = getAppHomePaths(appHomePath);
+  const nextConfig = appConfigV2Schema.parse({
+    ...config,
+    updatedAt: (options.clock ?? (() => new Date()))().toISOString(),
+  });
+
+  return saveVersionedJsonSync(appConfigSpec, configPath, nextConfig);
+}
+
+/** Write-back for the in-Workbench language switch (issue #54, spec §14):
+ * the resolution chain starts from `workbench.language`, so a switch persists
+ * here. Load-modify-save through the schema — every other field survives —
+ * with the standard atomic write. */
+export function saveWorkbenchLanguageSync(
+  appHomePath: string,
+  language: 'zh' | 'en',
+  options: AppConfigWriteOptions = {},
+): AppConfig {
+  const config = loadAppConfigSync(appHomePath);
+  return saveAppConfigSync(
+    appHomePath,
+    { ...config, workbench: { ...config.workbench, language } },
+    options,
+  );
 }
 
 export async function writeJsonFile(
@@ -156,8 +199,4 @@ export async function writeJsonFile(
       throw error;
     }
   }
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error;
 }

@@ -1,9 +1,9 @@
 import { spawnSync } from 'node:child_process';
-import fs from 'fs-extra';
 
 import type { Clock } from './types';
 import type { LaunchPlan } from './launcher';
-import { areSameFilesystemPath, resolveFilesystemPath } from '../platform/path';
+import { loadAppConfigSync, saveAppConfigSync } from './app-config';
+import { recordRecentProjectDirSync } from './app-state';
 
 export type WorkbenchLaunchOptions = {
   plan: LaunchPlan;
@@ -57,50 +57,41 @@ export function workbenchLaunchSync(options: WorkbenchLaunchOptions): WorkbenchL
     env,
   });
 
-  // Record last-used profile and recent project dir synchronously
-  updateMetadataSync(options);
+  const exitCode = result.status ?? null;
+
+  // Recents and last-used profile are recorded only after a successful real
+  // launch (exit 0) — dry runs, blocked launches, and failed sessions record
+  // nothing (spec §13.3), mirroring the CLI launch path.
+  if (exitCode === 0) {
+    updateMetadataSync(options);
+  }
 
   return {
-    exitCode: result.status ?? null,
+    exitCode,
     signal: result.signal ?? null,
   };
 }
 
 function updateMetadataSync(options: WorkbenchLaunchOptions): void {
   const { plan, appHomePath, clock } = options;
-  const now = (clock ?? (() => new Date()))().toISOString();
 
-  // Update config.json lastUsedProfile
+  // config.json lastUsedProfile — same schema parse + atomic temp+rename
+  // write as the CLI path (saveAppConfig), in sync form for the
+  // post-spawnSync context.
   try {
-    const configPath = resolveFilesystemPath(appHomePath, 'config.json');
-    if (fs.pathExistsSync(configPath)) {
-      const config = fs.readJsonSync(configPath);
-      fs.writeJsonSync(configPath, {
-        ...config,
-        lastUsedProfile: plan.profileName,
-        updatedAt: now,
-      });
-    }
+    const config = loadAppConfigSync(appHomePath);
+    saveAppConfigSync(appHomePath, { ...config, lastUsedProfile: plan.profileName }, { clock });
   } catch {
     // Non-fatal — last-used metadata is best-effort
   }
 
-  // Update state.json recentProjectDirs
+  // state.json recentProjectDirs — same schema parse + atomic write as
+  // recordRecentProjectDir. A state.json that fails strict schema parsing
+  // (e.g. unknown fields, spec §13.4) is left untouched, never silently
+  // rewritten without them.
   try {
-    const statePath = resolveFilesystemPath(appHomePath, 'state.json');
-    let state: { version: number; recentProjectDirs: Array<{ path: string; lastUsedAt: string }> };
-    if (fs.pathExistsSync(statePath)) {
-      state = fs.readJsonSync(statePath);
-    } else {
-      state = { version: 1, recentProjectDirs: [] };
-    }
-
-    const filtered = state.recentProjectDirs.filter(
-      (entry) => !areSameFilesystemPath(entry.path, plan.cwd),
-    );
-    const updated = [{ path: plan.cwd, lastUsedAt: now }, ...filtered].slice(0, 10);
-    fs.writeJsonSync(statePath, { version: 1, recentProjectDirs: updated });
+    recordRecentProjectDirSync(appHomePath, plan.cwd, { clock });
   } catch {
-    // Non-fatal
+    // Non-fatal — recents are best-effort
   }
 }

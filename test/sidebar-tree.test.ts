@@ -8,6 +8,7 @@ import {
   type CategoryKey,
   type TreeRow,
 } from '../src/tui/workbench/sidebar-tree';
+import { makeProfile as makeBaseProfile } from './render-helpers';
 
 const LABELS: Record<CategoryKey, string> = {
   userMemory: 'User Memory',
@@ -19,12 +20,13 @@ const LABELS: Record<CategoryKey, string> = {
   launchConfig: 'Launch Config',
 };
 
+/** Alpha-profile fixture: the tree assertions rely on these specific
+ *  descriptions, items, and counts, layered on the shared factory. */
 function makeProfile(overrides: Partial<WorkbenchProfile> = {}): WorkbenchProfile {
-  return {
+  return makeBaseProfile({
     name: 'alpha',
     description: 'coding profile',
     isDefault: false,
-    isLastUsed: false,
     status: 'ready',
     resourceCounts: {
       userMemory: 1,
@@ -60,9 +62,8 @@ function makeProfile(overrides: Partial<WorkbenchProfile> = {}): WorkbenchProfil
       settings: ['model', 'env'],
     },
     mcpServers: ['github'],
-    validation: null,
     ...overrides,
-  };
+  });
 }
 
 function makeHit(overrides: Partial<SearchResult> = {}): SearchResult {
