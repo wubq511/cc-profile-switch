@@ -50,7 +50,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await fs.remove(baselineFixtureDir);
   await fs.remove(threeXFixtureDir);
-});
+}, PERF_TEST_TIMEOUT_MS);
 
 // ---------------------------------------------------------------------------
 // Fixture generation tests
