@@ -52,19 +52,31 @@ describe('BulkOpsView headless render', () => {
     tempRoots.length = 0;
   });
 
-  async function makeAppHome(profileNames: string[]): Promise<{ appHome: string; data: WorkbenchData }> {
+  async function makeAppHome(
+    profileNames: string[],
+  ): Promise<{ appHome: string; data: WorkbenchData }> {
     const root = await mkdtemp(join(tmpdir(), 'ccps-bulk-view-'));
     tempRoots.push(root);
     const appHome = join(root, '.cc-profile-switch');
     await createAppConfig(appHome, { clock: FIXED_CLOCK });
     for (const name of profileNames) {
-      await createProfileFromTemplate({ appHomePath: appHome, name, template: 'coding', clock: FIXED_CLOCK });
+      await createProfileFromTemplate({
+        appHomePath: appHome,
+        name,
+        template: 'coding',
+        clock: FIXED_CLOCK,
+      });
     }
     const data = await loadWorkbenchData(appHome);
     return { appHome, data };
   }
 
-  async function installSkill(appHome: string, profileName: string, name: string, body = '# Test\n'): Promise<void> {
+  async function installSkill(
+    appHome: string,
+    profileName: string,
+    name: string,
+    body = '# Test\n',
+  ): Promise<void> {
     const { profilesPath } = getAppHomePaths(appHome);
     const root = await mkdtemp(join(tmpdir(), 'ccps-bulk-src-'));
     tempRoots.push(root);
@@ -83,7 +95,12 @@ describe('BulkOpsView headless render', () => {
     });
   }
 
-  async function writeMcpServer(appHome: string, profileName: string, serverName: string, transport: 'stdio' | 'http' = 'stdio'): Promise<void> {
+  async function writeMcpServer(
+    appHome: string,
+    profileName: string,
+    serverName: string,
+    transport: 'stdio' | 'http' = 'stdio',
+  ): Promise<void> {
     const { profilesPath } = getAppHomePaths(appHome);
     const profileRoot = join(profilesPath, profileName);
     const filePath = getClaudeJsonPath(profileRoot);
@@ -96,13 +113,24 @@ describe('BulkOpsView headless render', () => {
     await fs.writeJson(filePath, { ...existing, mcpServers }, { spaces: 2 });
   }
 
-  async function writeAutoMemory(appHome: string, profileName: string, entry: string, content = 'note\n'): Promise<void> {
+  async function writeAutoMemory(
+    appHome: string,
+    profileName: string,
+    entry: string,
+    content = 'note\n',
+  ): Promise<void> {
     const paths = getProfileTemplatePaths(appHome, profileName);
     await fs.ensureDir(paths.autoMemoryPath);
     await fs.writeFile(join(paths.autoMemoryPath, entry), content, 'utf8');
   }
 
-  async function renderView(appHome: string, data: WorkbenchData, category: 'skills' | 'agents' | 'mcp' | 'autoMemory'): Promise<string> {
+  async function renderView(
+    appHome: string,
+    data: WorkbenchData,
+    category: 'skills' | 'agents' | 'mcp' | 'autoMemory',
+    /** Poll until the async list reload settles on this substring. */
+    until?: string,
+  ): Promise<string> {
     const profile = data.profiles[0];
     const stdout = new FakeTtyStdout();
     const instance = render(
@@ -124,8 +152,21 @@ describe('BulkOpsView headless render', () => {
         patchConsole: false,
       },
     );
-    await new Promise((resolve) => setTimeout(resolve, 60));
     await instance.waitUntilRenderFlush();
+    // Reload is async (Skills inspects + hashes the installed tree; MCP
+    // previews each server), so a fixed sleep races a slow platform (Windows
+    // CI). Poll for the expected content instead; the assertion below remains
+    // the source of truth.
+    if (until) {
+      const deadline = Date.now() + 3000;
+      while (Date.now() < deadline && !stripAnsi(stdout.output).includes(until)) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        await instance.waitUntilRenderFlush();
+      }
+    } else {
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      await instance.waitUntilRenderFlush();
+    }
     instance.unmount();
     await instance.waitUntilExit();
     return stripAnsi(stdout.output);
@@ -136,7 +177,7 @@ describe('BulkOpsView headless render', () => {
     await installSkill(appHome, 'coding', 'commit-helper');
     await installSkill(appHome, 'coding', 'review-bot');
 
-    const output = await renderView(appHome, data, 'skills');
+    const output = await renderView(appHome, data, 'skills', 'commit-helper');
 
     expect(output).toContain('commit-helper');
     expect(output).toContain('review-bot');
@@ -152,7 +193,7 @@ describe('BulkOpsView headless render', () => {
 
     // Re-read so resourceDetails.agents reflects the on-disk agent.
     const fresh = await loadWorkbenchData(appHome);
-    const output = await renderView(appHome, fresh, 'agents');
+    const output = await renderView(appHome, fresh, 'agents', 'planner');
 
     expect(output).toContain('planner');
   });
@@ -162,7 +203,7 @@ describe('BulkOpsView headless render', () => {
     await writeMcpServer(appHome, 'coding', 'fetch-srv', 'http');
 
     const fresh = await loadWorkbenchData(appHome);
-    const output = await renderView(appHome, fresh, 'mcp');
+    const output = await renderView(appHome, fresh, 'mcp', 'fetch-srv');
 
     expect(output).toContain('fetch-srv');
     expect(output).toContain('transport http');
@@ -173,7 +214,7 @@ describe('BulkOpsView headless render', () => {
     await writeAutoMemory(appHome, 'coding', 'topics.md', '# topics\n');
 
     const fresh = await loadWorkbenchData(appHome);
-    const output = await renderView(appHome, fresh, 'autoMemory');
+    const output = await renderView(appHome, fresh, 'autoMemory', 'topics.md');
 
     expect(output).toContain('topics.md');
   });
