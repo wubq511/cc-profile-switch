@@ -496,8 +496,10 @@ function WorkbenchInner({
   // Read-only Plugins inventory (§7.6, issue #96): probe the selected
   // Profile's installed plugins once per data refresh (cached by name).
   // `readPluginInventory` is the single fail-closed boundary — it never
-  // throws, so a reader returning 'unavailable' simply isn't cached and the
-  // next probe (profile switch or refresh) retries.
+  // throws. Only 'ok' results are stored: the card renders the unavailable
+  // message fail-closed while pending, so a failed probe is a render-free
+  // no-op and is never cached, letting the next probe (profile switch or
+  // refresh) retry.
   useEffect(() => {
     const profile = workbenchData.profiles[selectedIndex];
     if (!profile) return;
@@ -511,10 +513,9 @@ function WorkbenchInner({
     (async () => {
       const inventory = await reader(getAppHomePaths().appHomePath, profile.name);
       if (cancelled) return;
+      if (inventory.status !== 'ok') return; // card already shows unavailable
       setPluginInventoryByProfile((prev) => ({ ...prev, [profile.name]: inventory }));
-      if (inventory.status === 'ok') {
-        pluginInventoryRef.current = { ...pluginInventoryRef.current, [profile.name]: inventory };
-      }
+      pluginInventoryRef.current = { ...pluginInventoryRef.current, [profile.name]: inventory };
     })();
     return () => {
       cancelled = true;

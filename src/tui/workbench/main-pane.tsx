@@ -315,14 +315,16 @@ export function MainPane({
     inventory: PluginInventory | undefined,
     maxRows: number,
   ): React.ReactElement {
+    // Fail-closed display: while the delegated read is pending (undefined) the
+    // card already renders the unavailable message, so a probe that resolves to
+    // 'unavailable' renders identically and Ink skips the frame — the on-mount
+    // read never perturbs the pane with an intermediate '…' state.
     const body =
-      inventory === undefined
-        ? React.createElement(Text, { dimColor: true }, '…')
-        : inventory.status === 'unavailable'
-          ? React.createElement(Text, { dimColor: true, wrap: 'wrap' }, t('plugins.unavailable'))
-          : inventory.plugins.length === 0
-            ? React.createElement(Text, { dimColor: true, wrap: 'wrap' }, t('plugins.empty'))
-            : renderPluginRows(inventory.plugins, maxRows);
+      inventory === undefined || inventory.status === 'unavailable'
+        ? React.createElement(Text, { dimColor: true, wrap: 'wrap' }, t('plugins.unavailable'))
+        : inventory.plugins.length === 0
+          ? React.createElement(Text, { dimColor: true, wrap: 'wrap' }, t('plugins.empty'))
+          : renderPluginRows(inventory.plugins, maxRows);
 
     return React.createElement(
       Box,
