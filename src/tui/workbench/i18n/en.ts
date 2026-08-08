@@ -153,11 +153,11 @@ export const en = {
   'template.section.custom': 'Custom',
   'template.source.custom': 'custom',
   'template.removeHint': '[x] remove this template (no undo)',
-  'template.reenterSecrets': 'Re-enter {count} secret keys: {keys}',
-  'template.mcpFailed': 'MCP re-register failed: {names}',
+  'lifecycle.reenterSecrets': 'Re-enter {count} secret keys: {keys}',
+  'lifecycle.mcpFailed': 'MCP re-register failed: {names}',
   // Profile export/import (issue #95)
   'lifecycle.success.exported': 'Exported "{name}" → {path}',
-  'lifecycle.export.stripped': '{count} secret key(s) stripped',
+  'lifecycle.export.stripped': '{count} secret key(s) stripped: {keys}',
   'lifecycle.success.imported': 'Imported "{name}"',
   'lifecycle.import.validation': 'Validation: {status}',
   'lifecycle.import.preview.title': 'Import profile',
@@ -171,7 +171,7 @@ export const en = {
   'lifecycle.import.preview.nameInvalid':
     'Name must be letters, numbers, hyphen, or underscore.',
   'lifecycle.import.preview.resources':
-    'Resources: {userMemory} user memory · {autoMemory} auto memory · {skills} skills · {agents} agents · {mcp} MCP servers',
+    'Resources: {userMemory} user memory · {autoMemory} auto memory · {skills} skills · {agents} agents · {mcp} MCP servers · {settings} settings · {launchConfig} launch config',
   'lifecycle.import.preview.mcpServers': 'MCP servers: {names}',
   'lifecycle.import.preview.secretsIncluded': 'Secrets: included (plaintext)',
   'lifecycle.import.preview.secretsStripped':

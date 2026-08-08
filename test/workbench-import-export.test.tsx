@@ -371,6 +371,39 @@ describe('Workbench profile export/import flows (issue #95)', () => {
     }
   }, 20000);
 
+  it('export flash lists the stripped key names, never the values (S98)', async () => {
+    const appHome = await makeAppHome(['coding']);
+    // Give the profile a credential-class env key so the export strips it.
+    const { profilesPath } = getAppHomePaths(appHome);
+    const settingsPath = join(profilesPath, 'coding', 'claude-home', 'settings.json');
+    const settings = await fs.readJson(settingsPath);
+    settings.env = { ...settings.env, ANTHROPIC_API_KEY: 'sk-ant-secret-token-123' };
+    await fs.writeJson(settingsPath, settings, { spaces: 2 });
+
+    const data = await loadWorkbenchData(appHome);
+    const outDir = join(dirname(appHome), 'out');
+    await fs.ensureDir(outDir);
+    const bundlePath = join(outDir, 'coding.bundle.tar.gz');
+
+    const h = new Harness();
+    try {
+      await h.renderApp(data, { mcpProbe: async () => [] });
+      await h.press('E');
+      await h.waitFor('Export to:');
+      await h.typeText(bundlePath);
+      await h.press('\r');
+      await h.waitFor('Exported "coding"');
+      const flash = h.text();
+      expect(flash).toContain('secret key(s) stripped');
+      expect(flash).toContain('ANTHROPIC_API_KEY');
+      // Credential redaction: the stripped value never reaches the screen.
+      expect(flash).not.toContain('sk-ant-secret-token-123');
+      expect(await fs.pathExists(bundlePath)).toBe(true);
+    } finally {
+      await h.unmount();
+    }
+  }, 20000);
+
   it('imports a bundle end-to-end and lands on the imported profile (S100–S101)', async () => {
     const srcAppHome = await makeAppHome(['coding']);
     const bundlePath = await makeBundle(srcAppHome);
@@ -391,6 +424,9 @@ describe('Workbench profile export/import flows (issue #95)', () => {
       await h.press('\r');
       await h.waitFor('Import profile');
       expect(h.text()).toContain('Import as: coding');
+      // S100 manifest preview: all resource categories, including settings and
+      // launchConfig, are surfaced before the import commits.
+      expect(h.text()).toContain('1 settings · 1 launch config');
       await h.press('y');
       await h.waitFor('Imported "coding"');
 
@@ -483,6 +519,42 @@ describe('Workbench profile export/import flows (issue #95)', () => {
         getClaudeJsonPath(join(profilesPath, 'coding')),
       );
       expect(claudeJson.mcpServers?.github).toBeDefined();
+    } finally {
+      await h.unmount();
+    }
+  }, 20000);
+
+  it('lists MCP re-registration failures with the core reason (S100)', async () => {
+    const srcAppHome = await makeAppHome(['coding']);
+    await writeMcpServer(srcAppHome, 'coding', 'github');
+    const bundlePath = await makeBundle(srcAppHome);
+
+    await overrideHomeToTemp();
+    const appHome = getAppHomePaths().appHomePath;
+    await createAppConfig(appHome, { clock: FIXED_CLOCK });
+    const data = await loadWorkbenchData(appHome);
+
+    // Delegated `claude mcp add` always fails → the flash lists the server and
+    // the core's failureMessage reason, not just a bare name.
+    const capture: CaptureProcess = async (_command, args) => {
+      if (args[0] === 'mcp' && args[1] === 'add') {
+        return { exitCode: 1, stdout: '', stderr: 'mock add failed', timedOut: false };
+      }
+      return { exitCode: 0, stdout: '', stderr: '', timedOut: false };
+    };
+    const h = new Harness();
+    try {
+      await h.renderApp(data, { mcpProbe: async () => [], captureProcess: capture });
+      await h.press('i');
+      await h.waitFor('Bundle path:');
+      await h.typeText(bundlePath);
+      await h.press('\r');
+      await h.waitFor('Import profile');
+      await h.press('y');
+      await h.waitFor('Imported "coding"');
+      const flash = h.text();
+      expect(flash).toContain('MCP re-register failed: github');
+      expect(flash).toContain('Failed to add MCP server via');
     } finally {
       await h.unmount();
     }
