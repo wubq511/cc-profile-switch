@@ -10,6 +10,7 @@ import { Box, Text } from 'ink';
 
 import { useI18n } from '../i18n/react';
 import { GuidancePanel } from './panel';
+import { countStrippedKeys } from '../../../schemas/profile-bundle';
 import type { ImportPreview } from '../../../core/profile-import';
 
 type ImportPreviewPanelProps = {
@@ -28,7 +29,7 @@ export function ImportPreviewPanel({
   const { t } = useI18n();
   const m = preview.manifest;
   const r = m.resources;
-  const strippedCount = m.strippedKeys.reduce((sum, entry) => sum + entry.keys.length, 0);
+  const strippedCount = countStrippedKeys(m.strippedKeys);
 
   const secretsLine = m.includeSecrets
     ? m.secretsPresent
@@ -68,6 +69,8 @@ export function ImportPreviewPanel({
           skills: String(r.skills),
           agents: String(r.agents),
           mcp: String(r.mcpServers),
+          settings: String(r.settings),
+          launchConfig: String(r.launchConfig),
         }),
       ),
     ),

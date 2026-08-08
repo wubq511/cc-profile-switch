@@ -8,6 +8,7 @@ import { exportProfile } from '../../core/profile-export';
 import {
   importProfile,
   type ImportConfirmDecision,
+  type ImportMcpServerResult,
   type ImportPreview,
 } from '../../core/profile-import';
 import {
@@ -44,7 +45,8 @@ import { resolveInside, validateProfileName } from '../../platform/path';
 import { CcpsError } from '../../utils/errors';
 import { listMcpServers, type McpServerState } from '../../core/mcp-list';
 import { I18nProvider, useI18n } from './i18n/react';
-import type { Locale, LocaleKey } from './i18n/react';
+import type { I18nParams, Locale, LocaleKey } from './i18n/react';
+import { countStrippedKeys } from '../../schemas/profile-bundle';
 import { CaptureProvider } from './capture-context';
 import { EditSessionManager, type EditSession } from '../../core/edit-session';
 import {
@@ -171,6 +173,43 @@ export function takeLaunchResumeState(): LaunchResumeState | null {
   const state = pendingResumeState;
   pendingResumeState = null;
   return state;
+}
+
+/** Post-mutation re-entry report shared by create-from-custom-template (§11.3)
+ * and import (§11.2): both land with the same two follow-ups — which secret
+ * keys the user must re-enter (values never travel) and which MCP servers
+ * failed to re-register through delegation, with the core's reason. */
+function reentryFlashParts(
+  result: {
+    settingsSecretKeysToReenter: string[];
+    mcpServers: ImportMcpServerResult[];
+    legacyMcpEnvKeysToReenter: { server: string; keys: string[] }[];
+  },
+  t: (key: LocaleKey, params?: I18nParams) => string,
+): string[] {
+  const reenterKeys = [
+    ...new Set([
+      ...result.settingsSecretKeysToReenter,
+      ...result.mcpServers.flatMap((s) => s.envKeysToReenter),
+      ...result.legacyMcpEnvKeysToReenter.flatMap((s) => s.keys),
+    ]),
+  ].sort((a, b) => a.localeCompare(b));
+  const failedServers = result.mcpServers
+    .filter((s) => !s.reRegistered)
+    .map((s) => (s.failureMessage ? `${s.name} (${s.failureMessage})` : s.name));
+  const parts: string[] = [];
+  if (reenterKeys.length > 0) {
+    parts.push(
+      t('lifecycle.reenterSecrets', {
+        count: String(reenterKeys.length),
+        keys: reenterKeys.join(', '),
+      }),
+    );
+  }
+  if (failedServers.length > 0) {
+    parts.push(t('lifecycle.mcpFailed', { names: failedServers.join(', ') }));
+  }
+  return parts;
 }
 
 type WorkbenchAppProps = {
@@ -1634,33 +1673,13 @@ function WorkbenchInner({
               templateName: customTemplate.name,
               name: input,
             });
-            const reenterKeys = [
-              ...new Set([
-                ...result.settingsSecretKeysToReenter,
-                ...result.mcpServers.flatMap((s) => s.envKeysToReenter),
-                ...result.legacyMcpEnvKeysToReenter.flatMap((s) => s.keys),
-              ]),
-            ].sort((a, b) => a.localeCompare(b));
-            const failedServers = result.mcpServers
-              .filter((s) => !s.reRegistered)
-              .map((s) => s.name);
             const parts = [
               t('lifecycle.success.createdFromTemplate', {
                 name: input,
                 template: customTemplate.name,
               }),
+              ...reentryFlashParts(result, t),
             ];
-            if (reenterKeys.length > 0) {
-              parts.push(
-                t('template.reenterSecrets', {
-                  count: String(reenterKeys.length),
-                  keys: reenterKeys.join(', '),
-                }),
-              );
-            }
-            if (failedServers.length > 0) {
-              parts.push(t('template.mcpFailed', { names: failedServers.join(', ') }));
-            }
             setLifecycle((prev) =>
               lifecycleReducer(prev, { type: 'EXECUTE_SUCCESS', message: parts.join('. ') }),
             );
@@ -1796,13 +1815,15 @@ function WorkbenchInner({
             }),
           );
         } else if (kind === 'export') {
-          // Profile export (issue #95, scenarios S98–S99): reuses the core
+          // Profile export (issue #95, scenario S98): reuses the core
           // exportProfile service, which always strips credential-class values
           // (env.ANTHROPIC_* and MCP env) unless includeSecrets is explicitly
-          // set — the Workbench never offers that opt-in, so a bundle made here
-          // can never leak secrets.
+          // set — the Workbench never passes it, so a bundle made here can never
+          // leak secrets. (S99's include-secrets opt-in is intentionally not
+          // offered in the Workbench.)
           const result = await exportProfile({ appHomePath, name: profileName, outputPath: input });
-          const strippedCount = result.strippedKeys.reduce((sum, entry) => sum + entry.keys.length, 0);
+          const strippedKeys = result.strippedKeys;
+          const strippedCount = countStrippedKeys(strippedKeys);
           const parts = [
             t('lifecycle.success.exported', {
               name: result.profileName,
@@ -1810,7 +1831,17 @@ function WorkbenchInner({
             }),
           ];
           if (strippedCount > 0) {
-            parts.push(t('lifecycle.export.stripped', { count: String(strippedCount) }));
+            // S98: list the key names, not just a count — the audit trail is
+            // the only visible trace of what the bundle redacted.
+            const keyNames = [
+              ...new Set(strippedKeys.flatMap((entry) => entry.keys)),
+            ].sort((a, b) => a.localeCompare(b));
+            parts.push(
+              t('lifecycle.export.stripped', {
+                count: String(strippedCount),
+                keys: keyNames.join(', '),
+              }),
+            );
           }
           setLifecycle((prev) =>
             lifecycleReducer(prev, { type: 'EXECUTE_SUCCESS', message: parts.join(' · ') }),
@@ -1827,28 +1858,10 @@ function WorkbenchInner({
             setLifecycle((prev) => lifecycleReducer(prev, { type: 'CANCEL' }));
             return;
           }
-          const reenterKeys = [
-            ...new Set([
-              ...result.settingsSecretKeysToReenter,
-              ...result.mcpServers.flatMap((s) => s.envKeysToReenter),
-              ...result.legacyMcpEnvKeysToReenter.flatMap((s) => s.keys),
-            ]),
-          ].sort((a, b) => a.localeCompare(b));
-          const failedServers = result.mcpServers
-            .filter((s) => !s.reRegistered)
-            .map((s) => s.name);
-          const parts = [t('lifecycle.success.imported', { name: result.profileName })];
-          if (reenterKeys.length > 0) {
-            parts.push(
-              t('template.reenterSecrets', {
-                count: String(reenterKeys.length),
-                keys: reenterKeys.join(', '),
-              }),
-            );
-          }
-          if (failedServers.length > 0) {
-            parts.push(t('template.mcpFailed', { names: failedServers.join(', ') }));
-          }
+          const parts = [
+            t('lifecycle.success.imported', { name: result.profileName }),
+            ...reentryFlashParts(result, t),
+          ];
           // S100's final step: importProfile auto-runs validateProfile — surface
           // the outcome rather than reporting a clean success for a broken profile.
           if (result.validation.status !== 'valid') {
@@ -1898,10 +1911,15 @@ function WorkbenchInner({
   const handleConfirmInput = useCallback(
     (input: string, key: Record<string, boolean>) => {
       if (key.escape) {
-        // Esc aborts whatever the confirm phase holds. For import this resolves
-        // the parked decision as abort so the suspended core import unwinds.
-        resolveImportDecision({ action: 'abort' });
-        setLifecycle((prev) => lifecycleReducer(prev, { type: 'CANCEL' }));
+        if (lifecycle.kind === 'import' && importPreview) {
+          // Esc on the import preview resolves the parked decision as abort; the
+          // resumed core import unwinds to its aborted branch, which dispatches
+          // CANCEL exactly once — firing it here too would double-dispatch.
+          resolveImportDecision({ action: 'abort' });
+        } else {
+          // Esc aborts whatever other confirm phase holds.
+          setLifecycle((prev) => lifecycleReducer(prev, { type: 'CANCEL' }));
+        }
         return;
       }
       if (lifecycle.kind === 'import' && importPreview) {

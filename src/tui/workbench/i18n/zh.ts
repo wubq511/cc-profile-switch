@@ -149,11 +149,11 @@ export const zh: Record<LocaleKey, string> = {
   'template.section.custom': '自定义',
   'template.source.custom': '自定义',
   'template.removeHint': '[x] 删除该模板（不可恢复）',
-  'template.reenterSecrets': '需重新输入 {count} 个机密键：{keys}',
-  'template.mcpFailed': 'MCP 重新注册失败：{names}',
+  'lifecycle.reenterSecrets': '需重新输入 {count} 个机密键：{keys}',
+  'lifecycle.mcpFailed': 'MCP 重新注册失败：{names}',
   // Profile export/import (issue #95)
   'lifecycle.success.exported': '已导出「{name}」→ {path}',
-  'lifecycle.export.stripped': '已剔除 {count} 个机密键',
+  'lifecycle.export.stripped': '已剔除 {count} 个机密键：{keys}',
   'lifecycle.success.imported': '已导入「{name}」',
   'lifecycle.import.validation': '校验：{status}',
   'lifecycle.import.preview.title': '导入配置',
@@ -165,7 +165,7 @@ export const zh: Record<LocaleKey, string> = {
   'lifecycle.import.preview.confirm': '[y] 导入 · [esc] 取消',
   'lifecycle.import.preview.nameInvalid': '名称只能包含字母、数字、连字符或下划线。',
   'lifecycle.import.preview.resources':
-    '资源：{userMemory} 用户记忆 · {autoMemory} 自动记忆 · {skills} 技能 · {agents} 代理 · {mcp} 个 MCP 服务器',
+    '资源：{userMemory} 用户记忆 · {autoMemory} 自动记忆 · {skills} 技能 · {agents} 代理 · {mcp} 个 MCP 服务器 · {settings} 设置 · {launchConfig} 启动配置',
   'lifecycle.import.preview.mcpServers': 'MCP 服务器：{names}',
   'lifecycle.import.preview.secretsIncluded': '机密：包含（明文）',
   'lifecycle.import.preview.secretsStripped':

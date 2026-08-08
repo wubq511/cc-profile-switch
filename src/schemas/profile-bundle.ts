@@ -63,3 +63,8 @@ export const bundleManifestSchema = z
 export type BundleManifest = z.infer<typeof bundleManifestSchema>;
 export type BundleStrippedKeys = z.infer<typeof bundleStrippedKeysSchema>;
 export type BundleResourceCounts = z.infer<typeof bundleResourceCountsSchema>;
+
+/** Total number of stripped secret key names across all audit entries. */
+export function countStrippedKeys(entries: BundleStrippedKeys[]): number {
+  return entries.reduce((sum, entry) => sum + entry.keys.length, 0);
+}
