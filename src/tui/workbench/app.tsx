@@ -4,6 +4,12 @@ import path from 'node:path';
 
 import { getAppHomePaths, loadAppConfig } from '../../core/app-config';
 import { backupProfile, createProfile } from '../../core/profile';
+import { exportProfile } from '../../core/profile-export';
+import {
+  importProfile,
+  type ImportConfirmDecision,
+  type ImportPreview,
+} from '../../core/profile-import';
 import {
   clearDefaultProfile,
   copyProfile,
@@ -34,7 +40,7 @@ import {
 import { SkillsDiscoverySession } from '../../core/skills-discovery';
 import { openUrlInBrowser, openWithSystemEditor } from '../../platform/editor';
 import fs from 'fs-extra';
-import { resolveInside } from '../../platform/path';
+import { resolveInside, validateProfileName } from '../../platform/path';
 import { CcpsError } from '../../utils/errors';
 import { listMcpServers, type McpServerState } from '../../core/mcp-list';
 import { I18nProvider, useI18n } from './i18n/react';
@@ -105,6 +111,7 @@ import { restorePluginItem } from '../../core/plugins';
 import {
   ErrorPanel,
   HintsProvider,
+  ImportPreviewPanel,
   RemoveProfilePanel,
   SaveTemplatePanel,
   useHints,
@@ -322,6 +329,16 @@ function WorkbenchInner({
     }
     return initialLifecycleState();
   });
+  // Import preview (issue #95): the manifest gate surfaced by importProfile's
+  // mandatory confirm callback. The panel renders during lifecycle 'confirm';
+  // importDecisionRef holds the pending promise resolver that resolves when the
+  // user presses a decision key, resuming the core import's remaining fs work.
+  const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
+  const [importCollisionName, setImportCollisionName] = useState('');
+  const [importNameError, setImportNameError] = useState(false);
+  const importDecisionRef = useRef<{ resolve: (decision: ImportConfirmDecision) => void } | null>(
+    null,
+  );
   // Skill install wizard overlay (issue #64, spec §7.2)
   const [wizardProfileName, setWizardProfileName] = useState<string | null>(null);
   // Discover-surface install entry (issue #68, spec §7.4): when set, the wizard
@@ -1556,6 +1573,34 @@ function WorkbenchInner({
     setLifecycle((prev) => lifecycleReducer(prev, action));
   }, []);
 
+  // Import manifest gate (issue #95): importProfile's mandatory confirm
+  // callback. Shows the preview panel (moving the lifecycle to 'confirm' so the
+  // panel owns the keys) and parks a promise resolver the panel's decision keys
+  // wake up — the core import stays suspended until the user commits.
+  const confirmImport = useCallback(
+    async (preview: ImportPreview): Promise<ImportConfirmDecision> => {
+      setImportPreview(preview);
+      setImportCollisionName('');
+      setImportNameError(false);
+      setLifecycle((prev) => lifecycleReducer(prev, { type: 'SHOW_IMPORT_PREVIEW' }));
+      return new Promise<ImportConfirmDecision>((resolve) => {
+        importDecisionRef.current = { resolve };
+      });
+    },
+    [],
+  );
+
+  // Resolve a pending import decision and move the lifecycle back to
+  // 'executing' so the resumed import's EXECUTE_SUCCESS (or the abort path's
+  // CANCEL) lands in a matching phase.
+  const resolveImportDecision = useCallback((decision: ImportConfirmDecision) => {
+    const pending = importDecisionRef.current;
+    if (!pending) return;
+    importDecisionRef.current = null;
+    pending.resolve(decision);
+    setLifecycle((prev) => lifecycleReducer(prev, { type: 'CONFIRM_CHOICE' }));
+  }, []);
+
   const handleLifecycleAction = useCallback(
     async (
       action: LifecycleAction,
@@ -1750,11 +1795,85 @@ function WorkbenchInner({
               message: `"${profileName}" ${t('lifecycle.success.backedUp')}`,
             }),
           );
+        } else if (kind === 'export') {
+          // Profile export (issue #95, scenarios S98–S99): reuses the core
+          // exportProfile service, which always strips credential-class values
+          // (env.ANTHROPIC_* and MCP env) unless includeSecrets is explicitly
+          // set — the Workbench never offers that opt-in, so a bundle made here
+          // can never leak secrets.
+          const result = await exportProfile({ appHomePath, name: profileName, outputPath: input });
+          const strippedCount = result.strippedKeys.reduce((sum, entry) => sum + entry.keys.length, 0);
+          const parts = [
+            t('lifecycle.success.exported', {
+              name: result.profileName,
+              path: result.bundlePath,
+            }),
+          ];
+          if (strippedCount > 0) {
+            parts.push(t('lifecycle.export.stripped', { count: String(strippedCount) }));
+          }
+          setLifecycle((prev) =>
+            lifecycleReducer(prev, { type: 'EXECUTE_SUCCESS', message: parts.join(' · ') }),
+          );
+        } else if (kind === 'import') {
+          const result = await importProfile({
+            appHomePath,
+            bundlePath: input,
+            confirm: confirmImport,
+            captureProcess,
+          });
+          if ('aborted' in result) {
+            setImportPreview(null);
+            setLifecycle((prev) => lifecycleReducer(prev, { type: 'CANCEL' }));
+            return;
+          }
+          const reenterKeys = [
+            ...new Set([
+              ...result.settingsSecretKeysToReenter,
+              ...result.mcpServers.flatMap((s) => s.envKeysToReenter),
+              ...result.legacyMcpEnvKeysToReenter.flatMap((s) => s.keys),
+            ]),
+          ].sort((a, b) => a.localeCompare(b));
+          const failedServers = result.mcpServers
+            .filter((s) => !s.reRegistered)
+            .map((s) => s.name);
+          const parts = [t('lifecycle.success.imported', { name: result.profileName })];
+          if (reenterKeys.length > 0) {
+            parts.push(
+              t('template.reenterSecrets', {
+                count: String(reenterKeys.length),
+                keys: reenterKeys.join(', '),
+              }),
+            );
+          }
+          if (failedServers.length > 0) {
+            parts.push(t('template.mcpFailed', { names: failedServers.join(', ') }));
+          }
+          // S100's final step: importProfile auto-runs validateProfile — surface
+          // the outcome rather than reporting a clean success for a broken profile.
+          if (result.validation.status !== 'valid') {
+            parts.push(t('lifecycle.import.validation', { status: result.validation.status }));
+          }
+          setImportPreview(null);
+          setLifecycle((prev) =>
+            lifecycleReducer(prev, { type: 'EXECUTE_SUCCESS', message: parts.join(' · ') }),
+          );
+          // Land on the imported Profile (S101) so its card shows immediately.
+          try {
+            const freshData = await loadWorkbenchData(appHomePath);
+            setWorkbenchData(freshData);
+            const idx = freshData.profiles.findIndex((p) => p.name === result.profileName);
+            setSelectedIndex(Math.max(0, idx));
+          } catch {
+            // refresh failure is non-fatal
+          }
+          return;
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         const code = error instanceof CcpsError ? error.code : undefined;
         const guidance = error instanceof CcpsError ? error.guidance : undefined;
+        if (kind === 'import') setImportPreview(null);
         setLifecycle((prev) =>
           lifecycleReducer(prev, { type: 'EXECUTE_ERROR', message, code, guidance }),
         );
@@ -1773,13 +1892,47 @@ function WorkbenchInner({
         }
       }
     },
-    [workbenchData, t, lifecycle.kind, coreTranslator],
+    [workbenchData, t, lifecycle.kind, coreTranslator, confirmImport, captureProcess],
   );
 
   const handleConfirmInput = useCallback(
     (input: string, key: Record<string, boolean>) => {
       if (key.escape) {
+        // Esc aborts whatever the confirm phase holds. For import this resolves
+        // the parked decision as abort so the suspended core import unwinds.
+        resolveImportDecision({ action: 'abort' });
         setLifecycle((prev) => lifecycleReducer(prev, { type: 'CANCEL' }));
+        return;
+      }
+      if (lifecycle.kind === 'import' && importPreview) {
+        if (importPreview.collision) {
+          // New-name entry: typing a free name and Enter IS the confirmation
+          // (the core collision loop commits on proceed-as-new-name).
+          if (key.backspace || key.delete) {
+            setImportCollisionName((name) => name.slice(0, -1));
+            return;
+          }
+          if (key.return) {
+            const targetName = importCollisionName.trim();
+            if (targetName === '') return;
+            try {
+              validateProfileName(targetName);
+            } catch {
+              setImportNameError(true);
+              return;
+            }
+            resolveImportDecision({ action: 'proceed-as-new-name', targetName });
+            return;
+          }
+          if (!key.ctrl && !key.meta && input.length === 1) {
+            setImportNameError(false);
+            setImportCollisionName((name) => name + input);
+          }
+          return;
+        }
+        if (input === 'y') {
+          resolveImportDecision({ action: 'proceed' });
+        }
         return;
       }
       if (lifecycle.kind === 'save-template') {
@@ -1798,7 +1951,13 @@ function WorkbenchInner({
         return;
       }
     },
-    [lifecycle, handleLifecycleAction],
+    [
+      lifecycle,
+      handleLifecycleAction,
+      importPreview,
+      importCollisionName,
+      resolveImportDecision,
+    ],
   );
 
   const confirmSaveTemplate = useCallback(() => {
@@ -2297,6 +2456,13 @@ function WorkbenchInner({
   // Guidance dialogs: full-width, flexShrink=0 so they never shrink-clip (#29).
   function renderGuidanceDialogs(): React.ReactElement | null {
     if (lifecycle.phase === 'confirm') {
+      if (lifecycle.kind === 'import' && importPreview) {
+        return React.createElement(ImportPreviewPanel, {
+          preview: importPreview,
+          newName: importCollisionName,
+          nameError: importNameError,
+        });
+      }
       if (lifecycle.kind === 'save-template') {
         return React.createElement(SaveTemplatePanel, {
           templateName: lifecycle.input,

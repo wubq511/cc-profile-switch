@@ -68,7 +68,9 @@ export const KEYMAP_GROUPS: readonly KeymapGroup[] = [
     // Sidebar profile-list focus (issue #91): ownership of each contextual
     // letter is decided by this focus region, so `l` is launch and `a` is Add
     // Skill here — not language switch / Agents drill (those live in the help
-    // sheet and the main-pane context respectively).
+    // sheet and the main-pane context respectively). `E` is Profile export here
+    // (issue #95); the same uppercase key means empty-bin inside the Recovery
+    // surface, which owns its own input context (issue #94).
     id: 'profile',
     titleKey: 'keymap.actions',
     bindings: [
@@ -86,6 +88,8 @@ export const KEYMAP_GROUPS: readonly KeymapGroup[] = [
       { id: 'edit', key: 'e', labelKey: 'keymap.edit' },
       { id: 'editDescription', key: 'D', labelKey: 'lifecycle.editDescription' },
       { id: 'userMemory', key: 'u', labelKey: 'main.category.userMemory' },
+      { id: 'export', key: 'E', labelKey: 'lifecycle.export' },
+      { id: 'import', key: 'i', labelKey: 'lifecycle.import' },
       { id: 'recoveryOpen', key: 'B', labelKey: 'keymap.recovery.open' },
       { id: 'focusCategories', key: 'Tab', labelKey: 'main.focusHint' },
     ],

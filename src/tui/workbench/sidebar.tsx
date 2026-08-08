@@ -352,6 +352,14 @@ export function Sidebar({
             return;
           }
 
+          // Import needs no selected Profile either — a bundle can restore the
+          // first (or only) Profile into an empty list.
+          if (act.kind === 'import') {
+            markUsed(act.key);
+            onLifecycleAction({ type: 'START_PROMPT', kind: 'import', profileName: '' });
+            return;
+          }
+
           if (!cursorProfile) return;
 
           if (act.kind === 'validate' || act.kind === 'backup' || act.kind === 'default') {
@@ -692,6 +700,8 @@ function promptLabel(kind: LifecyclePromptKind | null, t: (key: LocaleKey) => st
     case 'remove': return t('lifecycle.prompt.remove');
     case 'create': return t('lifecycle.prompt.createName');
     case 'save-template': return t('lifecycle.prompt.saveTemplate');
+    case 'export': return t('lifecycle.prompt.export');
+    case 'import': return t('lifecycle.prompt.import');
     default: return '';
   }
 }

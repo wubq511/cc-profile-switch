@@ -10,7 +10,9 @@ export type LifecyclePromptKind =
   | 'validate'
   | 'backup'
   | 'default'
-  | 'save-template';
+  | 'save-template'
+  | 'export'
+  | 'import';
 
 export type LaunchPhase =
   | 'idle'
@@ -85,6 +87,7 @@ export type LifecycleAction =
       type: 'SHOW_TEMPLATE_SUMMARY';
       summary: { strippedCount: number; autoMemoryExcluded: boolean };
     }
+  | { type: 'SHOW_IMPORT_PREVIEW' }
   | { type: 'CANCEL' }
   | { type: 'EXECUTE_SUCCESS'; message: string }
   | { type: 'EXECUTE_ERROR'; message: string; code?: string; guidance?: string }
@@ -203,6 +206,16 @@ export function lifecycleReducer(state: LifecycleState, action: LifecycleAction)
       if (state.kind !== 'save-template') return state;
       if (state.phase !== 'prompting' && state.phase !== 'executing') return state;
       return { ...state, phase: 'confirm', templateSummary: action.summary };
+    }
+
+    case 'SHOW_IMPORT_PREVIEW': {
+      // Import flow: SUBMIT moved prompting → executing and handed the bundle
+      // to importProfile; the mandatory manifest-preview gate then fires the
+      // confirm callback, which moves to the preview panel. The app resolves
+      // the pending decision (proceed / new-name / abort) back in this phase.
+      if (state.kind !== 'import') return state;
+      if (state.phase !== 'executing') return state;
+      return { ...state, phase: 'confirm' };
     }
 
     case 'CANCEL': {
@@ -412,6 +425,8 @@ export const LIFECYCLE_ACTIONS = [
   { key: 'v', kind: 'validate' as const, labelKey: 'lifecycle.validate' as const },
   { key: 'b', kind: 'backup' as const, labelKey: 'lifecycle.backup' as const },
   { key: 's', kind: 'save-template' as const, labelKey: 'lifecycle.saveTemplate' as const },
+  { key: 'E', kind: 'export' as const, labelKey: 'lifecycle.export' as const },
+  { key: 'i', kind: 'import' as const, labelKey: 'lifecycle.import' as const },
   { key: 'x', kind: 'remove' as const, labelKey: 'lifecycle.remove' as const },
 ] as const;
 

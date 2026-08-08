@@ -572,6 +572,20 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
     await h.waitFor('backed up');
   });
 
+  scenario('profile:export', async (h) => {
+    const { data } = await setupReal(['coding']);
+    await h.renderApp(data);
+    await h.press('E');
+    await h.waitFor('Export to:');
+  });
+
+  scenario('profile:import', async (h) => {
+    const { data } = await setupReal(['coding']);
+    await h.renderApp(data);
+    await h.press('i');
+    await h.waitFor('Bundle path:');
+  });
+
   scenario('profile:saveTemplate', async (h) => {
     const { data } = await setupReal(['coding']);
     await h.renderApp(data);
