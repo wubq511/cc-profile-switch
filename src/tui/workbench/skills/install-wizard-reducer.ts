@@ -3,6 +3,7 @@ import { resolveInside } from '../../../platform/path';
 import { translate } from '../i18n';
 import type { I18nParams, LocaleKey } from '../i18n';
 import type { SkillSourceKind } from '../../../schemas/skills-provenance';
+import { sourceKindLabelCore } from '../../../utils/i18n';
 import type { RemoteInstallPreview } from '../../../core/skills-remote-install';
 import type {
   CatalogedLocalSkillSource,
@@ -82,7 +83,7 @@ export type InstallWizardState = {
 
 export type InstallWizardAction =
   | { type: 'START'; profileName: string; profileRootPath?: string }
-  | { type: 'START_REMOTE'; profileName: string; profileRootPath?: string } & InstallSourceRef
+  | ({ type: 'START_REMOTE'; profileName: string; profileRootPath?: string } & InstallSourceRef)
   | { type: 'KIND_SELECT_LOCAL' } // → source-list
   | { type: 'KIND_SELECT_REMOTE' } // → source-remote
   | { type: 'SOURCES_LOADED'; sources: CatalogedLocalSkillSource[] } // populate the step-1 list
@@ -123,15 +124,10 @@ function tx(t: WizardTranslator | undefined, key: LocaleKey, params?: I18nParams
 
 // SkillSource.kind values shown in the remote-confirm provenance section are
 // machine protocol tokens — localized so a zh-locale user sees no raw English.
-const SOURCE_KIND_KEYS: Record<SkillSourceKind, LocaleKey> = {
-  'git-remote': 'skill.source.kind.gitRemote',
-  url: 'skill.source.kind.url',
-  local: 'skill.source.kind.local',
-  unknown: 'skill.source.kind.unknown',
-};
-
+// The kind→key map lives in core (src/utils/i18n.ts); this facade adapts the
+// wizard's LocaleKey-typed translator to the core string-key translator.
 export function sourceKindLabel(t: WizardTranslator | undefined, kind: SkillSourceKind): string {
-  return t ? t(SOURCE_KIND_KEYS[kind]) : kind;
+  return sourceKindLabelCore(t ? (key, params) => t(key as LocaleKey, params) : undefined, kind);
 }
 
 export function initialInstallWizardState(): InstallWizardState {
@@ -300,12 +296,20 @@ export function installWizardReducer(
 
     case 'REMOTE_SOURCE_CHAR': {
       if (state.phase !== 'source-remote') return state;
-      return { ...state, remoteSourceInput: state.remoteSourceInput + action.char, remoteSourceError: '' };
+      return {
+        ...state,
+        remoteSourceInput: state.remoteSourceInput + action.char,
+        remoteSourceError: '',
+      };
     }
 
     case 'REMOTE_SOURCE_BACKSPACE': {
       if (state.phase !== 'source-remote') return state;
-      return { ...state, remoteSourceInput: state.remoteSourceInput.slice(0, -1), remoteSourceError: '' };
+      return {
+        ...state,
+        remoteSourceInput: state.remoteSourceInput.slice(0, -1),
+        remoteSourceError: '',
+      };
     }
 
     case 'REMOTE_SOURCE_SUBMIT': {

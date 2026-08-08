@@ -128,16 +128,25 @@ export function BulkOpsView({
       try {
         const { skills } = await inspectSkills(profileRootPath);
         next = skills.map((s) => {
+          // Localize provenance tokens when a catalog key exists; fall back to
+          // the raw token if the enum ever gains an unmapped value (matches the
+          // MCP transport handling below).
+          const modeLabel =
+            s.record.mode in SKILL_MODE_KEYS ? t(SKILL_MODE_KEYS[s.record.mode]) : s.record.mode;
+          const driftLabel = s.drift in SKILL_DRIFT_KEYS ? t(SKILL_DRIFT_KEYS[s.drift]) : s.drift;
+          const reasonLabel = s.update.reason
+            ? s.update.reason in SKILL_UPDATE_REASON_KEYS
+              ? t(SKILL_UPDATE_REASON_KEYS[s.update.reason])
+              : s.update.reason
+            : '';
           const updateLabel = s.update.enabled
             ? ''
-            : ` · ${t('bulk.skills.update.off', {
-                reason: s.update.reason ? t(SKILL_UPDATE_REASON_KEYS[s.update.reason]) : '',
-              })}`;
+            : ` · ${t('bulk.skills.update.off', { reason: reasonLabel })}`;
           return {
             name: s.name,
             mode: s.record.mode,
             updateEnabled: s.update.enabled,
-            detail: `${t(SKILL_MODE_KEYS[s.record.mode])} · ${t(SKILL_DRIFT_KEYS[s.drift])}${updateLabel}`,
+            detail: `${modeLabel} · ${driftLabel}${updateLabel}`,
           };
         });
       } catch (error) {
