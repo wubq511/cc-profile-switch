@@ -72,6 +72,8 @@ describe('AutoMemoryView render', () => {
     appHome: string,
     profileName: string,
     profileNames: string[] = [profileName],
+    /** Poll until the async list/preview reload settles on this substring. */
+    until?: string,
   ): Promise<string> {
     const stdout = new FakeTtyStdout();
     const manager = new EditSessionManager();
@@ -99,9 +101,19 @@ describe('AutoMemoryView render', () => {
         patchConsole: false,
       },
     );
-    // Let async list/preview effects resolve and re-render.
-    await new Promise((resolve) => setTimeout(resolve, 60));
-    await instance.waitUntilRenderFlush();
+    // List/preview load is async, so a fixed sleep races a slow platform
+    // (Windows CI). Poll for the expected content instead; the assertion below
+    // remains the source of truth.
+    if (until) {
+      const deadline = Date.now() + 3000;
+      while (Date.now() < deadline && !stripAnsi(stdout.output).includes(until)) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        await instance.waitUntilRenderFlush();
+      }
+    } else {
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      await instance.waitUntilRenderFlush();
+    }
     instance.unmount();
     await instance.waitUntilExit();
     return stripAnsi(stdout.output);
@@ -111,54 +123,54 @@ describe('AutoMemoryView render', () => {
     const { appHome, profileName } = await makeAppHomeWithEntries([
       { name: 'topics.md', content: '# Refactoring notes\nKeep functions small.' },
     ]);
-    const output = await renderView(appHome, profileName);
+    const output = await renderView(appHome, profileName, [profileName], 'topics.md');
     expect(output).toContain('topics.md');
     expect(output).toContain('Refactoring notes');
-  });
+  }, 20000);
 
   it('renders multiple entry names in the list', async () => {
     const { appHome, profileName } = await makeAppHomeWithEntries([
       { name: 'topics.md', content: 'topics content' },
       { name: 'session.md', content: 'session content' },
     ]);
-    const output = await renderView(appHome, profileName);
+    const output = await renderView(appHome, profileName, [profileName], 'topics.md');
     expect(output).toContain('topics.md');
     expect(output).toContain('session.md');
-  });
+  }, 20000);
 
   it('renders the empty state when there are no entries', async () => {
     const { appHome, profileName } = await makeAppHomeWithEntries([]);
-    const output = await renderView(appHome, profileName);
+    const output = await renderView(appHome, profileName, [profileName], 'No Auto Memory entries yet');
     expect(output).toContain('No Auto Memory entries yet');
-  });
+  }, 20000);
 
   it('surfaces the boundary note that Create and Diff are intentionally unavailable', async () => {
     const { appHome, profileName } = await makeAppHomeWithEntries([
       { name: 'topics.md', content: 'x' },
     ]);
-    const output = await renderView(appHome, profileName);
+    const output = await renderView(appHome, profileName, [profileName], 'intentionally unavailable');
     expect(output).toMatch(/Create is intentionally unavailable/);
     expect(output).toMatch(/Diff is intentionally unavailable/);
-  });
+  }, 20000);
 
   it('renders the action hint with edit/copy/remove/undo/search keys', async () => {
     const { appHome, profileName } = await makeAppHomeWithEntries([
       { name: 'topics.md', content: 'x' },
     ]);
-    const output = await renderView(appHome, profileName);
+    const output = await renderView(appHome, profileName, [profileName], '[e]');
     expect(output).toContain('[e]');
     expect(output).toContain('[c]');
     expect(output).toContain('[x]');
     expect(output).toContain('[u]');
     expect(output).toContain('[/]');
-  });
+  }, 20000);
 
   it('renders the localized title', async () => {
     const { appHome, profileName } = await makeAppHomeWithEntries([
       { name: 'topics.md', content: 'x' },
     ]);
-    const output = await renderView(appHome, profileName);
+    const output = await renderView(appHome, profileName, [profileName], 'Auto Memory');
     // Default locale resolves to system locale; the title string is one of the two locales.
     expect(output).toMatch(/Auto Memory|自动记忆/);
-  });
+  }, 20000);
 });
