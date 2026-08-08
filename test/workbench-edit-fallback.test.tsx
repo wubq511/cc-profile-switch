@@ -15,7 +15,7 @@ import { getProfileTemplatePaths } from '../src/core/profile-template';
 import { buildSystemOpenCommand } from '../src/platform/editor';
 import { resolveInside } from '../src/platform/path';
 import type { WorkbenchProfile, WorkbenchData } from '../src/tui/workbench/profile-data';
-import { flatten, makeProfile, setupSpawnSuccess, stripAnsi } from './render-helpers';
+import { flatten, makeProfile, noPluginsReader, setupSpawnSuccess, stripAnsi } from './render-helpers';
 
 vi.mock('node:child_process', () => ({
   spawn: vi.fn(),
@@ -195,6 +195,7 @@ describe('editor unavailable fallback (§8, S35)', () => {
         data: dataFor(makeProfile()),
         initialLocale: 'en',
         skipWelcome: true,
+        pluginInventoryReader: noPluginsReader,
       }),
     );
 
@@ -221,6 +222,7 @@ describe('editor unavailable fallback (§8, S35)', () => {
         data: dataFor(makeProfile()),
         initialLocale: 'en',
         skipWelcome: true,
+        pluginInventoryReader: noPluginsReader,
       }),
     );
 
@@ -247,6 +249,7 @@ describe('editor unavailable fallback (§8, S35)', () => {
         data: dataFor(makeProfile()),
         initialLocale: 'en',
         skipWelcome: true,
+        pluginInventoryReader: noPluginsReader,
       }),
     );
 
@@ -280,6 +283,7 @@ describe('editor unavailable fallback (§8, S35)', () => {
         data: dataFor(makeProfile()),
         initialLocale: 'en',
         skipWelcome: true,
+        pluginInventoryReader: noPluginsReader,
       }),
     );
 
@@ -321,6 +325,7 @@ describe('editor unavailable fallback (§8, S35)', () => {
         data: dataFor(makeProfile()),
         initialLocale: 'en',
         skipWelcome: true,
+        pluginInventoryReader: noPluginsReader,
       }),
     );
 
@@ -350,6 +355,7 @@ describe('editor unavailable fallback (§8, S35)', () => {
         data: dataFor(makeProfile()),
         initialLocale: 'zh',
         skipWelcome: true,
+        pluginInventoryReader: noPluginsReader,
       }),
     );
 

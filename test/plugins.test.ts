@@ -12,6 +12,7 @@ import {
   parseComponentInventory,
   parseInstalledPlugins,
   parsePluginSelector,
+  readPluginInventory,
   runPluginCommand,
   validateMarketplaceSource,
 } from '../src/core/plugins';
@@ -308,6 +309,91 @@ describe('plugins delegated service', () => {
 
     it('returns null when no Component inventory block exists', () => {
       expect(parseComponentInventory('no inventory here')).toBeNull();
+    });
+  });
+
+  describe('readPluginInventory', () => {
+    it('projects the list to names + enable state only, dropping values', async () => {
+      const appHome = await makeAppHome();
+      await makeProfile(appHome, 'coding');
+
+      const inventory = await readPluginInventory({
+        appHomePath: appHome,
+        profileName: 'coding',
+        captureProcess: fakeCapture({
+          exitCode: 0,
+          stdout: JSON.stringify([
+            {
+              id: 'probe-plugin@probe-marketplace',
+              version: '0.1.0',
+              scope: 'user',
+              enabled: true,
+              installPath: '/home/user/.claude/plugins/secret',
+              installedAt: '2026-07-01T00:00:00Z',
+              lastUpdated: '2026-07-02T00:00:00Z',
+            },
+            {
+              id: 'off@m',
+              version: '2.0.0',
+              scope: 'user',
+              enabled: false,
+            },
+          ]),
+        }),
+      });
+
+      expect(inventory).toEqual({
+        status: 'ok',
+        plugins: [
+          { id: 'probe-plugin@probe-marketplace', enabled: true },
+          { id: 'off@m', enabled: false },
+        ],
+      });
+      // Values never cross the seam: installPath/installedAt/lastUpdated are
+      // dropped even when upstream returns them.
+      expect(JSON.stringify(inventory)).not.toContain('/home/user');
+      expect(JSON.stringify(inventory)).not.toContain('installPath');
+      expect(JSON.stringify(inventory)).not.toContain('installedAt');
+      expect(JSON.stringify(inventory)).not.toContain('lastUpdated');
+    });
+
+    it('reports an empty inventory when nothing is installed', async () => {
+      const appHome = await makeAppHome();
+      await makeProfile(appHome, 'coding');
+
+      const inventory = await readPluginInventory({
+        appHomePath: appHome,
+        profileName: 'coding',
+        captureProcess: fakeCapture({ exitCode: 0, stdout: '[]' }),
+      });
+
+      expect(inventory).toEqual({ status: 'ok', plugins: [] });
+    });
+
+    it('fails closed to unavailable when the plugin CLI errors', async () => {
+      const appHome = await makeAppHome();
+      await makeProfile(appHome, 'coding');
+
+      const inventory = await readPluginInventory({
+        appHomePath: appHome,
+        profileName: 'coding',
+        captureProcess: fakeCapture({ exitCode: 1, stderr: 'TypeError: fetch failed' }),
+      });
+
+      expect(inventory).toEqual({ status: 'unavailable' });
+    });
+
+    it('fails closed to unavailable on malformed list output', async () => {
+      const appHome = await makeAppHome();
+      await makeProfile(appHome, 'coding');
+
+      const inventory = await readPluginInventory({
+        appHomePath: appHome,
+        profileName: 'coding',
+        captureProcess: fakeCapture({ exitCode: 0, stdout: 'not json' }),
+      });
+
+      expect(inventory).toEqual({ status: 'unavailable' });
     });
   });
 });

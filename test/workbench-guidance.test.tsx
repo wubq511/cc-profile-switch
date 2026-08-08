@@ -33,7 +33,23 @@ import {
 } from '../src/tui/workbench/guidance';
 import type { WorkbenchProfile, WorkbenchData } from '../src/tui/workbench/profile-data';
 import type { McpServerState } from '../src/core/mcp-list';
-import { flatten, renderWithLocale, stripAnsi } from './render-helpers';
+import { flatten, noPluginsReader, renderWithLocale, stripAnsi } from './render-helpers';
+
+/** The search discovery tip ('covers profiles, resource items, and
+ *  memory/agent content') wraps across several sidebar rows that interleave
+ *  with the main pane's category grid, and the grid's row alignment shifts
+ *  with the vertical budget (e.g. the Plugins card adds one row). Assert the
+ *  wrapped fragments appear in stream order instead of as one contiguous
+ *  substring, which would couple the test to exact cross-column row math. */
+function assertTipRendered(flat: string): void {
+  const fragments = ['covers profiles, resource', 'items, and memory/agent', 'content'];
+  let from = 0;
+  for (const frag of fragments) {
+    const idx = flat.indexOf(frag, from);
+    expect(idx).toBeGreaterThanOrEqual(from);
+    from = idx + frag.length;
+  }
+}
 
 class FakeTtyStdout extends Writable {
   public readonly isTTY = true;
@@ -569,7 +585,7 @@ describe('keypress guidance flows', () => {
   it('pressing [x] opens the destructive panel and [esc] keeps the Profile', async () => {
     resetWelcomeSessionForTests();
     const { instance, stdout, stdin } = await renderInteractive(
-      React.createElement(WorkbenchApp, { data: sampleData, initialLocale: 'en', skipWelcome: true }),
+      React.createElement(WorkbenchApp, { data: sampleData, initialLocale: 'en', skipWelcome: true, pluginInventoryReader: noPluginsReader }),
     );
     const xBaseline = stdout.output;
     stdin.press('x');
@@ -596,13 +612,17 @@ describe('keypress guidance flows', () => {
   it('first-search-focus shows the one-line discovery tip', async () => {
     resetWelcomeSessionForTests();
     const { instance, stdout, stdin } = await renderInteractive(
-      React.createElement(WorkbenchApp, { data: sampleData, initialLocale: 'en', skipWelcome: true }),
+      React.createElement(WorkbenchApp, { data: sampleData, initialLocale: 'en', skipWelcome: true, pluginInventoryReader: noPluginsReader }),
     );
     const slashBaseline = stdout.output;
     stdin.press('/');
     await waitForOutputSettled(stdout, slashBaseline);
     const output = stripAnsi(stdout.output);
-    expect(flatten(output)).toContain('covers profiles, resource items, and memory/agent content');
+    // The tip wraps across the ~26-column sidebar and its rows interleave with
+    // the main pane's category grid (whose row alignment shifts with the
+    // vertical budget), so assert the wrapped fragments in stream order rather
+    // than one contiguous substring.
+    assertTipRendered(flatten(output));
     instance.unmount();
     await instance.waitUntilExit();
   });
@@ -610,12 +630,12 @@ describe('keypress guidance flows', () => {
   it('search discovery tip does not reappear on a later focus (first-focus only)', async () => {
     resetWelcomeSessionForTests();
     const { instance, stdout, stdin } = await renderInteractive(
-      React.createElement(WorkbenchApp, { data: sampleData, initialLocale: 'en', skipWelcome: true }),
+      React.createElement(WorkbenchApp, { data: sampleData, initialLocale: 'en', skipWelcome: true, pluginInventoryReader: noPluginsReader }),
     );
     const firstBaseline = stdout.output;
     stdin.press('/');
     await waitForOutputSettled(stdout, firstBaseline);
-    expect(flatten(stripAnsi(stdout.output))).toContain('covers profiles, resource items, and memory/agent content');
+    assertTipRendered(flatten(stripAnsi(stdout.output)));
 
     // Blur out of search, then focus again — the tip must stay gone.
     stdout.snapshot();
@@ -831,7 +851,7 @@ describe('keypress guidance flows', () => {
       await withHome(userHome, async () => {
         resetWelcomeSessionForTests();
         const { instance, stdout, stdin } = await renderInteractive(
-          React.createElement(WorkbenchApp, { data: sampleData, initialLocale: 'en', skipWelcome: true }),
+          React.createElement(WorkbenchApp, { data: sampleData, initialLocale: 'en', skipWelcome: true, pluginInventoryReader: noPluginsReader }),
         );
 
         // [s] opens the template-name prompt for the selected profile.

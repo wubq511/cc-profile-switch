@@ -8,6 +8,7 @@ import type { ResourceNavState } from './resource-nav';
 import type { AgentFrontmatter, SearchResult } from '../../core/resource';
 import type { ResourceDiffResult } from '../../core/resource/diff-all';
 import type { EditSession } from '../../core/edit-session';
+import type { PluginInventory, PluginInventoryEntry } from '../../core/plugins';
 import { ResourceMainPane } from './resource-main';
 import { WatchingBadge } from './edit-session/WatchingBadge';
 import { FallbackMenu, type EditFallbackHandlers } from './edit-session/FallbackMenu';
@@ -22,6 +23,9 @@ type MainPaneProps = {
   nav: ResourceNavState;
   /** MCP servers that failed to connect — amber nudge (§5). */
   mcpFailed?: string[];
+  /** Selected Profile's plugin inventory (read-only card, §7.6/issue #96).
+   *  Absent while the delegated read is pending. */
+  pluginInventory?: PluginInventory;
   width: number;
   height: number;
   /** Whether the main pane holds keyboard focus (Tab-toggleable from sidebar). */
@@ -67,6 +71,7 @@ export function MainPane({
   profiles,
   nav,
   mcpFailed,
+  pluginInventory,
   width,
   height,
   focused,
@@ -119,6 +124,11 @@ export function MainPane({
   const colWidth = Math.floor((width - 4) / 2);
   const cursor = selectedCategoryIndex ?? 0;
   const liveProfileHints = liveKeys(PROFILE_HINTS.map((h) => h.key));
+  // Vertical budget for the Plugins card's inventory list: the header, grid,
+  // and hint lines are fixed, so the card gets the remaining lines (its title
+  // and the delegation line consume two). The cap keeps the card from pushing
+  // the hint line off a minimum-size (80×24) pane.
+  const pluginsMaxRows = Math.max(1, Math.min(6, height - 19));
 
   return React.createElement(
     Box,
@@ -174,7 +184,7 @@ export function MainPane({
     editSession?.openFailedReason &&
       React.createElement(
         Box,
-        { marginBottom: 1 },
+        { marginBottom: 1, flexShrink: 0 },
         React.createElement(FallbackMenu, {
           reason: editSession.openFailedReason,
           filePath: editSession.filePath,
@@ -188,6 +198,11 @@ export function MainPane({
       { flexDirection: 'column', gap: 1, flexGrow: 1 },
       ...renderCategoryGrid(profile.resourceCounts, colWidth, cursor, focused ?? false),
     ),
+    // Read-only Plugins status card (§7.6 boundary row, issue #96): the
+    // selected Profile's plugin inventory as pure status — names and enable
+    // state only — plus the delegation guidance. There are deliberately no
+    // mutation affordances: every change goes through `claude plugin`.
+    renderPluginsCard(pluginInventory, pluginsMaxRows),
     focused &&
       React.createElement(
         Box,
@@ -286,6 +301,63 @@ export function MainPane({
       drillHint && React.createElement(Text, { dimColor: true, wrap: 'wrap' }, drillHint),
       diffHint && React.createElement(Text, { dimColor: true, wrap: 'wrap' }, diffHint),
       emptyLabel && React.createElement(Text, { dimColor: true, wrap: 'wrap' }, emptyLabel),
+    );
+  }
+
+  // Read-only Plugins card body (issue #96, spec §7.6): inventory as pure
+  // status — names and enable state only. The list is capped to `maxRows`
+  // with a `+N more` overflow line so the card stays within the pane's
+  // vertical budget; the delegation line always renders, including while the
+  // delegated read is pending and when it fails.
+  function renderPluginsCard(
+    inventory: PluginInventory | undefined,
+    maxRows: number,
+  ): React.ReactElement {
+    const body =
+      inventory === undefined
+        ? React.createElement(Text, { dimColor: true }, '…')
+        : inventory.status === 'unavailable'
+          ? React.createElement(Text, { dimColor: true, wrap: 'wrap' }, t('plugins.unavailable'))
+          : inventory.plugins.length === 0
+            ? React.createElement(Text, { dimColor: true, wrap: 'wrap' }, t('plugins.empty'))
+            : renderPluginRows(inventory.plugins, maxRows);
+
+    return React.createElement(
+      Box,
+      { flexDirection: 'column', marginTop: 1, flexShrink: 0 },
+      React.createElement(Text, { bold: true }, t('main.category.plugins')),
+      body,
+      React.createElement(Text, { dimColor: true, wrap: 'wrap' }, t('plugins.managed')),
+    );
+  }
+
+  function renderPluginRows(
+    plugins: PluginInventoryEntry[],
+    maxRows: number,
+  ): React.ReactElement {
+    const shown = plugins.slice(0, maxRows);
+    const overflow = plugins.length - shown.length;
+    return React.createElement(
+      React.Fragment,
+      null,
+      ...shown.map((plugin) =>
+        React.createElement(
+          Text,
+          { key: plugin.id, wrap: 'wrap' },
+          `${plugin.id} — `,
+          React.createElement(
+            Text,
+            plugin.enabled ? { color: 'green' } : { dimColor: true },
+            plugin.enabled ? t('plugins.enabled') : t('plugins.disabled'),
+          ),
+        ),
+      ),
+      overflow > 0 &&
+        React.createElement(
+          Text,
+          { dimColor: true, wrap: 'wrap' },
+          t('plugins.more', { count: String(overflow) }),
+        ),
     );
   }
 }

@@ -17,6 +17,14 @@ export const en = {
   'main.category.settings': 'Settings',
   'main.category.plugins': 'Plugins',
   'main.category.launchConfig': 'Launch Config',
+  // Read-only Plugins status card (issue #96, spec §7.6): the card shows
+  // inventory as pure status and points every change at `claude plugin`.
+  'plugins.managed': 'Claude-managed — change them through `claude plugin`',
+  'plugins.empty': 'no plugins installed',
+  'plugins.unavailable': 'plugin inventory unavailable',
+  'plugins.more': '+{count} more',
+  'plugins.enabled': 'enabled',
+  'plugins.disabled': 'disabled',
   'keymap.title': 'Keyboard Shortcuts',
   'keymap.nav': 'Navigation',
   'keymap.up': 'Move up/down',

@@ -140,6 +140,41 @@ export async function listPlugins(
   return parseInstalledPlugins(result.stdout);
 }
 
+// ─── Workbench read-only inventory (issue #96, spec §7.6) ────────────────
+
+export type PluginInventoryEntry = {
+  /** Plugin selector (plugin@marketplace) — names/status only, never values. */
+  id: string;
+  enabled: boolean;
+};
+
+export type PluginInventory =
+  | { status: 'ok'; plugins: PluginInventoryEntry[] }
+  | { status: 'unavailable' };
+
+/**
+ * Fail-closed inventory read backing the Workbench's read-only Plugins card.
+ * Delegates to `claude plugin list --json` with CLAUDE_CONFIG_DIR set, then
+ * keeps only names + enable state (version, install paths, timestamps are
+ * dropped). Never throws: an unavailable CLI degrades to an 'unavailable'
+ * status so the card can never break the Workbench.
+ */
+export async function readPluginInventory(options: {
+  appHomePath: string;
+  profileName: string;
+  captureProcess?: CaptureProcess;
+}): Promise<PluginInventory> {
+  try {
+    const plugins = await listPlugins(options);
+    return {
+      status: 'ok',
+      plugins: plugins.map((plugin) => ({ id: plugin.id, enabled: plugin.enabled })),
+    };
+  } catch {
+    return { status: 'unavailable' };
+  }
+}
+
 export type AvailablePluginsResult = {
   installed: InstalledPlugin[];
   available: AvailablePlugin[];

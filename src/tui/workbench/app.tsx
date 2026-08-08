@@ -109,7 +109,7 @@ import type { InstallSourceRef } from './skills/install-wizard-reducer';
 import { AutoMemoryView } from './resources/auto-memory-view';
 import { BulkOpsView, type BulkCategory } from './resources/bulk-ops-view';
 import { RecoveryView } from './resources/recovery-view';
-import { restorePluginItem } from '../../core/plugins';
+import { restorePluginItem, readPluginInventory, type PluginInventory } from '../../core/plugins';
 import {
   ErrorPanel,
   HintsProvider,
@@ -225,6 +225,11 @@ type WorkbenchAppProps = {
   resumeState?: LaunchResumeState | null;
   /** Override the MCP connection-state probe (tests). */
   mcpProbe?: (appHomePath: string, profileName: string) => Promise<McpServerState[]>;
+  /** Override the Plugins inventory read for the read-only card (tests, #96). */
+  pluginInventoryReader?: (
+    appHomePath: string,
+    profileName: string,
+  ) => Promise<PluginInventory>;
   /** Override the sidebar cross-Profile content search (tests, #83). */
   searchContent?: (query: string) => Promise<SearchResult[]>;
   /** Override the Discover session factory (tests inject a fake-session/http). */
@@ -255,6 +260,7 @@ export function WorkbenchApp({
   onLaunch,
   resumeState,
   mcpProbe,
+  pluginInventoryReader,
   searchContent,
   discoverySessionFactory,
   configLoader,
@@ -270,6 +276,7 @@ export function WorkbenchApp({
     onLaunch,
     resumeState,
     mcpProbe,
+    pluginInventoryReader,
     searchContent,
     discoverySessionFactory,
     configLoader,
@@ -294,6 +301,7 @@ function WorkbenchInner({
   onLaunch,
   resumeState,
   mcpProbe,
+  pluginInventoryReader,
   searchContent,
   discoverySessionFactory,
   configLoader,
@@ -306,6 +314,10 @@ function WorkbenchInner({
   onLaunch?: (plan: LaunchPlan, appHomePath: string) => number | null;
   resumeState?: LaunchResumeState | null;
   mcpProbe?: (appHomePath: string, profileName: string) => Promise<McpServerState[]>;
+  pluginInventoryReader?: (
+    appHomePath: string,
+    profileName: string,
+  ) => Promise<PluginInventory>;
   searchContent?: (query: string) => Promise<SearchResult[]>;
   discoverySessionFactory?: (
     appHomePath: string,
@@ -403,6 +415,13 @@ function WorkbenchInner({
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [flashMessage, setFlashMessage] = useState('');
   const [mcpFailedByProfile, setMcpFailedByProfile] = useState<Record<string, string[]>>({});
+  // Read-only Plugins status card (issue #96, §7.6): lazily-read inventory
+  // cached per profile name, fail-closed so an unavailable `claude` CLI never
+  // blocks the Workbench. Cleared by refreshData so the card re-reads after
+  // an in-Workbench change (e.g. a Recovery plugin restore).
+  const [pluginInventoryByProfile, setPluginInventoryByProfile] = useState<
+    Record<string, PluginInventory>
+  >({});
   // Persisted selection across launch remount
   const persistedSelection = useRef(selectedIndex);
   // Edit-session manager — one instance for the Workbench lifetime, shared by
@@ -467,6 +486,43 @@ function WorkbenchInner({
       cancelled = true;
     };
   }, [selectedIndex, workbenchData.profiles, mcpFailedByProfile, mcpProbe]);
+
+  // Read-only Plugins inventory (§7.6, issue #96): probe the selected
+  // Profile's installed plugins once per data refresh (cached by name),
+  // fail closed on any error so the card degrades instead of breaking.
+  useEffect(() => {
+    const profile = workbenchData.profiles[selectedIndex];
+    if (!profile) return;
+    if (pluginInventoryByProfile[profile.name]) return; // already read
+
+    let cancelled = false;
+    const reader =
+      pluginInventoryReader ??
+      ((appHomePath: string, profileName: string) =>
+        readPluginInventory({ appHomePath, profileName, captureProcess }));
+    (async () => {
+      try {
+        const inventory = await reader(getAppHomePaths().appHomePath, profile.name);
+        if (cancelled) return;
+        setPluginInventoryByProfile((prev) => ({ ...prev, [profile.name]: inventory }));
+      } catch {
+        if (cancelled) return;
+        setPluginInventoryByProfile((prev) => ({
+          ...prev,
+          [profile.name]: { status: 'unavailable' },
+        }));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    selectedIndex,
+    workbenchData.profiles,
+    pluginInventoryByProfile,
+    pluginInventoryReader,
+    captureProcess,
+  ]);
 
   useInput(
     (input: string, key: Record<string, boolean>) => {
@@ -848,6 +904,9 @@ function WorkbenchInner({
     } catch {
       // refresh failure is non-fatal
     }
+    // The cached plugin inventory belongs to the previous data generation;
+    // clear it so the selected Profile is re-probed after any refresh.
+    setPluginInventoryByProfile({});
   }, [appHomePath]);
 
   // Zero-confirm removal of a user-created template (S104), same flash pattern
@@ -2421,6 +2480,9 @@ function WorkbenchInner({
                                 profiles: workbenchData.profiles,
                                 nav: resourceNav,
                                 mcpFailed,
+                                pluginInventory: selectedProfile
+                                  ? pluginInventoryByProfile[selectedProfile.name]
+                                  : undefined,
                                 width: mainWidth,
                                 height: height - 1,
                                 focused: mainPaneFocus,

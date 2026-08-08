@@ -19,6 +19,13 @@ export const zh: Record<LocaleKey, string> = {
   'main.category.settings': '设置',
   'main.category.plugins': '插件',
   'main.category.launchConfig': '启动配置',
+  // 只读插件状态卡 (issue #96, spec §7.6): 卡片只展示清单状态, 所有变更引导到 `claude plugin`
+  'plugins.managed': '由 Claude 管理 — 通过 `claude plugin` 修改',
+  'plugins.empty': '未安装插件',
+  'plugins.unavailable': '无法读取插件清单',
+  'plugins.more': '还有 {count} 个',
+  'plugins.enabled': '已启用',
+  'plugins.disabled': '已停用',
   'keymap.title': '键盘快捷键',
   'keymap.nav': '导航',
   'keymap.up': '上移/下移',

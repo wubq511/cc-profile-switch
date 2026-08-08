@@ -8,6 +8,7 @@ import { vi } from 'vitest';
 
 import { I18nProvider, type Locale } from '../src/tui/workbench/i18n/react';
 import type { WorkbenchProfile } from '../src/tui/workbench/profile-data';
+import type { PluginInventory } from '../src/core/plugins';
 
 /**
  * Shared test helpers for Ink render tests: ANSI stripping, output flattening,
@@ -15,6 +16,14 @@ import type { WorkbenchProfile } from '../src/tui/workbench/profile-data';
  * I18nProvider-wrapped render. Per-file fixture defaults layer on top of
  * `makeProfile` via overrides instead of re-declaring the constructor.
  */
+
+/** Hermetic plugin inventory (issue #96): suites that exercise other Workbench
+ *  behavior, not the Plugins card, inject this so the on-mount inventory read
+ *  resolves without spawning `claude plugin list`. */
+export const noPluginsReader = async (): Promise<PluginInventory> => ({
+  status: 'ok',
+  plugins: [],
+});
 
 export class FakeTtyStdout extends Writable {
   public readonly isTTY = true;

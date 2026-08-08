@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { WorkbenchApp, resetWelcomeSessionForTests } from '../src/tui/workbench/app';
 import type { WorkbenchData } from '../src/tui/workbench/profile-data';
-import { FakeTtyStdout, flatten, makeProfile, stripAnsi } from './render-helpers';
+import { FakeTtyStdout, flatten, makeProfile, noPluginsReader, stripAnsi } from './render-helpers';
 
 vi.mock('node:child_process', () => ({
   spawn: vi.fn(),
@@ -110,6 +110,9 @@ describe('sidebar search input suppression (issue #83/#84, spec §4.2)', () => {
         skipWelcome: true,
         // Keep tests hermetic: no content search against the real app home.
         searchContent: async () => [],
+        // …and no plugin-inventory spawn on mount (issue #96): the assertion
+        // below pins that `spawn` is never called by search input.
+        pluginInventoryReader: noPluginsReader,
       }),
     );
     let exited = false;
@@ -158,6 +161,7 @@ describe('sidebar search input suppression (issue #83/#84, spec §4.2)', () => {
         initialLocale: 'en',
         skipWelcome: true,
         searchContent: async () => [],
+        pluginInventoryReader: noPluginsReader,
       }),
     );
 
