@@ -4,66 +4,156 @@ import { Box, Text } from 'ink';
 import { useI18n } from './i18n/react';
 import type { LocaleKey } from './i18n/en';
 
-type KeymapOverlayProps = {
-  visible: boolean;
-};
+/**
+ * The `?` help sheet is the keymap reference (spec §4.3). Bindings are grouped
+ * by the UI context in which they apply — sidebar profile focus, main-pane
+ * category focus, resource rows, the Discover and Bulk surfaces, and the help
+ * sheet itself — so a key that means different things in different states
+ * (e.g. `l` = launch from the sidebar, `l` = switch language inside the help
+ * sheet; `a` = add skill / Agents drill / select-all) is documented once per
+ * context instead of appearing as a self-contradiction. Within a group each
+ * key appears at most once.
+ *
+ * `KEYMAP_GROUPS` is exported so the keymap/handler consistency test can send
+ * every documented keypress in its documented context and assert the
+ * documented effect; the sheet itself only renders this data.
+ */
+export type KeymapContextId =
+  | 'navigation'
+  | 'profile'
+  | 'categories'
+  | 'resource'
+  | 'discover'
+  | 'bulk'
+  | 'help';
 
-type Binding = {
+export type KeymapBinding = {
+  /** Display form of the key, e.g. `↑/↓`, `q/Ctrl+C`, `Esc/?`. */
   key: string;
-  group: 'nav' | 'actions' | 'resource' | 'discover' | 'bulk';
   labelKey: LocaleKey;
 };
 
-const KEYBINDINGS: Binding[] = [
-  // Navigation
-  { key: '↑/↓', group: 'nav', labelKey: 'keymap.up' },
-  { key: '←/→', group: 'nav', labelKey: 'keymap.tree' },
-  { key: 'Enter', group: 'nav', labelKey: 'keymap.enter' },
-  { key: 'Esc', group: 'nav', labelKey: 'keymap.esc' },
-  { key: '/', group: 'nav', labelKey: 'keymap.search' },
-  { key: '?', group: 'nav', labelKey: 'keymap.help' },
-  { key: 'q/Ctrl+C', group: 'nav', labelKey: 'keymap.quit' },
-  // In-Workbench language switch (§14.10): toggles zh↔en from the help sheet.
-  { key: 'l', group: 'nav', labelKey: 'keymap.language' },
-  // Profile lifecycle actions
-  { key: 'l', group: 'actions', labelKey: 'keymap.launch' },
-  { key: 'L', group: 'actions', labelKey: 'lifecycle.launchDir' },
-  { key: 'a', group: 'actions', labelKey: 'skill.add' },
-  { key: 'e', group: 'actions', labelKey: 'keymap.edit' },
-  { key: 'D', group: 'actions', labelKey: 'lifecycle.editDescription' },
-  { key: 'n', group: 'actions', labelKey: 'lifecycle.create' },
-  { key: 'c', group: 'actions', labelKey: 'lifecycle.copy' },
-  { key: 'r', group: 'actions', labelKey: 'lifecycle.rename' },
-  { key: 'd', group: 'actions', labelKey: 'lifecycle.default' },
-  { key: 'v', group: 'actions', labelKey: 'lifecycle.validate' },
-  { key: 'b', group: 'actions', labelKey: 'lifecycle.backup' },
-  { key: 's', group: 'actions', labelKey: 'lifecycle.saveTemplate' },
-  { key: 'x', group: 'actions', labelKey: 'lifecycle.remove' },
-  // Resource rows (User Memory / Agents)
-  { key: 'u', group: 'resource', labelKey: 'main.category.userMemory' },
-  { key: 'a', group: 'resource', labelKey: 'main.category.agents' },
-  { key: 'Enter', group: 'resource', labelKey: 'keymap.enter' },
-  // Split per #83: sidebar `/` filters the tree cross-Profile; this `/`
-  // searches content inside the current resource list only.
-  { key: '/', group: 'resource', labelKey: 'keymap.searchResource' },
-  { key: 'e', group: 'resource', labelKey: 'resource.edit' },
-  { key: 'x', group: 'resource', labelKey: 'resource.remove' },
-  { key: 'c', group: 'resource', labelKey: 'resource.copy' },
-  { key: 'd', group: 'resource', labelKey: 'resource.diff.title' },
-  { key: 'f', group: 'resource', labelKey: 'resource.agent.frontmatter.edit' },
-  // Discover surface (spec §7.4)
-  { key: '/', group: 'discover', labelKey: 'keymap.discover.search' },
-  { key: 'Enter', group: 'discover', labelKey: 'keymap.discover.install' },
-  { key: 's', group: 'discover', labelKey: 'keymap.discover.source' },
-  { key: 'b', group: 'discover', labelKey: 'keymap.discover.browser' },
-  { key: 'r', group: 'discover', labelKey: 'keymap.discover.refresh' },
-  // Bulk ops surface (spec §11.1)
-  { key: 'space', group: 'bulk', labelKey: 'keymap.bulk.select' },
-  { key: 'a', group: 'bulk', labelKey: 'keymap.bulk.selectAll' },
-  { key: 'x', group: 'bulk', labelKey: 'keymap.bulk.remove' },
-  { key: 'c', group: 'bulk', labelKey: 'keymap.bulk.copy' },
-  { key: 'u', group: 'bulk', labelKey: 'keymap.bulk.update' },
-  { key: 'd', group: 'bulk', labelKey: 'keymap.bulk.discover' },
+export type KeymapGroup = {
+  id: KeymapContextId;
+  titleKey: LocaleKey;
+  bindings: KeymapBinding[];
+};
+
+export const KEYMAP_GROUPS: readonly KeymapGroup[] = [
+  {
+    // Base/sidebar focus: Esc has no effect here (it closes overlays, which
+    // own their own Esc bindings below), so it is not documented as a
+    // navigation key — issue #92 keeps the sheet truthful about what each key
+    // does in each context.
+    id: 'navigation',
+    titleKey: 'keymap.nav',
+    bindings: [
+      { key: '↑/↓', labelKey: 'keymap.up' },
+      { key: '←/→', labelKey: 'keymap.tree' },
+      { key: 'Enter', labelKey: 'keymap.enter' },
+      { key: '/', labelKey: 'keymap.search' },
+      { key: '?', labelKey: 'keymap.help' },
+      { key: 'q/Ctrl+C', labelKey: 'keymap.quit' },
+    ],
+  },
+  {
+    // Sidebar profile-list focus (issue #91): ownership of each contextual
+    // letter is decided by this focus region, so `l` is launch and `a` is Add
+    // Skill here — not language switch / Agents drill (those live in the help
+    // sheet and the main-pane context respectively).
+    id: 'profile',
+    titleKey: 'keymap.actions',
+    bindings: [
+      { key: 'l', labelKey: 'keymap.launch' },
+      { key: 'L', labelKey: 'lifecycle.launchDir' },
+      { key: 'a', labelKey: 'skill.add' },
+      { key: 'n', labelKey: 'lifecycle.create' },
+      { key: 'c', labelKey: 'lifecycle.copy' },
+      { key: 'r', labelKey: 'lifecycle.rename' },
+      { key: 'd', labelKey: 'lifecycle.default' },
+      { key: 'v', labelKey: 'lifecycle.validate' },
+      { key: 'b', labelKey: 'lifecycle.backup' },
+      { key: 's', labelKey: 'lifecycle.saveTemplate' },
+      { key: 'x', labelKey: 'lifecycle.remove' },
+      { key: 'e', labelKey: 'keymap.edit' },
+      { key: 'D', labelKey: 'lifecycle.editDescription' },
+      { key: 'u', labelKey: 'main.category.userMemory' },
+      { key: 'Tab', labelKey: 'main.focusHint' },
+    ],
+  },
+  {
+    // Main-pane category grid focus: `a` drills into Agents (sidebar-focus
+    // Add Skill is captured by the Sidebar), `u` drills User Memory, Enter
+    // opens bulk ops for the focused category.
+    id: 'categories',
+    titleKey: 'keymap.categories',
+    bindings: [
+      { key: '↑/↓', labelKey: 'keymap.catNav' },
+      { key: 'a', labelKey: 'main.category.agents' },
+      { key: 'u', labelKey: 'main.category.userMemory' },
+      { key: 'Enter', labelKey: 'keymap.enter' },
+      { key: 'd', labelKey: 'resource.diff.title' },
+      { key: 'Esc/←', labelKey: 'keymap.backToSidebar' },
+    ],
+  },
+  {
+    // User Memory / Agents resource rows (also preview / copy / diff phases).
+    // `a` (create agent) and `n` (recreate a missing CLAUDE.md) are bound in
+    // the list phase only — the app's own empty states advertise both.
+    id: 'resource',
+    titleKey: 'keymap.resources',
+    bindings: [
+      { key: '↑/↓', labelKey: 'keymap.up' },
+      { key: 'Enter', labelKey: 'keymap.enter' },
+      { key: '/', labelKey: 'keymap.searchResource' },
+      { key: 'e', labelKey: 'resource.edit' },
+      { key: 'a', labelKey: 'resource.agents.create' },
+      { key: 'n', labelKey: 'resource.userMemory.recreate' },
+      { key: 'x', labelKey: 'resource.remove' },
+      { key: 'c', labelKey: 'resource.copy' },
+      { key: 'd', labelKey: 'resource.diff.title' },
+      { key: 'f', labelKey: 'resource.agent.frontmatter.edit' },
+      { key: 'Esc', labelKey: 'keymap.esc' },
+    ],
+  },
+  {
+    // Skills discovery surface (spec §7.4).
+    id: 'discover',
+    titleKey: 'keymap.discover',
+    bindings: [
+      { key: '/', labelKey: 'keymap.discover.search' },
+      { key: 'Enter', labelKey: 'keymap.discover.install' },
+      { key: 's', labelKey: 'keymap.discover.source' },
+      { key: 'b', labelKey: 'keymap.discover.browser' },
+      { key: 'r', labelKey: 'keymap.discover.refresh' },
+      { key: 'Esc', labelKey: 'keymap.esc' },
+    ],
+  },
+  {
+    // Bulk operations surface (spec §11.1).
+    id: 'bulk',
+    titleKey: 'keymap.bulk',
+    bindings: [
+      { key: 'space', labelKey: 'keymap.bulk.select' },
+      { key: 'a', labelKey: 'keymap.bulk.selectAll' },
+      { key: 'x', labelKey: 'keymap.bulk.remove' },
+      { key: 'c', labelKey: 'keymap.bulk.copy' },
+      { key: 'u', labelKey: 'keymap.bulk.update' },
+      { key: 'd', labelKey: 'keymap.bulk.discover' },
+      { key: 'Esc', labelKey: 'keymap.esc' },
+    ],
+  },
+  {
+    // Keys active while the help sheet itself is open: `l` is the language
+    // switch here (spec §14.10) — the same letter means launch in the sidebar
+    // context, which the group headings make unambiguous.
+    id: 'help',
+    titleKey: 'keymap.helpSheet',
+    bindings: [
+      { key: 'l', labelKey: 'keymap.language' },
+      { key: 'Esc/?', labelKey: 'keymap.close' },
+    ],
+  },
 ];
 
 const CONCEPTS: Array<{ term: LocaleKey; definition: LocaleKey }> = [
@@ -75,18 +165,19 @@ const CONCEPTS: Array<{ term: LocaleKey; definition: LocaleKey }> = [
   { term: 'keymap.concept.plugins.term', definition: 'keymap.concept.plugins.def' },
 ];
 
+type KeymapOverlayProps = {
+  visible: boolean;
+};
+
 export function KeymapOverlay({ visible }: KeymapOverlayProps): React.ReactElement | null {
   const { t } = useI18n();
 
   if (!visible) return null;
 
-  const navBindings = KEYBINDINGS.filter((b) => b.group === 'nav');
-  const actionBindings = KEYBINDINGS.filter((b) => b.group === 'actions');
-  const resourceBindings = KEYBINDINGS.filter((b) => b.group === 'resource');
-  const discoverBindings = KEYBINDINGS.filter((b) => b.group === 'discover');
-  const bulkBindings = KEYBINDINGS.filter((b) => b.group === 'bulk');
-
-  const renderRow = (bindings: Binding[]): React.ReactElement =>
+  // One binding layout for every group: a wrapping row of `[key] label` chips.
+  // The sheet is the keymap reference, so each documented key stays a single
+  // inline chip no matter which context group it belongs to.
+  const renderBindings = (bindings: readonly KeymapBinding[]): React.ReactElement =>
     React.createElement(
       Box,
       { paddingX: 2, flexWrap: 'wrap' },
@@ -100,44 +191,23 @@ export function KeymapOverlay({ visible }: KeymapOverlayProps): React.ReactEleme
       ),
     );
 
+  const renderGroup = (group: KeymapGroup): React.ReactElement =>
+    React.createElement(
+      React.Fragment,
+      { key: group.id },
+      React.createElement(
+        Box,
+        { marginTop: 1 },
+        React.createElement(Text, { bold: true }, t(group.titleKey)),
+      ),
+      renderBindings(group.bindings),
+    );
+
   return React.createElement(
     Box,
     { flexDirection: 'column', flexGrow: 1, paddingX: 1 },
     React.createElement(Text, { bold: true }, t('keymap.title')),
-    React.createElement(Box, { marginTop: 1 },
-      React.createElement(Text, { bold: true }, t('keymap.nav')),
-    ),
-    renderRow(navBindings),
-    React.createElement(Box, { marginTop: 1 },
-      React.createElement(Text, { bold: true }, t('keymap.actions')),
-    ),
-    renderRow(actionBindings),
-    React.createElement(Box, { marginTop: 1 },
-      React.createElement(Text, { bold: true }, t('keymap.resources')),
-    ),
-    ...resourceBindings.map((b) =>
-      React.createElement(
-        Box,
-        { key: `resource-${b.key}` },
-        React.createElement(Text, { color: 'cyan' }, `  ${b.key.padEnd(10)}`),
-        React.createElement(Text, null, t(b.labelKey)),
-      ),
-    ),
-    React.createElement(Box, { marginTop: 1 },
-      React.createElement(Text, { bold: true }, t('keymap.bulk')),
-    ),
-    ...bulkBindings.map((b) =>
-      React.createElement(
-        Box,
-        { key: `bulk-${b.key}` },
-        React.createElement(Text, { color: 'cyan' }, `  ${b.key.padEnd(10)}`),
-        React.createElement(Text, null, t(b.labelKey)),
-      ),
-    ),
-    React.createElement(Box, { marginTop: 1 },
-      React.createElement(Text, { bold: true }, t('keymap.discover')),
-    ),
-    renderRow(discoverBindings),
+    ...KEYMAP_GROUPS.map(renderGroup),
     React.createElement(Box, { marginTop: 1 },
       React.createElement(Text, { bold: true }, t('keymap.concepts')),
     ),
