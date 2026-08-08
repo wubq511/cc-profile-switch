@@ -1,5 +1,8 @@
 import { getSkillsDirectoryPath } from '../../../core/skills-provenance';
 import { resolveInside } from '../../../platform/path';
+import { translate } from '../i18n';
+import type { I18nParams, LocaleKey } from '../i18n';
+import type { SkillSourceKind } from '../../../schemas/skills-provenance';
 import type { RemoteInstallPreview } from '../../../core/skills-remote-install';
 import type {
   CatalogedLocalSkillSource,
@@ -110,6 +113,27 @@ export type InstallWizardAction =
   | { type: 'DISMISS' } // success/error → closed
   | { type: 'CANCEL' }; // esc: walk back one decision
 
+// The wizard's useReducer wrapper supplies `t`; direct reducer calls (tests)
+// omit it and fall back to the English catalog via translate('en', …).
+type WizardTranslator = (key: LocaleKey, params?: I18nParams) => string;
+
+function tx(t: WizardTranslator | undefined, key: LocaleKey, params?: I18nParams): string {
+  return t ? t(key, params) : translate('en', key, params);
+}
+
+// SkillSource.kind values shown in the remote-confirm provenance section are
+// machine protocol tokens — localized so a zh-locale user sees no raw English.
+const SOURCE_KIND_KEYS: Record<SkillSourceKind, LocaleKey> = {
+  'git-remote': 'skill.source.kind.gitRemote',
+  url: 'skill.source.kind.url',
+  local: 'skill.source.kind.local',
+  unknown: 'skill.source.kind.unknown',
+};
+
+export function sourceKindLabel(t: WizardTranslator | undefined, kind: SkillSourceKind): string {
+  return t ? t(SOURCE_KIND_KEYS[kind]) : kind;
+}
+
 export function initialInstallWizardState(): InstallWizardState {
   return {
     open: false,
@@ -142,6 +166,7 @@ export function initialInstallWizardState(): InstallWizardState {
 export function installWizardReducer(
   state: InstallWizardState,
   action: InstallWizardAction,
+  t?: WizardTranslator,
 ): InstallWizardState {
   switch (action.type) {
     case 'START': {
@@ -382,14 +407,14 @@ export function installWizardReducer(
       if (state.phase !== 'collision') return state;
       const trimmed = state.collisionInput.trim();
       if (trimmed.length === 0) {
-        return { ...state, collisionError: 'Name cannot be empty.' };
+        return { ...state, collisionError: tx(t, 'skill.install.collision.nameEmpty') };
       }
       if (state.kind === 'remote' && state.remotePreview && state.profileRootPath) {
         // The staged tree is unchanged; recompute the preview purely with the new
         // name (no re-acquire). Collision is re-checked against existingNames.
         const newTarget = resolveInside(getSkillsDirectoryPath(state.profileRootPath), trimmed);
         const collides = state.remotePreview.existingNames.includes(trimmed);
-        const previewLines = rebuildRemotePreviewLines(state.remotePreview, newTarget);
+        const previewLines = rebuildRemotePreviewLines(state.remotePreview, newTarget, t);
         const remotePreview: RemoteInstallPreview = {
           ...state.remotePreview,
           name: trimmed,
@@ -402,7 +427,7 @@ export function installWizardReducer(
           name: trimmed,
           phase: collides ? 'collision' : 'confirm',
           collisionResolution: 'rename',
-          collisionError: collides ? 'Name already in use.' : '',
+          collisionError: collides ? tx(t, 'skill.install.collision.nameInUse') : '',
           remotePreview,
         };
       }
@@ -501,11 +526,14 @@ export function installWizardReducer(
 function rebuildRemotePreviewLines(
   preview: RemoteInstallPreview,
   targetPath: string,
+  t?: WizardTranslator,
 ): string[] {
   return [
-    `acquire  ${preview.provenanceSource.url ?? ''}  →  staging`,
-    `stage    ${preview.stagedName}/  (frontmatter name: ${preview.identity.name})`,
-    `create   ${targetPath}/   (snapshot — Profile-owned)`,
-    `record   skills-provenance.json  ← copy · source ${preview.provenanceSource.kind} · sha256 fingerprint`,
+    tx(t, 'skill.preview.acquire', { source: preview.provenanceSource.url ?? '' }),
+    tx(t, 'skill.preview.stage', { staged: preview.stagedName, name: preview.identity.name }),
+    tx(t, 'skill.preview.create', { target: targetPath }),
+    tx(t, 'skill.preview.record.copy', {
+      source: sourceKindLabel(t, preview.provenanceSource.kind),
+    }),
   ];
 }

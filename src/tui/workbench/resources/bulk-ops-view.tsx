@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Box, Text, useInput, useStdin } from 'ink';
 
 import { useI18n } from '../i18n/react';
+import type { LocaleKey } from '../i18n/en';
 import type { WorkbenchProfile } from '../profile-data';
 import { getSkillsDirectoryPath, inspectSkills } from '../../../core/skills-provenance';
 import {
@@ -60,6 +61,28 @@ const CATEGORY_LABEL_KEY = {
   autoMemory: 'bulk.category.autoMemory',
 } as const;
 
+// Provenance enum values rendered in the skill-row detail — mapped to catalog
+// keys so a zh-locale user sees Chinese while en preserves the raw tokens.
+const SKILL_MODE_KEYS = {
+  copy: 'bulk.skills.mode.copy',
+  link: 'bulk.skills.mode.link',
+} as const;
+const SKILL_DRIFT_KEYS = {
+  none: 'bulk.skills.drift.none',
+  'local-drift': 'bulk.skills.drift.local',
+  'source-updated': 'bulk.skills.drift.source',
+} as const;
+const SKILL_UPDATE_REASON_KEYS = {
+  'no-source': 'bulk.skills.update.reason.noSource',
+  'no-git-repo': 'bulk.skills.update.reason.noGitRepo',
+  'no-remote': 'bulk.skills.update.reason.noRemote',
+  'link-mode': 'bulk.skills.update.reason.linkMode',
+} as const;
+// MCP protocol tokens (stdio/sse/http) stay as-is; `unknown` is a word.
+const MCP_TRANSPORT_KEYS: Record<string, LocaleKey> = {
+  unknown: 'bulk.mcp.transport.unknown',
+};
+
 /**
  * Multi-select bulk operations for a single resource type (spec §11.1):
  * - Remove: multi-select → one action lands each item in the Recovery Bin
@@ -104,12 +127,19 @@ export function BulkOpsView({
     if (category === 'skills') {
       try {
         const { skills } = await inspectSkills(profileRootPath);
-        next = skills.map((s) => ({
-          name: s.name,
-          mode: s.record.mode,
-          updateEnabled: s.update.enabled,
-          detail: `${s.record.mode} · ${s.drift}${s.update.enabled ? '' : ` · update off: ${s.update.reason ?? ''}`}`,
-        }));
+        next = skills.map((s) => {
+          const updateLabel = s.update.enabled
+            ? ''
+            : ` · ${t('bulk.skills.update.off', {
+                reason: s.update.reason ? t(SKILL_UPDATE_REASON_KEYS[s.update.reason]) : '',
+              })}`;
+          return {
+            name: s.name,
+            mode: s.record.mode,
+            updateEnabled: s.update.enabled,
+            detail: `${t(SKILL_MODE_KEYS[s.record.mode])} · ${t(SKILL_DRIFT_KEYS[s.drift])}${updateLabel}`,
+          };
+        });
       } catch (error) {
         setStatusLines([error instanceof Error ? error.message : String(error)]);
       }
@@ -123,7 +153,11 @@ export function BulkOpsView({
       for (const name of profile.mcpServers) {
         try {
           const preview = await previewMcpServer(profileRootPath, name);
-          rows.push({ name, detail: `transport ${preview.transport}` });
+          const transportLabel =
+            preview.transport in MCP_TRANSPORT_KEYS
+              ? t(MCP_TRANSPORT_KEYS[preview.transport])
+              : preview.transport;
+          rows.push({ name, detail: t('bulk.mcp.transport', { transport: transportLabel }) });
         } catch {
           rows.push({ name, detail: '' });
         }

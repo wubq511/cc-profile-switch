@@ -23,6 +23,7 @@ import { type CaptureProcess } from '../platform/process';
 import { type Clock } from './types';
 import { CcpsError } from '../utils/errors';
 import { isNodeError } from '../utils/type-guards';
+import { coreTx, sourceKindLabelCore, type CoreTranslator } from '../utils/i18n';
 
 export type { Clock } from './types';
 
@@ -139,6 +140,7 @@ export function buildRemoteInstallPlan(options: RemoteInstallPlanOptions): Remot
 
 export async function acquireAndPreviewRemoteInstall(
   options: AcquireAndPreviewOptions,
+  t?: CoreTranslator,
 ): Promise<RemoteInstallPreview> {
   const plan = buildRemoteInstallPlan(options);
 
@@ -181,10 +183,19 @@ export async function acquireAndPreviewRemoteInstall(
   const existingIsLink = collides ? await entryIsLink(targetPath) : false;
 
   const previewLines = [
-    `acquire  ${plan.classifiedSource.sourceArg}  →  staging`,
-    `stage    ${stagedName}/  (frontmatter name: ${identity.name})`,
-    `create   ${targetPath}/   (snapshot — Profile-owned)`,
-    `record   skills-provenance.json  ← copy · source ${provenanceSource.kind} · sha256 fingerprint`,
+    coreTx(t, 'skill.preview.acquire', 'acquire  {source}  →  staging', {
+      source: plan.classifiedSource.sourceArg,
+    }),
+    coreTx(t, 'skill.preview.stage', 'stage    {staged}/  (frontmatter name: {name})', {
+      staged: stagedName,
+      name: identity.name,
+    }),
+    coreTx(t, 'skill.preview.create', 'create   {target}/   (snapshot — Profile-owned)', {
+      target: targetPath,
+    }),
+    coreTx(t, 'skill.preview.record.copy', 'record   skills-provenance.json  ← copy · source {source} · sha256 fingerprint', {
+      source: sourceKindLabelCore(t, provenanceSource.kind),
+    }),
   ];
 
   return {

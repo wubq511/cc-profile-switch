@@ -253,9 +253,9 @@ export function MainPane({
   ): React.ReactElement {
     const drillHint = def.drillable
       ? def.key === 'userMemory'
-        ? ' [u]'
+        ? ` ${t('main.drillUserMemory')}`
         : def.key === 'agents'
-          ? ' [a] · [enter]'
+          ? ` ${t('main.drillAgents')}`
           : ` ${t('main.drillBulk')}`
       : '';
     // Empty-category offer: `[a] add` (Skills also name the Copy/Link choice).

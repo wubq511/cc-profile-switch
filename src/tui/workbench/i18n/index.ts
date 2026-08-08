@@ -1,5 +1,6 @@
 import { en, type LocaleKey } from './en';
 import { zh } from './zh';
+import { interpolate } from '../../../utils/i18n';
 
 export type Locale = 'zh' | 'en';
 
@@ -26,9 +27,7 @@ export type I18nParams = Record<string, string | number>;
 export function translate(locale: Locale, key: LocaleKey, params?: I18nParams): string {
   const template = ALL_LOCALES[locale][key] ?? en[key];
   if (!params) return template;
-  return template.replace(/\{(\w+)\}/g, (match, name: string) =>
-    name in params ? String(params[name]) : match,
-  );
+  return interpolate(template, params);
 }
 
 // React-dependent provider — imported separately by components that need it.

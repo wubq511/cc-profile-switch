@@ -34,7 +34,7 @@ export function DirectoryScreen({ launch, width, height }: DirectoryScreenProps)
       { marginTop: 1, flexDirection: 'column' },
       React.createElement(Text, { dimColor: true }, `${t('launch.dir.recents')}:`),
       recentDirs.length === 0
-        ? React.createElement(Text, { dimColor: true }, '  (none)')
+        ? React.createElement(Text, { dimColor: true }, `  ${t('common.none')}`)
         : React.createElement(
             Box,
             { flexDirection: 'column' },

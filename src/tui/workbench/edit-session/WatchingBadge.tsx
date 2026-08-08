@@ -11,14 +11,14 @@ interface WatchingBadgeProps {
 }
 
 export function WatchingBadge({ phase, changeCount, lastUpdated }: WatchingBadgeProps) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
 
   if (phase === 'idle') return null;
 
   if (phase === 'opening') {
     return (
       <Box>
-        <Text>{pc.cyan('…opening')}</Text>
+        <Text>{pc.cyan(t('editSession.watching.opening'))}</Text>
       </Box>
     );
   }
@@ -33,7 +33,9 @@ export function WatchingBadge({ phase, changeCount, lastUpdated }: WatchingBadge
     );
   }
 
-  const timeStr = lastUpdated ? lastUpdated.toLocaleTimeString('en-GB', { hour12: false }) : null;
+  const timeStr = lastUpdated
+    ? lastUpdated.toLocaleTimeString(locale === 'zh' ? 'zh-CN' : 'en-GB', { hour12: false })
+    : null;
 
   return (
     <Box gap={1}>

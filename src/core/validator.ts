@@ -3,6 +3,7 @@ import fs from 'fs-extra';
 import { areSameFilesystemPath, resolveInside, validateProfileName } from '../platform/path';
 import { profileConfigSchema, type ProfileConfig } from '../schemas/profile';
 import { CcpsError } from '../utils/errors';
+import { coreTx, type CoreTranslator } from '../utils/i18n';
 import { isNodeError, isRecord } from '../utils/type-guards';
 import {
   getProfileTemplatePaths,
@@ -61,6 +62,7 @@ const jsonFiles = [
 
 export async function validateProfile(
   options: ValidateProfileOptions,
+  t?: CoreTranslator,
 ): Promise<ProfileValidationResult> {
   const findings: ValidationFinding[] = [];
   let profileName = options.name;
@@ -71,7 +73,7 @@ export async function validateProfile(
     findings.push({
       severity: 'error',
       code: 'INVALID_PROFILE_NAME',
-      message: 'Profile name is not safe.',
+      message: coreTx(t, 'validate.nameNotSafe', 'Profile name is not safe.'),
       suggestion: 'Use letters, numbers, hyphen, or underscore without path separators.',
     });
   }
@@ -79,14 +81,14 @@ export async function validateProfile(
   const paths = getProfileTemplatePaths(options.appHomePath, profileName);
 
   for (const [label, key] of requiredDirectories) {
-    await requirePath(paths[key], 'directory', label, findings);
+    await requirePath(paths[key], 'directory', label, findings, t);
   }
 
   for (const [label, key] of requiredFiles) {
-    await requirePath(paths[key], 'file', label, findings);
+    await requirePath(paths[key], 'file', label, findings, t);
   }
 
-  await validateManagedProfileRule(paths.ccpsProfileRulePath, findings);
+  await validateManagedProfileRule(paths.ccpsProfileRulePath, findings, t);
 
   const parsedJson = new Map<string, unknown>();
   for (const [label, key] of jsonFiles) {
@@ -95,7 +97,7 @@ export async function validateProfile(
       continue;
     }
 
-    const parsed = await readJsonForValidation(filePath, label, findings);
+    const parsed = await readJsonForValidation(filePath, label, findings, t);
     if (parsed.ok) {
       parsedJson.set(filePath, parsed.value);
     }
@@ -107,12 +109,16 @@ export async function validateProfile(
     const parsedProfile = profileConfigSchema.safeParse(profileJson);
     if (parsedProfile.success) {
       config = parsedProfile.data;
-      validateLaunchPaths(paths.claudeHomePath, config, findings);
+      validateLaunchPaths(paths.claudeHomePath, config, findings, t);
     } else {
       findings.push({
         severity: 'error',
         code: 'PROFILE_MANIFEST_INVALID',
-        message: 'profile.json does not match the expected schema.',
+        message: coreTx(
+          t,
+          'validate.manifestInvalid',
+          'profile.json does not match the expected schema.',
+        ),
         path: paths.profileConfigPath,
         suggestion: 'Fix profile.json fields and launch settings.',
       });
@@ -127,12 +133,12 @@ export async function validateProfile(
       findings.push({
         severity: 'error',
         code: 'SETTINGS_INVALID',
-        message: 'settings.json is not a valid JSON object.',
+        message: coreTx(t, 'validate.settingsInvalid', 'settings.json is not a valid JSON object.'),
         path: paths.settingsPath,
         suggestion: 'Replace settings.json with a valid JSON object.',
       });
     } else {
-      validateProfileMemorySettings(paths, settingsJson, findings);
+      validateProfileMemorySettings(paths, settingsJson, findings, t);
     }
   }
 
@@ -146,7 +152,11 @@ export async function validateProfile(
       findings.push({
         severity: 'warning',
         code: 'LEGACY_MCP_CONFIG_ACTIVE',
-        message: 'This profile uses the legacy root mcp.json MCP configuration path.',
+        message: coreTx(
+          t,
+          'validate.legacyMcpActive',
+          'This profile uses the legacy root mcp.json MCP configuration path.',
+        ),
         path: paths.mcpConfigPath,
         suggestion:
           'Migrate servers to the native user scope with `claude mcp add --scope user` (CLAUDE_CONFIG_DIR set to this profile) and set launch.mcpMode to none.',
@@ -168,6 +178,7 @@ export async function validateProfile(
 async function validateManagedProfileRule(
   rulePath: string,
   findings: ValidationFinding[],
+  t?: CoreTranslator,
 ): Promise<void> {
   try {
     const stats = await fs.stat(rulePath);
@@ -175,7 +186,11 @@ async function validateManagedProfileRule(
       findings.push({
         severity: 'error',
         code: 'CCPS_PROFILE_RULE_INVALID',
-        message: 'The ccps-managed profile boundary path is not a file.',
+        message: coreTx(
+          t,
+          'validate.ruleNotFile',
+          'The ccps-managed profile boundary path is not a file.',
+        ),
         path: rulePath,
         suggestion: 'Replace this path with a file, then run ccps init.',
       });
@@ -187,7 +202,11 @@ async function validateManagedProfileRule(
       findings.push({
         severity: 'error',
         code: 'CCPS_PROFILE_RULE_CORRUPT',
-        message: 'The ccps-managed profile boundary markers are malformed.',
+        message: coreTx(
+          t,
+          'validate.ruleCorrupt',
+          'The ccps-managed profile boundary markers are malformed.',
+        ),
         path: rulePath,
         suggestion: 'Repair or remove the malformed managed markers, then run ccps init.',
       });
@@ -197,7 +216,11 @@ async function validateManagedProfileRule(
       findings.push({
         severity: 'warning',
         code: 'CCPS_PROFILE_RULE_MISSING',
-        message: 'The ccps-managed profile boundary rule is missing.',
+        message: coreTx(
+          t,
+          'validate.ruleMissing',
+          'The ccps-managed profile boundary rule is missing.',
+        ),
         path: rulePath,
         suggestion: 'Run ccps init to restore the rule; real launch also repairs it.',
       });
@@ -212,6 +235,7 @@ function validateProfileMemorySettings(
   paths: ProfileTemplatePaths,
   settingsJson: unknown,
   findings: ValidationFinding[],
+  t?: CoreTranslator,
 ): void {
   if (!isRecord(settingsJson)) {
     return;
@@ -224,7 +248,11 @@ function validateProfileMemorySettings(
     findings.push({
       severity: 'error',
       code: 'PROFILE_MEMORY_DIRECTORY_MISMATCH',
-      message: 'Profile settings must point Claude Code auto memory to this profile.',
+      message: coreTx(
+        t,
+        'validate.memoryDirMismatch',
+        'Profile settings must point Claude Code auto memory to this profile.',
+      ),
       path: paths.settingsPath,
       suggestion: `Set autoMemoryDirectory to ${expectedPath}.`,
     });
@@ -252,6 +280,7 @@ async function requirePath(
   expectedType: 'file' | 'directory',
   label: string,
   findings: ValidationFinding[],
+  t?: CoreTranslator,
 ): Promise<void> {
   let stats: fs.Stats;
 
@@ -262,7 +291,10 @@ async function requirePath(
       findings.push({
         severity: 'error',
         code: expectedType === 'file' ? 'REQUIRED_FILE_MISSING' : 'REQUIRED_DIRECTORY_MISSING',
-        message: `Required ${expectedType} is missing: ${label}.`,
+        message: coreTx(t, 'validate.requiredMissing', 'Required {type} is missing: {label}.', {
+          type: typeLabel(t, expectedType),
+          label,
+        }),
         path: targetPath,
         suggestion: 'Run ccps init or recreate the profile from a template.',
       });
@@ -279,17 +311,35 @@ async function requirePath(
     findings.push({
       severity: 'error',
       code: expectedType === 'file' ? 'REQUIRED_FILE_INVALID' : 'REQUIRED_DIRECTORY_INVALID',
-      message: `Required ${expectedType} has the wrong filesystem type: ${label}.`,
+      message: coreTx(
+        t,
+        'validate.requiredWrongType',
+        'Required {type} has the wrong filesystem type: {label}.',
+        {
+          type: typeLabel(t, expectedType),
+          label,
+        },
+      ),
       path: targetPath,
       suggestion: `Replace it with a ${expectedType}.`,
     });
   }
 }
 
+/** Localized label for the expected filesystem type token (file/directory). */
+function typeLabel(t: CoreTranslator | undefined, expectedType: 'file' | 'directory'): string {
+  return coreTx(
+    t,
+    expectedType === 'file' ? 'validate.type.file' : 'validate.type.directory',
+    expectedType,
+  );
+}
+
 async function readJsonForValidation(
   filePath: string,
   label: string,
   findings: ValidationFinding[],
+  t?: CoreTranslator,
 ): Promise<{ ok: true; value: unknown } | { ok: false }> {
   try {
     return { ok: true, value: await fs.readJson(filePath) };
@@ -302,7 +352,7 @@ async function readJsonForValidation(
     findings.push({
       severity: 'error',
       code,
-      message: 'JSON file cannot be parsed.',
+      message: coreTx(t, 'validate.jsonParseFailed', 'JSON file cannot be parsed.'),
       path: filePath,
       suggestion: 'Fix the JSON syntax before launching with this profile.',
     });
@@ -314,6 +364,7 @@ function validateLaunchPaths(
   claudeHomePath: string,
   config: ProfileConfig,
   findings: ValidationFinding[],
+  t?: CoreTranslator,
 ): void {
   for (const pluginDir of config.launch.pluginDirs) {
     try {
@@ -323,7 +374,11 @@ function validateLaunchPaths(
         findings.push({
           severity: 'error',
           code: 'PROFILE_PATH_TRAVERSAL',
-          message: 'Profile launch plugin directory escapes the profile Claude home.',
+          message: coreTx(
+            t,
+            'validate.pluginDirTraversal',
+            'Profile launch plugin directory escapes the profile Claude home.',
+          ),
           path: pluginDir,
           suggestion: 'Use a relative plugin directory inside the profile claude-home.',
         });

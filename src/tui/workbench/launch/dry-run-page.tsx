@@ -2,6 +2,7 @@ import React from 'react';
 import { Box, Text } from 'ink';
 
 import { useI18n } from '../i18n/react';
+import type { LocaleKey } from '../i18n/en';
 import { formatLaunchDryRun, type LaunchPlan } from '../../../core/launcher';
 
 type DryRunPageProps = {
@@ -12,7 +13,9 @@ type DryRunPageProps = {
 
 export function DryRunPage({ plan, width, height }: DryRunPageProps): React.ReactElement {
   const { t } = useI18n();
-  const dryRunText = formatLaunchDryRun(plan);
+  // Core formatLaunchDryRun stays English by default (CLI contract); the page
+  // supplies its catalog-backed translator so the plan body renders localized.
+  const dryRunText = formatLaunchDryRun(plan, (key, params) => t(key as LocaleKey, params));
 
   return React.createElement(
     Box,

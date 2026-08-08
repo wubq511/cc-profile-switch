@@ -3,10 +3,13 @@ import { Box, Text, useApp, useInput, useStdin } from 'ink';
 
 import { useI18n } from '../i18n/react';
 import type { LocaleKey } from '../i18n/en';
+import type { I18nParams } from '../i18n';
 import {
   initialInstallWizardState,
   installWizardReducer,
+  sourceKindLabel,
   type InstallSourceRef,
+  type InstallWizardAction,
   type InstallWizardState,
 } from './install-wizard-reducer';
 import type {
@@ -79,7 +82,10 @@ export function InstallWizard({
   const canUseInput = !headless && inkStdin.isTTY;
   const cleanedStagingRef = useRef<string | null>(null);
 
-  const [state, dispatch] = useReducer(installWizardReducer, initialInstallWizardState());
+  const [state, dispatch] = useReducer(
+    (s: InstallWizardState, a: InstallWizardAction) => installWizardReducer(s, a, t),
+    initialInstallWizardState(),
+  );
 
   // Open on mount. A pre-seeded remote source (Discover) skips the kind picker.
   useEffect(() => {
@@ -461,7 +467,7 @@ function formatWizardError(error: unknown): string {
 function renderStep(
   state: InstallWizardState,
   width: number,
-  t: (key: LocaleKey) => string,
+  t: (key: LocaleKey, params?: I18nParams) => string,
 ): React.ReactElement {
   const innerWidth = Math.max(40, width - 4);
 
@@ -733,7 +739,7 @@ function renderModeCard(
 function renderConfirm(
   state: InstallWizardState,
   innerWidth: number,
-  t: (key: LocaleKey) => string,
+  t: (key: LocaleKey, params?: I18nParams) => string,
 ): React.ReactElement {
   const preview = state.preview;
   if (!preview) {
@@ -800,7 +806,7 @@ function renderConfirm(
 function renderRemoteConfirm(
   state: InstallWizardState,
   innerWidth: number,
-  t: (key: LocaleKey) => string,
+  t: (key: LocaleKey, params?: I18nParams) => string,
 ): React.ReactElement {
   const preview = state.remotePreview;
   if (!preview) {
@@ -827,8 +833,12 @@ function renderRemoteConfirm(
         { dimColor: true, bold: true },
         t('skill.install.remote.confirm.identity'),
       ),
-      React.createElement(Text, null, `  name: ${preview.identity.name}`),
-      React.createElement(Text, null, `  description: ${preview.identity.description}`),
+      React.createElement(Text, null, `  ${t('skill.install.remote.field.name')} ${preview.identity.name}`),
+      React.createElement(
+        Text,
+        null,
+        `  ${t('skill.install.remote.field.description')} ${preview.identity.description}`,
+      ),
     ),
     React.createElement(
       Box,
@@ -838,15 +848,31 @@ function renderRemoteConfirm(
         { dimColor: true, bold: true },
         t('skill.install.remote.confirm.provenance'),
       ),
-      React.createElement(Text, null, `  source: ${preview.provenanceSource.kind}`),
+      React.createElement(
+        Text,
+        null,
+        `  ${t('skill.install.remote.field.source')} ${sourceKindLabel(t, preview.provenanceSource.kind)}`,
+      ),
       preview.provenanceSource.url
-        ? React.createElement(Text, null, `  url: ${preview.provenanceSource.url}`)
+        ? React.createElement(
+            Text,
+            null,
+            `  ${t('skill.install.remote.field.url')} ${preview.provenanceSource.url}`,
+          )
         : null,
       preview.provenanceSource.ref
-        ? React.createElement(Text, null, `  ref: ${preview.provenanceSource.ref}`)
+        ? React.createElement(
+            Text,
+            null,
+            `  ${t('skill.install.remote.field.ref')} ${preview.provenanceSource.ref}`,
+          )
         : null,
       preview.provenanceSource.skillPath
-        ? React.createElement(Text, null, `  path: ${preview.provenanceSource.skillPath}`)
+        ? React.createElement(
+            Text,
+            null,
+            `  ${t('skill.install.remote.field.path')} ${preview.provenanceSource.skillPath}`,
+          )
         : null,
     ),
     preview.collides

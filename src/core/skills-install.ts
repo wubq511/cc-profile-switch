@@ -37,6 +37,7 @@ import {
 } from '../platform/link';
 import { CcpsError } from '../utils/errors';
 import { isNodeError } from '../utils/type-guards';
+import { coreTx, linkKindLabelCore, type CoreTranslator } from '../utils/i18n';
 import { type CaptureProcess } from '../platform/process';
 import { type Clock } from './types';
 
@@ -317,11 +318,14 @@ async function existingEntryIsLink(targetPath: string): Promise<boolean> {
 
 // ─── Health checks ──────────────────────────────────────────────────────
 
-export async function checkInstallHealth(options: {
-  profileRootPath: string;
-  sourcePath: string;
-  mode: InstallMode;
-}): Promise<HealthCheck[]> {
+export async function checkInstallHealth(
+  options: {
+    profileRootPath: string;
+    sourcePath: string;
+    mode: InstallMode;
+  },
+  t?: CoreTranslator,
+): Promise<HealthCheck[]> {
   const checks: HealthCheck[] = [];
 
   const sourceInfo = await validateLocalSkillSource(options.sourcePath);
@@ -330,14 +334,20 @@ export async function checkInstallHealth(options: {
     code: 'source-readable',
     ok: sourceInfo.readable,
     message: sourceInfo.readable
-      ? 'source readable'
-      : 'source not readable — not a directory or missing',
+      ? coreTx(t, 'skill.install.check.sourceReadable', 'source readable')
+      : coreTx(
+          t,
+          'skill.install.check.sourceNotReadable',
+          'source not readable — not a directory or missing',
+        ),
   });
 
   checks.push({
     code: 'skill-md-present',
     ok: sourceInfo.skillMdPresent,
-    message: sourceInfo.skillMdPresent ? 'SKILL.md present' : 'no SKILL.md in source — not a Skill',
+    message: sourceInfo.skillMdPresent
+      ? coreTx(t, 'skill.install.check.skillMdPresent', 'SKILL.md present')
+      : coreTx(t, 'skill.install.check.skillMdMissing', 'no SKILL.md in source — not a Skill'),
   });
 
   if (options.mode === 'link') {
@@ -346,8 +356,19 @@ export async function checkInstallHealth(options: {
       code: 'platform-can-link',
       ok: probe.canCreate,
       message: probe.canCreate
-        ? `platform can create ${probe.kind}s`
-        : `platform cannot create links — ${probe.reason ?? 'unknown reason'}`,
+        ? coreTx(t, 'skill.install.check.canLink', 'platform can create {kind}s', {
+            kind: linkKindLabelCore(t, probe.kind),
+          })
+        : coreTx(
+            t,
+            'skill.install.check.cannotLink',
+            'platform cannot create links — {reason}',
+            {
+              reason:
+                probe.reason ??
+                coreTx(t, 'skill.install.check.unknownReason', 'unknown reason'),
+            },
+          ),
     });
 
     // Self-reference guard: the link target must not live inside this Profile's
@@ -358,8 +379,16 @@ export async function checkInstallHealth(options: {
       code: 'target-not-self-referential',
       ok: !insideClaudeHome,
       message: insideClaudeHome
-        ? 'link target is inside this Profile — self-reference refused'
-        : 'link target is outside the Profile (live source)',
+        ? coreTx(
+            t,
+            'skill.install.check.selfReference',
+            'link target is inside this Profile — self-reference refused',
+          )
+        : coreTx(
+            t,
+            'skill.install.check.outsideProfile',
+            'link target is outside the Profile (live source)',
+          ),
     });
   }
 
@@ -368,21 +397,27 @@ export async function checkInstallHealth(options: {
 
 // ─── Preview ────────────────────────────────────────────────────────────
 
-export async function previewInstall(options: {
-  profileRootPath: string;
-  sourcePath: string;
-  mode: InstallMode;
-  name: string;
-}): Promise<InstallPreview> {
+export async function previewInstall(
+  options: {
+    profileRootPath: string;
+    sourcePath: string;
+    mode: InstallMode;
+    name: string;
+  },
+  t?: CoreTranslator,
+): Promise<InstallPreview> {
   validateSkillDirectoryName(options.name);
 
   const skillsDir = getSkillsDirectoryPath(options.profileRootPath);
   const targetPath = resolveInside(skillsDir, options.name);
-  const checks = await checkInstallHealth({
-    profileRootPath: options.profileRootPath,
-    sourcePath: options.sourcePath,
-    mode: options.mode,
-  });
+  const checks = await checkInstallHealth(
+    {
+      profileRootPath: options.profileRootPath,
+      sourcePath: options.sourcePath,
+      mode: options.mode,
+    },
+    t,
+  );
 
   const existingNames = await listInstalledSkillNames(skillsDir);
   const collides = existingNames.has(options.name);
@@ -391,17 +426,32 @@ export async function previewInstall(options: {
   const sourceInfo = await validateLocalSkillSource(options.sourcePath);
   const provenanceLine =
     options.mode === 'copy'
-      ? `record  skills-provenance.json  ← copy · source ${sourceInfo.sourcePath} · sha256 fingerprint`
-      : `record  skills-provenance.json  ← link · live source ${sourceInfo.sourcePath} · health checked`;
+      ? coreTx(
+          t,
+          'skill.preview.record.copy',
+          'record   skills-provenance.json  ← copy · source {source} · sha256 fingerprint',
+          { source: sourceInfo.sourcePath },
+        )
+      : coreTx(
+          t,
+          'skill.preview.record.link',
+          'record   skills-provenance.json  ← link · live source {source} · health checked',
+          { source: sourceInfo.sourcePath },
+        );
 
   const previewLines =
     options.mode === 'copy'
       ? [
-          `create  ${targetPath}/   (snapshot — Profile-owned)`,
+          coreTx(t, 'skill.preview.create', 'create   {target}/   (snapshot — Profile-owned)', {
+            target: targetPath,
+          }),
           provenanceLine,
         ]
       : [
-          `link    ${targetPath}  →  ${sourceInfo.sourcePath}`,
+          coreTx(t, 'skill.preview.link', 'link    {target}  →  {source}', {
+            target: targetPath,
+            source: sourceInfo.sourcePath,
+          }),
           provenanceLine,
         ];
 
