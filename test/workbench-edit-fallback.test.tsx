@@ -293,6 +293,13 @@ describe('editor unavailable fallback (§8, S35)', () => {
     const baseline = stdout.output; // uncleared — settle waits for a NEW frame
     setupSpawnSuccess();
     stdin.press('1');
+    // The handoff spawn is recorded the moment '1' is processed; on slow CI the
+    // key can lag waitForOutputSettled's deadline, so wait on the observable
+    // call count first, then settle for the dismiss frame.
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline && vi.mocked(spawn).mock.calls.length < 2) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
     await waitForOutputSettled(stdout, baseline);
 
     // Second spawn is the system-editor handoff: arg-array style, shell:false,
