@@ -332,15 +332,22 @@ describe('Workbench read-only Plugins card (issue #96, §7.6)', () => {
     // Switch back: 'coding' is read again — the transient failure was not
     // cached, so the re-visit re-probes instead of pinning 'unavailable'.
     h.stdin?.press('\x1b[A');
+    // Wait for the re-probe to re-read 'coding' AND for that fresh inventory
+    // frame to supersede the failed-state frame in the accumulated output. The
+    // snapshot captured on the final poll is asserted below, so a frame landing
+    // between the poll and the assertion can't flip the comparison (CI Linux
+    // renders slower than the local macOS run, and the transient failure frame
+    // can be flushed in between).
     const deadline = Date.now() + 5000;
-    while (Date.now() < deadline && codingReads < 2) {
+    let out = h.text();
+    while (Date.now() < deadline) {
+      out = h.text();
+      const inventoryAt = out.lastIndexOf('probe-plugin@m — enabled');
+      const failedAt = out.lastIndexOf('plugin inventory unavailable');
+      if (codingReads >= 2 && inventoryAt > failedAt) break;
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
     expect(codingReads).toBeGreaterThanOrEqual(2);
-    // The card now shows the re-probed inventory: in the accumulated output
-    // the last inventory marker lands after the last failed-state marker (the
-    // current screen supersedes the earlier 'unavailable' frame).
-    const out = h.text();
     expect(out.lastIndexOf('probe-plugin@m — enabled')).toBeGreaterThan(
       out.lastIndexOf('plugin inventory unavailable'),
     );
