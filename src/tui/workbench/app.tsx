@@ -339,23 +339,16 @@ function WorkbenchInner({
   const [mcpFailedByProfile, setMcpFailedByProfile] = useState<Record<string, string[]>>({});
   // Persisted selection across launch remount
   const persistedSelection = useRef(selectedIndex);
+  // Edit-session manager — one instance for the Workbench lifetime, shared by
+  // every consumer (top-level edit, resource views, Auto Memory drill). Its
+  // onChange bumps a counter so watching banners re-render on external saves.
   const sessionManagerRef = useRef(
     new EditSessionManager({
       editorOverride,
       onChange: () => forceRerender((n: number) => n + 1),
     }),
   );
-
-  // Edit-session manager — one instance for the Workbench lifetime. Its onChange
-  // bumps a counter so watching banners re-render on external saves.
-  const editSessionManagerRef = useRef<EditSessionManager | null>(null);
-  if (editSessionManagerRef.current === null) {
-    editSessionManagerRef.current = new EditSessionManager({
-      editorOverride,
-      onChange: () => forceRerender((n: number) => n + 1),
-    });
-  }
-  const editSessionManager = editSessionManagerRef.current;
+  const editSessionManager = sessionManagerRef.current;
 
   const width = stdout.columns ?? 80;
   const height = stdout.rows ?? 24;
@@ -470,14 +463,42 @@ function WorkbenchInner({
       // The Discover surface owns its own input while open.
       if (discoverActive) return;
 
+      // Lifecycle prompts (Profile/template name input, template picker) are
+      // owned by the Sidebar. While any text input is active the global keys
+      // must stay literal text: `q` types "q" instead of quitting, `?` types
+      // "?" instead of opening help (issue #90).
+      if (lifecycle.phase === 'prompting') return;
+
       // Resource navigation input handling
       if (resourceNav.phase !== 'idle') {
         handleResourceInput(input, key);
         return;
       }
 
-      // Grid: drill into User Memory or Agents categories
-      if (input === 'u') {
+      // The launch directory screen's typed path owns every key — `q`/`?` and
+      // letters stay literal characters (issue #90). The other launch phases
+      // fall through: the global keys below (`q` quit, `?` help) stay live
+      // there as before, and the launchActive branch further down owns the
+      // rest. Ctrl+C (above) stays the hard quit.
+      if (lifecycle.launch.phase === 'dir-screen') {
+        handleLaunchInput(input, key);
+        return;
+      }
+
+      // Destructive-action panel input (§9.1). Ahead of the category drills:
+      // the panel's [u] (no-backup remove) must not also open User Memory.
+      if (lifecycle.phase === 'confirm') {
+        handleConfirmInput(input, key);
+        return;
+      }
+
+      // Grid: drill into User Memory or Agents categories. Ownership follows
+      // the focus region (issue #90): `u` has no sidebar binding and stays
+      // live in both regions (like `e`); `a` belongs to the sidebar's Add
+      // Skill wizard unless the main pane is focused — exactly one owner per
+      // UI state, so a keypress never triggers two handlers at once. Neither
+      // drill fires over the launch flow's overlays.
+      if (input === 'u' && lifecycle.phase === 'idle' && !launchActive) {
         setResourceNav((prev) =>
           resourceNavReducer(prev, { type: 'OPEN_CATEGORY', category: 'user-memory' }),
         );
@@ -487,7 +508,7 @@ function WorkbenchInner({
         setAgentFrontmatter(null);
         return;
       }
-      if (input === 'a') {
+      if (input === 'a' && mainPaneFocus && lifecycle.phase === 'idle' && !launchActive) {
         setResourceNav((prev) =>
           resourceNavReducer(prev, { type: 'OPEN_CATEGORY', category: 'agents' }),
         );
@@ -495,12 +516,6 @@ function WorkbenchInner({
         setDiffResult(null);
         setDrilledAgent(null);
         setAgentFrontmatter(null);
-        return;
-      }
-
-      // Destructive-action panel input (§9.1)
-      if (lifecycle.phase === 'confirm') {
-        handleConfirmInput(input, key);
         return;
       }
 
@@ -515,7 +530,8 @@ function WorkbenchInner({
         return;
       }
 
-      // Launch flow input handling (highest priority when active)
+      // Launch bar / dry-run / exit-flash capture all remaining input (their
+      // documented keys only); the global keys above stay live there.
       if (launchActive) {
         handleLaunchInput(input, key);
         return;
@@ -730,9 +746,23 @@ function WorkbenchInner({
     return sessionManagerRef.current.getSession(filePath);
   };
 
+  // One tracked timer per flash: a newer message cancels the older timer so
+  // it can never clear the newer text early, and unmount cancels whatever is
+  // pending — no stray setState across screens (issue #90).
+  const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flash = useCallback((message: string) => {
+    if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
     setFlashMessage(message);
-    setTimeout(() => setFlashMessage(''), 2500);
+    flashTimerRef.current = setTimeout(() => {
+      flashTimerRef.current = null;
+      setFlashMessage('');
+    }, 2500);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+    };
   }, []);
 
   const refreshData = useCallback(async () => {
@@ -2023,14 +2053,6 @@ function WorkbenchInner({
   const topLevelEditSession = topLevelClaudeMdPath
     ? sessionManagerRef.current.getSession(topLevelClaudeMdPath)
     : undefined;
-
-  // Dispose edit sessions on unmount (after launch remount or app quit).
-  useEffect(() => {
-    const sessionManager = sessionManagerRef.current;
-    return () => {
-      sessionManager.dispose();
-    };
-  }, []);
 
   // Resource view hint line (contextual guidance).
   const resourceHintLine =
