@@ -142,7 +142,10 @@ export async function computeDirectorySize(dirPath: string): Promise<number> {
 let lastSweepResult: SweepResult | null = null;
 let lastCrashReconcileCount = 0;
 
-export async function performStartupSweep(appHomePath?: string, clock?: Clock): Promise<SweepResult> {
+export async function performStartupSweep(
+  appHomePath?: string,
+  clock?: Clock,
+): Promise<SweepResult> {
   const result = await sweepExpiredItems(appHomePath, clock);
   lastSweepResult = result;
 
@@ -223,10 +226,7 @@ async function consumePendingSweepSummary(appHomePath: string): Promise<SweepRes
   }
 }
 
-async function recordPendingSweepSummary(
-  result: SweepResult,
-  appHomePath: string,
-): Promise<void> {
+async function recordPendingSweepSummary(result: SweepResult, appHomePath: string): Promise<void> {
   if (result.deletedCount === 0) return;
   const markerPath = getPendingSweepSummaryPath(appHomePath);
   await fs.ensureDir(path.dirname(markerPath));
@@ -278,7 +278,9 @@ export async function runStartupSweep(
 
 // ─── Core operations ────────────────────────────────────────────────────
 
-export async function createFileTreeItem(options: CreateFileTreeItemOptions): Promise<RecoveryBinItem> {
+export async function createFileTreeItem(
+  options: CreateFileTreeItemOptions,
+): Promise<RecoveryBinItem> {
   const appHomePath = options.appHomePath ?? getAppHomePaths().appHomePath;
   const { recoveryBinPath } = getAppHomePaths(appHomePath);
   const clock = options.clock ?? (() => new Date());
@@ -323,7 +325,9 @@ export async function createFileTreeItem(options: CreateFileTreeItemOptions): Pr
   return { ...item, itemDirPath: itemDir };
 }
 
-export async function createFragmentItem(options: CreateFragmentItemOptions): Promise<RecoveryBinItem> {
+export async function createFragmentItem(
+  options: CreateFragmentItemOptions,
+): Promise<RecoveryBinItem> {
   const appHomePath = options.appHomePath ?? getAppHomePaths().appHomePath;
   const { recoveryBinPath } = getAppHomePaths(appHomePath);
   const clock = options.clock ?? (() => new Date());
@@ -423,7 +427,10 @@ export async function listRecoveryBinItems(appHomePath?: string): Promise<Recove
   return items.sort((a, b) => a.id.localeCompare(b.id));
 }
 
-export async function getRecoveryItem(itemId: string, appHomePath?: string): Promise<RecoveryBinItem> {
+export async function getRecoveryItem(
+  itemId: string,
+  appHomePath?: string,
+): Promise<RecoveryBinItem> {
   const resolved = appHomePath ?? getAppHomePaths().appHomePath;
   const { recoveryBinPath } = getAppHomePaths(resolved);
   const itemDir = resolveInside(recoveryBinPath, itemId);
@@ -600,20 +607,70 @@ export async function listRecoveryBinWithSizes(appHomePath?: string): Promise<Re
   };
 }
 
+// ─── Presentation helpers (spec §9.5) ──────────────────────────────────
+
+/**
+ * When a Recovery Item expires under the given retention setting, or null when
+ * it never expires (retention null). update-origin items carry the fixed 3-day
+ * TTL (UPDATE_ORIGIN_TTL_DAYS) regardless of the configured retention —
+ * including Never (retention null), per §7.1 — same rule the startup sweep
+ * applies, exposed here so the Workbench view can show a per-item expiry date.
+ */
+export function computeItemExpiresAt(
+  item: RecoveryItem,
+  retentionDays: number | null,
+): Date | null {
+  if (item.origin === 'update') {
+    return new Date(
+      new Date(item.removedAt).getTime() + UPDATE_ORIGIN_TTL_DAYS * 24 * 60 * 60 * 1000,
+    );
+  }
+  if (retentionDays === null) return null;
+  return new Date(new Date(item.removedAt).getTime() + retentionDays * 24 * 60 * 60 * 1000);
+}
+
+/**
+ * The short name a Recovery Item is presented under: the profile name for
+ * whole-profile payloads, the last path segment for file-tree entries, the
+ * last keyPath segment for fragments, and `<plugin>@<marketplace>` for plugin
+ * items. The Workbench Recovery Bin view and collision dialogs key on this,
+ * not the timestamped item id.
+ */
+export function getRecoveryItemDisplayName(item: RecoveryItem): string {
+  if (item.kind === 'profile') {
+    return item.profile;
+  }
+  if (item.shape === 'file-tree') {
+    const coords = item.coordinates as FileTreeCoordinates;
+    return lastPathSegment(coords.targetRelativePath) ?? coords.targetRelativePath;
+  }
+  if (item.shape === 'fragment') {
+    const coords = item.coordinates as FragmentCoordinates;
+    const keys = coords.keyPath.split('.');
+    return keys[keys.length - 1] ?? coords.keyPath;
+  }
+  if (item.shape === 'plugin') {
+    const coords = item.coordinates as PluginCoordinates;
+    return `${coords.plugin}@${coords.marketplace}`;
+  }
+  return item.id;
+}
+
 // ─── Internal helpers ───────────────────────────────────────────────────
 
 function isExpired(item: RecoveryItem, retentionDays: number | null, now: Date): boolean {
-  if (retentionDays === null) return false;
+  const expiresAt = computeItemExpiresAt(item, retentionDays);
+  if (expiresAt === null) return false;
+  return now.getTime() > expiresAt.getTime();
+}
 
-  const effectiveDays = item.origin === 'update' ? UPDATE_ORIGIN_TTL_DAYS : retentionDays;
-  const removedAt = new Date(item.removedAt);
-  const expiryMs = effectiveDays * 24 * 60 * 60 * 1000;
-  return now.getTime() - removedAt.getTime() > expiryMs;
+function lastPathSegment(relativePath: string): string | undefined {
+  const segments = relativePath.split(/[/\\]+/).filter(Boolean);
+  return segments[segments.length - 1];
 }
 
 function deriveSlug(relativePath: string): string {
-  const segments = relativePath.split(/[/\\]+/).filter(Boolean);
-  const last = segments[segments.length - 1] ?? 'item';
+  const last = lastPathSegment(relativePath) ?? 'item';
   return last.replace(/[^A-Za-z0-9_-]/g, '-').slice(0, 32);
 }
 

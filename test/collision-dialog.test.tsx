@@ -65,4 +65,22 @@ describe('CollisionDialog render', () => {
     expect(output).toContain('[d]');
     expect(output).toContain('[esc]');
   });
+
+  it('renders the numbered-explanation panel making each option consequence explicit (issue #94)', async () => {
+    const output = await renderDialog();
+    // Three numbered rows; option 3 (refuse) is the default and is dimmed.
+    const lines = output
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => /^[123]\. /.test(line));
+    expect(lines).toHaveLength(3);
+    // Locale-independent consequence copy on each row.
+    expect(lines[0]).toMatch(/(restores under a new name|以新名称恢复)/);
+    expect(lines[1]).toMatch(/(moves the existing entry|移入恢复回收站)/);
+    expect(lines[2]).toMatch(/(nothing changes|不做任何更改)/);
+    // No silent overwrite: each option is a numbered explanation, never a bare key hint.
+    expect(output).toMatch(/1\. /);
+    expect(output).toMatch(/2\. /);
+    expect(output).toMatch(/3\. /);
+  });
 });

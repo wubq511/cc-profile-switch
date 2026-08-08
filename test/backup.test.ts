@@ -6,7 +6,7 @@ import path, { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { createAppConfig, getAppHomePaths } from '../src/core/app-config';
-import { listBackups, restoreProfileFromBackup } from '../src/core/backup';
+import { listBackups, permanentlyDeleteBackup, restoreProfileFromBackup } from '../src/core/backup';
 import { backupProfile } from '../src/core/profile';
 import { createProfileFromTemplate } from '../src/core/profile-template';
 
@@ -131,9 +131,9 @@ describe('Profile Backup service', () => {
       expect(result.restoredProfile).toBe('coding');
       expect(result.preRestoreBackupPath).toBeNull();
       expect(await fs.pathExists(profileDir)).toBe(true);
-      await expect(
-        fs.readFile(join(profileDir, 'claude-home', 'CLAUDE.md'), 'utf8'),
-      ).resolves.toBe(backupClaudeMd);
+      await expect(fs.readFile(join(profileDir, 'claude-home', 'CLAUDE.md'), 'utf8')).resolves.toBe(
+        backupClaudeMd,
+      );
 
       // The backup is never consumed.
       expect(await fs.pathExists(backupPath)).toBe(true);
@@ -179,9 +179,9 @@ describe('Profile Backup service', () => {
 
       // §9.2/§9.3: the source backup was never consumed.
       expect(await fs.pathExists(backupPath)).toBe(true);
-      await expect(
-        fs.readFile(join(backupPath, 'claude-home', 'CLAUDE.md'), 'utf8'),
-      ).resolves.toBe(backupClaudeMd);
+      await expect(fs.readFile(join(backupPath, 'claude-home', 'CLAUDE.md'), 'utf8')).resolves.toBe(
+        backupClaudeMd,
+      );
 
       // No swap residue survives inside profiles/.
       const { profilesPath } = getAppHomePaths(appHome);
@@ -232,9 +232,9 @@ describe('Profile Backup service', () => {
       ).rejects.toMatchObject({ code: 'RESTORE_COLLISION' });
 
       // Nothing changed: the colliding profile is intact and no auto-backup ran.
-      await expect(
-        fs.readFile(join(focusDir, 'claude-home', 'CLAUDE.md'), 'utf8'),
-      ).resolves.toBe(focusClaudeMd);
+      await expect(fs.readFile(join(focusDir, 'claude-home', 'CLAUDE.md'), 'utf8')).resolves.toBe(
+        focusClaudeMd,
+      );
       const list = await listBackups(appHome);
       expect(list.entries).toHaveLength(1);
     });
@@ -262,9 +262,9 @@ describe('Profile Backup service', () => {
       const preRestoreBackupPath = result.preRestoreBackupPath as string;
       expect(preRestoreBackupPath).not.toBe(backupPath);
       expect(path.basename(preRestoreBackupPath)).toBe('coding-20260801-100000-2');
-      await expect(
-        fs.pathExists(join(preRestoreBackupPath, 'mutated-marker.txt')),
-      ).resolves.toBe(true);
+      await expect(fs.pathExists(join(preRestoreBackupPath, 'mutated-marker.txt'))).resolves.toBe(
+        true,
+      );
 
       // The source backup stayed byte-clean: no pollution from the replace.
       await expect(fs.pathExists(join(backupPath, 'mutated-marker.txt'))).resolves.toBe(false);
@@ -304,6 +304,50 @@ describe('Profile Backup service', () => {
           backupId: '../escape-20260801-100000',
           clock: restoreClock,
         }),
+      ).rejects.toMatchObject({ code: 'PATH_OUTSIDE_BASE' });
+    });
+  });
+
+  // ─── permanentlyDeleteBackup ──────────────────────────────────────────
+
+  describe('permanentlyDeleteBackup', () => {
+    it('removes the backup directory permanently and unrecoverably', async () => {
+      const appHome = await makeAppHome();
+      await makeProfile(appHome, 'coding');
+      const { backupPath } = await backupProfile({
+        appHomePath: appHome,
+        name: 'coding',
+        clock: backupClock,
+      });
+
+      await permanentlyDeleteBackup('coding-20260801-100000', appHome);
+
+      expect(await fs.pathExists(backupPath)).toBe(false);
+      expect((await listBackups(appHome)).entries).toHaveLength(0);
+    });
+
+    it('rejects a malformed backup id', async () => {
+      const appHome = await makeAppHome();
+
+      await expect(permanentlyDeleteBackup('not-a-backup-id', appHome)).rejects.toMatchObject({
+        code: 'BACKUP_INVALID_ID',
+      });
+    });
+
+    it('rejects a missing backup', async () => {
+      const appHome = await makeAppHome();
+      await makeProfile(appHome, 'coding');
+
+      await expect(
+        permanentlyDeleteBackup('coding-20990101-000000', appHome),
+      ).rejects.toMatchObject({ code: 'BACKUP_NOT_FOUND' });
+    });
+
+    it('blocks backup ids that escape the backups directory', async () => {
+      const appHome = await makeAppHome();
+
+      await expect(
+        permanentlyDeleteBackup('../escape-20260801-100000', appHome),
       ).rejects.toMatchObject({ code: 'PATH_OUTSIDE_BASE' });
     });
   });

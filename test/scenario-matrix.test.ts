@@ -27,31 +27,27 @@ import {
   clearDefaultProfile,
 } from '../src/core/profile-management';
 import { backupProfile } from '../src/core/profile';
-import {
-  createProfileFromTemplate,
-  getProfileTemplatePaths,
-} from '../src/core/profile-template';
+import { listBackups, permanentlyDeleteBackup } from '../src/core/backup';
+import { createProfileFromTemplate, getProfileTemplatePaths } from '../src/core/profile-template';
 import { validateProfile, isLaunchBlocking } from '../src/core/validator';
 import { buildLaunchPlan, formatLaunchDryRun } from '../src/core/launcher';
 import {
   createFileTreeItem,
   createFragmentItem,
   listRecoveryBinItems,
+  listRecoveryBinWithSizes,
   restoreRecoveryItem,
   sweepExpiredItems,
 } from '../src/core/recovery-bin';
-import { loadUserMemory, readUserMemoryContent, createUserMemory } from '../src/core/resource/user-memory';
+import {
+  loadUserMemory,
+  readUserMemoryContent,
+  createUserMemory,
+} from '../src/core/resource/user-memory';
 import { listAgents, createAgent } from '../src/core/resource/agent';
 import { searchUserMemory } from '../src/core/resource/search';
-import {
-  inspectSettings,
-  previewSettings,
-  editSettingsKey,
-} from '../src/core/settings-resource';
-import {
-  previewLaunchConfig,
-  editLaunchConfigKey,
-} from '../src/core/launch-config-resource';
+import { inspectSettings, previewSettings, editSettingsKey } from '../src/core/settings-resource';
+import { previewLaunchConfig, editLaunchConfigKey } from '../src/core/launch-config-resource';
 import {
   listAutoMemoryEntries,
   copyAutoMemoryEntry,
@@ -65,17 +61,9 @@ import {
   removeCustomTemplate,
   listCustomTemplates,
 } from '../src/core/custom-template';
-import {
-  inspectSkills,
-  computeContentHash,
-} from '../src/core/skills-provenance';
-import {
-  reconcileSkillTransactionCrashStates,
-} from '../src/core/skills-transaction';
-import {
-  inspectMcpServers,
-  diffMcpServers,
-} from '../src/core/mcp-servers';
+import { inspectSkills, computeContentHash } from '../src/core/skills-provenance';
+import { reconcileSkillTransactionCrashStates } from '../src/core/skills-transaction';
+import { inspectMcpServers, diffMcpServers } from '../src/core/mcp-servers';
 import { buildPluginCommandPlan } from '../src/core/plugins';
 
 // ─── Fixture helpers ─────────────────────────────────────────────────────
@@ -183,7 +171,12 @@ describe('Scenario matrix — Profile lifecycle (S1–S16)', () => {
     const appHome = await makeAppHome();
     await makeProfile(appHome, 'coding');
 
-    const result = await copyProfile({ appHomePath: appHome, from: 'coding', to: 'coding-copy', clock: fixedClock });
+    const result = await copyProfile({
+      appHomePath: appHome,
+      from: 'coding',
+      to: 'coding-copy',
+      clock: fixedClock,
+    });
     expect(result.targetName).toBe('coding-copy');
 
     const profiles = await listProfilesForDisplay({ appHomePath: appHome });
@@ -195,7 +188,12 @@ describe('Scenario matrix — Profile lifecycle (S1–S16)', () => {
     const appHome = await makeAppHome();
     await makeProfile(appHome, 'coding');
 
-    const result = await renameProfile({ appHomePath: appHome, oldName: 'coding', newName: 'dev', clock: fixedClock });
+    const result = await renameProfile({
+      appHomePath: appHome,
+      oldName: 'coding',
+      newName: 'dev',
+      clock: fixedClock,
+    });
     expect(result.newName).toBe('dev');
 
     const profiles = await listProfilesForDisplay({ appHomePath: appHome });
@@ -340,7 +338,11 @@ describe('Scenario matrix — Launch (S20–S26)', () => {
     await makeProfile(appHome, 'coding');
     const projectCwd = await makeTempRoot('ccps-project-');
 
-    const plan = await buildLaunchPlan({ appHomePath: appHome, profileName: 'coding', cwd: projectCwd });
+    const plan = await buildLaunchPlan({
+      appHomePath: appHome,
+      profileName: 'coding',
+      cwd: projectCwd,
+    });
 
     expect(plan.profileName).toBe('coding');
     expect(plan.cwd).toBe(projectCwd);
@@ -366,7 +368,11 @@ describe('Scenario matrix — Launch (S20–S26)', () => {
     await makeProfile(appHome, 'coding');
     const projectCwd = await makeTempRoot('ccps-project-');
 
-    const plan = await buildLaunchPlan({ appHomePath: appHome, profileName: 'coding', cwd: projectCwd });
+    const plan = await buildLaunchPlan({
+      appHomePath: appHome,
+      profileName: 'coding',
+      cwd: projectCwd,
+    });
     const dryRunText = formatLaunchDryRun(plan);
 
     // Frozen CLI block structure (§3.2): labeled blocks
@@ -381,8 +387,16 @@ describe('Scenario matrix — Launch (S20–S26)', () => {
     const projectCwd = await makeTempRoot('ccps-project-');
 
     // Build plan twice — same inputs produce same plan
-    const plan1 = await buildLaunchPlan({ appHomePath: appHome, profileName: 'coding', cwd: projectCwd });
-    const plan2 = await buildLaunchPlan({ appHomePath: appHome, profileName: 'coding', cwd: projectCwd });
+    const plan1 = await buildLaunchPlan({
+      appHomePath: appHome,
+      profileName: 'coding',
+      cwd: projectCwd,
+    });
+    const plan2 = await buildLaunchPlan({
+      appHomePath: appHome,
+      profileName: 'coding',
+      cwd: projectCwd,
+    });
 
     expect(plan1.profileName).toBe(plan2.profileName);
     expect(plan1.cwd).toBe(plan2.cwd);
@@ -522,11 +536,21 @@ describe('Scenario matrix — Settings / MCP (S45–S57)', () => {
     await makeProfile(appHome, 'coding');
 
     // mcpServers edit refused
-    const mcpResult = await editSettingsKey({ appHomePath: appHome, profileName: 'coding', keyPath: 'mcpServers', value: {} });
+    const mcpResult = await editSettingsKey({
+      appHomePath: appHome,
+      profileName: 'coding',
+      keyPath: 'mcpServers',
+      value: {},
+    });
     expect(mcpResult.refused).toBe('mcpServers');
 
     // ccps-managed field read-only
-    const managedResult = await editSettingsKey({ appHomePath: appHome, profileName: 'coding', keyPath: 'autoMemoryDirectory', value: '/bad/path' });
+    const managedResult = await editSettingsKey({
+      appHomePath: appHome,
+      profileName: 'coding',
+      keyPath: 'autoMemoryDirectory',
+      value: '/bad/path',
+    });
     expect(managedResult.refused).toBe('managed');
   });
 
@@ -687,7 +711,12 @@ describe('Scenario matrix — Auto Memory / metadata / Plugins (S82–S91)', () 
     await fs.ensureDir(autoMemoryDir);
     await fs.writeFile(join(autoMemoryDir, 'session-1.md'), '# Session notes');
 
-    await copyAutoMemoryEntry({ appHomePath: appHome, fromProfile: 'coding', toProfile: 'study', entryName: 'session-1.md' });
+    await copyAutoMemoryEntry({
+      appHomePath: appHome,
+      fromProfile: 'coding',
+      toProfile: 'study',
+      entryName: 'session-1.md',
+    });
 
     const studyPaths = getProfileTemplatePaths(appHome, 'study');
     const copied = await fs.pathExists(join(studyPaths.autoMemoryPath, 'session-1.md'));
@@ -738,11 +767,21 @@ describe('Scenario matrix — Auto Memory / metadata / Plugins (S82–S91)', () 
     await makeProfile(appHome, 'coding');
 
     // name field refused (Rename owns it)
-    const nameResult = await editLaunchConfigKey({ appHomePath: appHome, profileName: 'coding', key: 'name', value: 'new-name' });
+    const nameResult = await editLaunchConfigKey({
+      appHomePath: appHome,
+      profileName: 'coding',
+      key: 'name',
+      value: 'new-name',
+    });
     expect(nameResult.refused).toBe('name');
 
     // skipPermissions shows consequence warning
-    const permResult = await editLaunchConfigKey({ appHomePath: appHome, profileName: 'coding', key: 'skipPermissions', value: true });
+    const permResult = await editLaunchConfigKey({
+      appHomePath: appHome,
+      profileName: 'coding',
+      key: 'skipPermissions',
+      value: true,
+    });
     expect(permResult.requiresWarning).toBe(true);
   });
 
@@ -776,8 +815,18 @@ describe('Scenario matrix — Bulk / import-export / templates (S95–S104)', ()
     await fs.writeFile(join(autoMemoryDir, 'b.md'), '# B');
 
     // Remove both
-    await removeAutoMemoryEntry({ appHomePath: appHome, profileName: 'coding', entryName: 'a.md', clock: fixedClock });
-    await removeAutoMemoryEntry({ appHomePath: appHome, profileName: 'coding', entryName: 'b.md', clock: fixedClock });
+    await removeAutoMemoryEntry({
+      appHomePath: appHome,
+      profileName: 'coding',
+      entryName: 'a.md',
+      clock: fixedClock,
+    });
+    await removeAutoMemoryEntry({
+      appHomePath: appHome,
+      profileName: 'coding',
+      entryName: 'b.md',
+      clock: fixedClock,
+    });
 
     // Two Bin items
     const binItems = await listRecoveryBinItems(appHome);
@@ -864,6 +913,75 @@ describe('Scenario matrix — Safety / platform (S110–S124)', () => {
     expect(sweep.deletedCount).toBeGreaterThanOrEqual(1);
   });
 
+  it('S115: Bin items and Backups list as distinct sources with sizes and totals', async () => {
+    const appHome = await makeAppHome();
+    await makeProfile(appHome, 'coding');
+
+    // A Bin item (temporary) — user-memory CLAUDE.md removal.
+    const paths = getProfileTemplatePaths(appHome, 'coding');
+    await createFileTreeItem({
+      appHomePath: appHome,
+      origin: 'remove',
+      kind: 'user-memory',
+      profile: 'coding',
+      coordinates: { targetRelativePath: 'claude-home/CLAUDE.md' },
+      sourcePath: paths.claudeMdPath,
+      clock: fixedClock,
+    });
+
+    // A durable Profile Backup.
+    await backupProfile({ appHomePath: appHome, name: 'coding', clock: fixedClock });
+
+    const bin = await listRecoveryBinWithSizes(appHome);
+    const backups = await listBackups(appHome);
+
+    // Distinct sources: the Bin lists only the temporary item, Backups only the durable one.
+    expect(bin.entries).toHaveLength(1);
+    expect(bin.entries[0].item.kind).toBe('user-memory');
+    expect(bin.entries[0].sizeBytes).toBeGreaterThan(0);
+    expect(bin.totalSizeBytes).toBeGreaterThan(0);
+
+    expect(backups.entries).toHaveLength(1);
+    expect(backups.entries[0].id).toBe('coding-20260801-120000');
+    expect(backups.entries[0].sizeBytes).toBeGreaterThan(0);
+    expect(backups.totalSizeBytes).toBeGreaterThan(0);
+
+    // No cross-contamination: the Bin never contains the backup dir; the
+    // Backups list never contains the Bin item id.
+    expect(bin.entries.map((e) => e.item.id)).not.toContain('coding-20260801-120000');
+    expect(backups.entries.map((e) => e.id)).not.toContain(bin.entries[0].item.id);
+  });
+
+  it('S116: backup permanent delete removes the durable entry, leaving the Bin untouched', async () => {
+    const appHome = await makeAppHome();
+    await makeProfile(appHome, 'coding');
+
+    // A Bin item and a durable Backup coexist.
+    const paths = getProfileTemplatePaths(appHome, 'coding');
+    await createFileTreeItem({
+      appHomePath: appHome,
+      origin: 'remove',
+      kind: 'user-memory',
+      profile: 'coding',
+      coordinates: { targetRelativePath: 'claude-home/CLAUDE.md' },
+      sourcePath: paths.claudeMdPath,
+      clock: fixedClock,
+    });
+    await backupProfile({ appHomePath: appHome, name: 'coding', clock: fixedClock });
+
+    // Permanently delete the backup.
+    await permanentlyDeleteBackup('coding-20260801-120000', appHome);
+
+    const backups = await listBackups(appHome);
+    expect(backups.entries).toHaveLength(0);
+    expect(backups.totalSizeBytes).toBe(0);
+
+    // The Bin is unaffected.
+    const bin = await listRecoveryBinWithSizes(appHome);
+    expect(bin.entries).toHaveLength(1);
+    expect(bin.entries[0].item.kind).toBe('user-memory');
+  });
+
   it('S122: credential insulation — token shapes never appear in output', async () => {
     const appHome = await makeAppHome();
     await makeProfile(appHome, 'coding');
@@ -908,7 +1026,11 @@ describe('Scenario matrix — Safety / platform (S110–S124)', () => {
     await makeProfile(appHome, 'coding');
     const projectCwd = await makeTempRoot('ccps-project-');
 
-    const plan = await buildLaunchPlan({ appHomePath: appHome, profileName: 'coding', cwd: projectCwd });
+    const plan = await buildLaunchPlan({
+      appHomePath: appHome,
+      profileName: 'coding',
+      cwd: projectCwd,
+    });
     expect(plan.cwd).toBe(projectCwd);
     // No --add-dir
     expect(plan.args).not.toContain('--add-dir');

@@ -123,11 +123,20 @@ export function CollisionDialog({
         </Box>
       ) : (
         <Box flexDirection="column">
-          <Text dimColor>{resourceName}</Text>
+          <Text dimColor>"{resourceName}"</Text>
           <Box marginTop={1} flexDirection="column">
-            <Text>{t('collision.restoreAsNewName')}</Text>
-            <Text>{t('collision.deleteAndRestore')}</Text>
-            <Text dimColor>{t('collision.refuse')}</Text>
+            {/* Numbered-explanation panel (issue #94): each option is a numbered
+                row whose explanation makes the consequence of the choice (and of
+                the refuse-by-default fallback) explicit — never a silent overwrite. */}
+            <Text wrap="wrap">
+              1. {t('collision.restoreAsNewName')} — {t('collision.explain.rename')}
+            </Text>
+            <Text wrap="wrap">
+              2. {t('collision.deleteAndRestore')} — {t('collision.explain.delete')}
+            </Text>
+            <Text dimColor wrap="wrap">
+              3. {t('collision.refuse')} — {t('collision.explain.refuse')}
+            </Text>
           </Box>
         </Box>
       )}

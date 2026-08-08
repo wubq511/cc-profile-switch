@@ -2,7 +2,7 @@ import { Readable } from 'node:stream';
 import fs from 'fs-extra';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import React from 'react';
 import { render } from 'ink';
@@ -12,9 +12,10 @@ import { WorkbenchApp, resetWelcomeSessionForTests } from '../src/tui/workbench/
 import { KEYMAP_GROUPS } from '../src/tui/workbench/keymap';
 import { DiscoverView } from '../src/tui/workbench/skills/discover';
 import { SkillsDiscoverySession } from '../src/core/skills-discovery';
-import { createAppConfig, getAppHomePaths } from '../src/core/app-config';
+import { createAppConfig, getAppHomePaths, loadAppConfig } from '../src/core/app-config';
 import { createProfileFromTemplate } from '../src/core/profile-template';
 import { createAgent, removeUserMemory } from '../src/core/resource';
+import { createFileTreeItem, listRecoveryBinItems } from '../src/core/recovery-bin';
 import { installLocalSkill } from '../src/core/skills-install';
 import { loadSkillsProvenance, saveSkillsProvenance } from '../src/core/skills-provenance';
 import { loadWorkbenchData } from '../src/tui/workbench/profile-data';
@@ -293,6 +294,29 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
     }
     const data = await loadWorkbenchData(appHome);
     return { appHome, data };
+  }
+
+  /** Create a Recovery Bin file-tree item directly (recovery-view scenarios). */
+  async function makeBinItem(
+    appHome: string,
+    profileName: string,
+    kind: 'user-memory' | 'skill',
+    targetRelativePath: string,
+  ): Promise<void> {
+    const src = await mkdtemp(join(tmpdir(), 'ccps-keymap-binsrc-'));
+    tempRoots.push(src);
+    const srcFile = join(src, 'payload');
+    await fs.ensureDir(dirname(srcFile));
+    await fs.writeFile(srcFile, '# payload\n', 'utf8');
+    await createFileTreeItem({
+      appHomePath: appHome,
+      origin: 'remove',
+      kind,
+      profile: profileName,
+      coordinates: { targetRelativePath },
+      sourcePath: srcFile,
+      clock: FIXED_CLOCK,
+    });
   }
 
   // ---------------------------------------------------------------- key reaches
@@ -601,6 +625,13 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
     await h.waitFor('▸ User Memory');
   });
 
+  scenario('profile:recoveryOpen', async (h) => {
+    const { data } = await setupReal(['coding']);
+    await h.renderApp(data);
+    await h.press('B');
+    await h.waitFor('Recovery Bin');
+  });
+
   // ---------------------------------------------------------------- categories group
 
   scenario('categories:move', async (h) => {
@@ -876,7 +907,11 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
     const updatedSource = await mkdtemp(join(tmpdir(), 'ccps-keymap-new-'));
     tempRoots.push(updatedSource);
     await fs.ensureDir(updatedSource);
-    await fs.writeFile(join(updatedSource, 'SKILL.md'), '---\nname: updatable-skill\n---\n# Newer\n', 'utf8');
+    await fs.writeFile(
+      join(updatedSource, 'SKILL.md'),
+      '---\nname: updatable-skill\n---\n# Newer\n',
+      'utf8',
+    );
     await fs.writeFile(join(updatedSource, 'extra.txt'), 'new content\n', 'utf8');
 
     const manifest = await loadSkillsProvenance(profileRoot);
@@ -929,6 +964,89 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
     h.snapshot(); // drop the bulk frame so `text()` sees only post-Esc frames
     await h.press('\x1b');
     expect(h.text()).not.toContain('Bulk operations');
+  });
+
+  // ---------------------------------------------------------------- recovery group
+
+  scenario('recovery:move', async (h) => {
+    const { appHome, data } = await setupReal(['coding']);
+    await makeBinItem(appHome, 'coding', 'skill', 'claude-home/skills/pdf/SKILL.md');
+    await removeUserMemory(appHome, 'coding', FIXED_CLOCK);
+    await h.renderApp(data);
+    await h.press('B');
+    // Both items share the fixed clock; CLAUDE-md sorts before SKILL-md, so the
+    // cursor opens on CLAUDE.md.
+    await h.waitFor('CLAUDE.md');
+    h.snapshot(); // drop the loaded frame so `text()` sees only post-↓ frames
+    await h.press('\x1b[B');
+    const text = h.text();
+    expect(text).toContain('▸ SKILL.md');
+    expect(text).not.toContain('▸ CLAUDE.md');
+  });
+
+  scenario('recovery:restore', async (h) => {
+    const { appHome, data } = await setupReal(['coding']);
+    await removeUserMemory(appHome, 'coding', FIXED_CLOCK);
+    await h.renderApp(data);
+    await h.press('B');
+    await h.waitFor('CLAUDE.md');
+    await h.press('\r');
+    await h.waitFor('Restored "CLAUDE.md"');
+    // The consumed item came back as the Profile's CLAUDE.md.
+    expect(fs.existsSync(join(appHome, 'profiles', 'coding', 'claude-home', 'CLAUDE.md'))).toBe(
+      true,
+    );
+  });
+
+  scenario('recovery:delete', async (h) => {
+    const { appHome, data } = await setupReal(['coding']);
+    await makeBinItem(appHome, 'coding', 'skill', 'claude-home/skills/pdf/SKILL.md');
+    await h.renderApp(data);
+    await h.press('B');
+    await h.waitFor('SKILL.md');
+    await h.press('x');
+    await h.waitFor('Permanently delete "SKILL.md"?');
+    await h.press('y');
+    await h.waitFor('Permanently deleted "SKILL.md"');
+    expect(await listRecoveryBinItems(appHome)).toHaveLength(0);
+  });
+
+  scenario('recovery:emptyBin', async (h) => {
+    const { appHome, data } = await setupReal(['coding']);
+    await makeBinItem(appHome, 'coding', 'skill', 'claude-home/skills/pdf/SKILL.md');
+    await removeUserMemory(appHome, 'coding', FIXED_CLOCK);
+    await h.renderApp(data);
+    await h.press('B');
+    await h.waitFor('CLAUDE.md');
+    await h.press('E');
+    await h.waitFor('Permanently delete 2 item(s)');
+    await h.press('y');
+    await h.waitFor('Recovery Bin emptied');
+    expect(await listRecoveryBinItems(appHome)).toHaveLength(0);
+  });
+
+  scenario('recovery:retention', async (h) => {
+    const { appHome, data } = await setupReal(['coding']);
+    await h.renderApp(data);
+    await h.press('B');
+    await h.waitFor('Recovery Bin');
+    await h.press('r');
+    await h.waitFor('Recovery Bin retention');
+    await h.press('1'); // 7 days
+    await h.waitFor('Recovery Bin retention set to 7 days.');
+    // The §9.4 change is persisted, not cosmetic.
+    const config = await loadAppConfig(appHome);
+    expect(config.recovery.retentionDays).toBe(7);
+  });
+
+  scenario('recovery:esc', async (h) => {
+    const { data } = await setupReal(['coding']);
+    await h.renderApp(data);
+    await h.press('B');
+    await h.waitFor('Recovery Bin');
+    h.snapshot(); // drop the open frame so `text()` sees only post-Esc frames
+    await h.press('\x1b');
+    expect(h.text()).not.toContain('Recovery Bin');
   });
 
   // ---------------------------------------------------------------- help group
