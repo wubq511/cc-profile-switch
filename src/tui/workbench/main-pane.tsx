@@ -125,10 +125,12 @@ export function MainPane({
   const cursor = selectedCategoryIndex ?? 0;
   const liveProfileHints = liveKeys(PROFILE_HINTS.map((h) => h.key));
   // Vertical budget for the Plugins card's inventory list: the header, grid,
-  // and hint lines are fixed, so the card gets the remaining lines (its title
-  // and the delegation line consume two). The cap keeps the card from pushing
-  // the hint line off a minimum-size (80×24) pane.
-  const pluginsMaxRows = Math.max(1, Math.min(6, height - 19));
+  // and hint lines reserve a fixed share, and the card gets the remaining
+  // lines (its title and the delegation line consume two). There is no hard
+  // ceiling beyond the pane itself, so a tall terminal shows the full
+  // inventory instead of capping at an arbitrary count; on a minimum-size
+  // (80×24) pane the list still stays within budget.
+  const pluginsMaxRows = Math.max(1, height - 19);
 
   return React.createElement(
     Box,

@@ -422,6 +422,12 @@ function WorkbenchInner({
   const [pluginInventoryByProfile, setPluginInventoryByProfile] = useState<
     Record<string, PluginInventory>
   >({});
+  // Read-guard mirror of the state above, held in a ref so the read effect can
+  // consult it without re-triggering on its own writes. Only successful reads
+  // are recorded here: an 'unavailable' result is transient (a hung `claude
+  // plugin list` can time out), so the next profile switch re-probes instead
+  // of pinning the failure for the whole session.
+  const pluginInventoryRef = useRef<Record<string, PluginInventory>>({});
   // Persisted selection across launch remount
   const persistedSelection = useRef(selectedIndex);
   // Edit-session manager — one instance for the Workbench lifetime, shared by
@@ -488,12 +494,14 @@ function WorkbenchInner({
   }, [selectedIndex, workbenchData.profiles, mcpFailedByProfile, mcpProbe]);
 
   // Read-only Plugins inventory (§7.6, issue #96): probe the selected
-  // Profile's installed plugins once per data refresh (cached by name),
-  // fail closed on any error so the card degrades instead of breaking.
+  // Profile's installed plugins once per data refresh (cached by name).
+  // `readPluginInventory` is the single fail-closed boundary — it never
+  // throws, so a reader returning 'unavailable' simply isn't cached and the
+  // next probe (profile switch or refresh) retries.
   useEffect(() => {
     const profile = workbenchData.profiles[selectedIndex];
     if (!profile) return;
-    if (pluginInventoryByProfile[profile.name]) return; // already read
+    if (pluginInventoryRef.current[profile.name]) return; // already read
 
     let cancelled = false;
     const reader =
@@ -501,28 +509,17 @@ function WorkbenchInner({
       ((appHomePath: string, profileName: string) =>
         readPluginInventory({ appHomePath, profileName, captureProcess }));
     (async () => {
-      try {
-        const inventory = await reader(getAppHomePaths().appHomePath, profile.name);
-        if (cancelled) return;
-        setPluginInventoryByProfile((prev) => ({ ...prev, [profile.name]: inventory }));
-      } catch {
-        if (cancelled) return;
-        setPluginInventoryByProfile((prev) => ({
-          ...prev,
-          [profile.name]: { status: 'unavailable' },
-        }));
+      const inventory = await reader(getAppHomePaths().appHomePath, profile.name);
+      if (cancelled) return;
+      setPluginInventoryByProfile((prev) => ({ ...prev, [profile.name]: inventory }));
+      if (inventory.status === 'ok') {
+        pluginInventoryRef.current = { ...pluginInventoryRef.current, [profile.name]: inventory };
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [
-    selectedIndex,
-    workbenchData.profiles,
-    pluginInventoryByProfile,
-    pluginInventoryReader,
-    captureProcess,
-  ]);
+  }, [selectedIndex, workbenchData.profiles, pluginInventoryReader, captureProcess]);
 
   useInput(
     (input: string, key: Record<string, boolean>) => {
@@ -907,6 +904,7 @@ function WorkbenchInner({
     // The cached plugin inventory belongs to the previous data generation;
     // clear it so the selected Profile is re-probed after any refresh.
     setPluginInventoryByProfile({});
+    pluginInventoryRef.current = {};
   }, [appHomePath]);
 
   // Zero-confirm removal of a user-created template (S104), same flash pattern

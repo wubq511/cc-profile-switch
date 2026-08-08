@@ -159,11 +159,9 @@ export type PluginInventory =
  * dropped). Never throws: an unavailable CLI degrades to an 'unavailable'
  * status so the card can never break the Workbench.
  */
-export async function readPluginInventory(options: {
-  appHomePath: string;
-  profileName: string;
-  captureProcess?: CaptureProcess;
-}): Promise<PluginInventory> {
+export async function readPluginInventory(
+  options: BrowsePluginsOptions,
+): Promise<PluginInventory> {
   try {
     const plugins = await listPlugins(options);
     return {

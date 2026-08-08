@@ -216,13 +216,14 @@ describe('Workbench read-only Plugins card (issue #96, §7.6)', () => {
     await h.unmount();
   });
 
-  it('degrades to an unavailable state when the delegated read fails', async () => {
+  it('degrades to an unavailable state when the delegated read reports failure', async () => {
     await overrideHomeToTemp();
     const h = new Harness();
     await h.renderApp(dataFor(makeProfile()), {
-      pluginInventoryReader: async () => {
-        throw new Error('claude plugin list failed');
-      },
+      // The reader contract is a PluginInventory result — `readPluginInventory`
+      // is the single fail-closed boundary and never throws, so an injected
+      // reader signals failure by returning 'unavailable'.
+      pluginInventoryReader: async () => ({ status: 'unavailable' }),
     });
 
     const output = await h.waitFor('plugin inventory unavailable');
@@ -274,6 +275,75 @@ describe('Workbench read-only Plugins card (issue #96, §7.6)', () => {
     // pane; assert the unwrapped prefix — at this width the full phrase wraps
     // mid-text and the flattened output interleaves the sidebar.
     expect(output).toContain('Claude-managed — change them through');
+
+    await h.unmount();
+  });
+
+  it('shows the full inventory on a tall pane instead of capping at an arbitrary count', async () => {
+    await overrideHomeToTemp();
+    const h = new Harness(); // 100×30 FlowTtyStdout
+    const plugins = Array.from({ length: 10 }, (_, i) => ({
+      id: `plugin-${i}@marketplace`,
+      enabled: i % 2 === 0,
+    }));
+    await h.renderApp(dataFor(makeProfile()), {
+      pluginInventoryReader: reader({ status: 'ok', plugins }),
+    });
+
+    const output = await h.waitFor('plugin-9@marketplace');
+    // Every installed plugin is visible when the pane has room…
+    expect(output).toContain('plugin-0@marketplace');
+    expect(output).toContain('plugin-9@marketplace');
+    // …so no overflow line, and the guidance still renders.
+    expect(output).not.toMatch(/\+\d+ more/);
+    expect(output).toContain('Claude-managed — change them through `claude plugin`');
+
+    await h.unmount();
+  });
+
+  it('re-probes a profile whose read failed instead of pinning unavailable for the session', async () => {
+    await overrideHomeToTemp();
+    const h = new Harness();
+    // First probe of 'coding' fails; every later probe succeeds. If the
+    // transient 'unavailable' were cached, switching away and back would not
+    // re-read coding — so the reader call count is the direct evidence that
+    // the failed state is retried rather than pinned.
+    let codingReads = 0;
+    const flakyReader = async (
+      _appHomePath: string,
+      profileName: string,
+    ): Promise<PluginInventory> => {
+      if (profileName === 'coding') {
+        codingReads += 1;
+        if (codingReads === 1) return { status: 'unavailable' };
+      }
+      return { status: 'ok', plugins: [{ id: 'probe-plugin@m', enabled: true }] };
+    };
+    await h.renderApp(
+      { profiles: [makeProfile(), makeProfile({ name: 'second' })], defaultProfile: 'coding' },
+      { pluginInventoryReader: flakyReader },
+    );
+
+    // Initial probe of the selected profile fails closed.
+    await h.waitFor('plugin inventory unavailable');
+    // Switch to the second profile — its read succeeds.
+    h.stdin?.press('\x1b[B');
+    await h.waitFor('probe-plugin@m — enabled');
+    // Switch back: 'coding' is read again — the transient failure was not
+    // cached, so the re-visit re-probes instead of pinning 'unavailable'.
+    h.stdin?.press('\x1b[A');
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline && codingReads < 2) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    expect(codingReads).toBeGreaterThanOrEqual(2);
+    // The card now shows the re-probed inventory: in the accumulated output
+    // the last inventory marker lands after the last failed-state marker (the
+    // current screen supersedes the earlier 'unavailable' frame).
+    const out = h.text();
+    expect(out.lastIndexOf('probe-plugin@m — enabled')).toBeGreaterThan(
+      out.lastIndexOf('plugin inventory unavailable'),
+    );
 
     await h.unmount();
   });
