@@ -164,6 +164,38 @@ export async function restoreProfileFromBackup(
 }
 
 /**
+ * §9.5/S116 permanent deletion of a single durable Backup. There is no safety
+ * net and the backup is NOT recoverable afterwards — callers must surface the
+ * "permanent and unrecoverable" confirmation copy before invoking this. Only
+ * directories matching the ccps backup-id shape are ever touched; unrelated
+ * residue in backups/ is ignored, as in listBackups.
+ */
+export async function permanentlyDeleteBackup(
+  backupId: string,
+  appHomePath?: string,
+): Promise<void> {
+  const resolved = appHomePath ?? getAppHomePaths().appHomePath;
+  const { backupsPath } = getAppHomePaths(resolved);
+
+  const idMatch = BACKUP_ID_PATTERN.exec(backupId);
+  if (idMatch?.groups === undefined) {
+    throw new CcpsError('BACKUP_INVALID_ID', 'Backup id is not a ccps backup directory name.', {
+      guidance: 'List backups with: ccps backup list',
+    });
+  }
+
+  const backupDir = resolveInside(backupsPath, backupId);
+  const stats = await fs.stat(backupDir).catch(() => null);
+  if (stats === null || !stats.isDirectory()) {
+    throw new CcpsError('BACKUP_NOT_FOUND', 'Backup does not exist.', {
+      guidance: 'List backups with: ccps backup list',
+    });
+  }
+
+  await fs.remove(backupDir);
+}
+
+/**
  * Durable auto-backup of the pre-restore state. Uses the same
  * `<profile>-<yyyymmdd>-<hhmmss>` naming as backupProfile (./profile) but
  * resolves same-second collisions with a counter suffix, following the

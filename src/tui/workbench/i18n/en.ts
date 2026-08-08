@@ -42,12 +42,18 @@ export const en = {
   'keymap.edit': 'Edit in VS Code',
   'keymap.backup': 'Backup profile',
   'keymap.remove': 'Remove profile',
+  'keymap.recovery': 'Recovery Bin',
+  'keymap.recovery.open': 'Browse the Recovery Bin',
+  'keymap.recovery.restore': 'Restore item',
+  'keymap.recovery.delete': 'Permanently delete',
+  'keymap.recovery.emptyBin': 'Empty the Recovery Bin',
   'resize.title': 'Terminal too small',
   'resize.current': 'Current size',
   'resize.minimum': 'Minimum size',
   'resize.hint': 'Resize your terminal or press Esc to exit.',
   'welcome.title': 'Welcome to Profile Workbench',
-  'welcome.line1': 'Profiles are isolated Claude Code environments — each with its own memory, skills, and settings.',
+  'welcome.line1':
+    'Profiles are isolated Claude Code environments — each with its own memory, skills, and settings.',
   'welcome.keys': 'Three keys to know:',
   'welcome.key.navigate': '[↑/↓] move between Profiles',
   'welcome.key.search': '[/] search everything',
@@ -59,7 +65,8 @@ export const en = {
   'search.tip': 'covers profiles, resource items, and memory/agent content',
   'mcp.failed': 'MCP "{name}" failed to connect',
   'empty.noProfiles.title': 'No Profiles yet.',
-  'empty.noProfiles.recipe': 'A Profile is an isolated Claude Code environment — its own memory, skills, and settings.',
+  'empty.noProfiles.recipe':
+    'A Profile is an isolated Claude Code environment — its own memory, skills, and settings.',
   'empty.noProfiles.create': 'Press [n] to create your first Profile',
   'empty.noMatch.title': 'Nothing matches "{query}".',
   'empty.noMatch.recipe': 'Search covers profiles, resource items, and memory/agent content.',
@@ -67,7 +74,8 @@ export const en = {
   'empty.category': 'empty — [a] add',
   'empty.category.skills': 'empty — [a] add (copy or link)',
   'destructive.removeTitle': 'Remove Profile "{name}"?',
-  'destructive.removeConsequence': 'goes with it: {skills} skills · {agents} agents · memory · settings',
+  'destructive.removeConsequence':
+    'goes with it: {skills} skills · {agents} agents · memory · settings',
   'destructive.backup': '[y] back up first, then remove (default — restore anytime)',
   'destructive.noBackup': '[u] no backup → Recovery Bin (auto-expires)',
   'destructive.cancel': '[esc] keep it',
@@ -91,7 +99,8 @@ export const en = {
   'editSession.watching.changeCount': '(#{count})',
   'editSession.watching.updated': 'updated {time}',
   'editSession.missing.title': 'File deleted or renamed — tracking paused',
-  'editSession.missing.hint': 'Preview shows last known content. Watching resumes when the file reappears.',
+  'editSession.missing.hint':
+    'Preview shows last known content. Watching resumes when the file reappears.',
   'editSession.fallback.title': 'VS Code unavailable',
   'editSession.fallback.systemEditor': 'Open in system editor',
   // The copy-path fallback prints the path in the panel — a TUI has no
@@ -183,8 +192,10 @@ export const en = {
   'skill.install.step.mode': 'Copy or Link',
   'skill.install.mode.copy': 'Copy',
   'skill.install.mode.link': 'Link',
-  'skill.install.mode.copy.desc': 'Profile-owned snapshot. Source edits never flow in. Update = re-copy with Recovery Bin undo.',
-  'skill.install.mode.link.desc': 'Live source. Edits appear immediately. Removal never deletes the source.',
+  'skill.install.mode.copy.desc':
+    'Profile-owned snapshot. Source edits never flow in. Update = re-copy with Recovery Bin undo.',
+  'skill.install.mode.link.desc':
+    'Live source. Edits appear immediately. Removal never deletes the source.',
   'skill.install.mode.hint': 'Left/Right to choose · Enter to continue · Esc back',
   'skill.install.step.confirm': 'Confirm install',
   'skill.install.confirm.preview': 'Preview',
@@ -204,11 +215,14 @@ export const en = {
   'skill.install.kind.title': 'Install source',
   'skill.install.kind.local': 'Local',
   'skill.install.kind.remote': 'Remote',
-  'skill.install.kind.local.desc': 'Install from a local directory. Copy (snapshot) or Link (live source).',
-  'skill.install.kind.remote.desc': 'Install from GitHub shorthand/URL, .git URL, tree URL, or direct SKILL.md URL via the pinned adapter.',
+  'skill.install.kind.local.desc':
+    'Install from a local directory. Copy (snapshot) or Link (live source).',
+  'skill.install.kind.remote.desc':
+    'Install from GitHub shorthand/URL, .git URL, tree URL, or direct SKILL.md URL via the pinned adapter.',
   'skill.install.kind.hint': 'Left/Right to choose · Enter to continue · Esc cancel',
   'skill.install.remote.source.prompt': 'Remote Skill source:',
-  'skill.install.remote.source.hint': 'owner/repo · GitHub URL · .git URL · tree URL · SKILL.md URL · Enter to stage · Esc back',
+  'skill.install.remote.source.hint':
+    'owner/repo · GitHub URL · .git URL · tree URL · SKILL.md URL · Enter to stage · Esc back',
   'skill.install.remote.staging': 'Staging via pinned adapter…',
   'skill.install.remote.confirm.identity': 'Staged identity',
   'skill.install.remote.confirm.provenance': 'Provenance record',
@@ -217,7 +231,8 @@ export const en = {
   'discover.experimental.badge': 'experimental',
   'discover.experimental.off': 'experimental layer off',
   'discover.source.prompt': 'Install from source:',
-  'discover.source.hint': 'owner/repo · GitHub URL · .git URL · tree URL · SKILL.md URL · Enter to stage · Esc back',
+  'discover.source.hint':
+    'owner/repo · GitHub URL · .git URL · tree URL · SKILL.md URL · Enter to stage · Esc back',
   'discover.search.hint': 'Type to search GitHub + skills.sh · Enter to lock · Esc to clear',
   'discover.search.placeholder': '/ search GitHub + skills.sh',
   'discover.search.active': 'search',
@@ -242,7 +257,8 @@ export const en = {
   'discover.unavailable.reason.unavailable': 'unavailable',
   'discover.cachedStale': 'cached results (stale) · fetched {time}',
   'discover.browser.opened': 'Opened skills.sh — paste a source back with [s]',
-  'discover.actions': '[enter] install · [s] source · [b] browser · [r] refresh · [/] search · [esc] back',
+  'discover.actions':
+    '[enter] install · [s] source · [b] browser · [r] refresh · [/] search · [esc] back',
   'keymap.discover': 'Discover',
   'keymap.discover.search': 'Search GitHub + skills.sh',
   'keymap.discover.source': 'Enter a source',
@@ -253,7 +269,8 @@ export const en = {
   'main.focusHint': 'Tab to focus categories',
   'main.drillIn': 'Enter to drill in',
   'main.backToList': 'Esc to return to categories',
-  'main.edit.missing': 'User Memory (CLAUDE.md) is missing — press [u], then [n] in the User Memory view to recreate it',
+  'main.edit.missing':
+    'User Memory (CLAUDE.md) is missing — press [u], then [n] in the User Memory view to recreate it',
   'main.description.saved': 'Description updated',
   // Auto Memory resource row
   'autoMemory.title': 'Auto Memory',
@@ -286,6 +303,50 @@ export const en = {
   'collision.delete.confirm': 'Delete the existing "{resource}" and restore?',
   'collision.delete.detail': 'The deleted entry moves to the Recovery Bin.',
   'collision.delete.hint': '[y] yes  [n] no',
+  // Numbered-explanation collision panel (issue #94): each option carries a
+  // one-line consequence so the refuse-by-default choice is understandable.
+  'collision.explain.rename': 'restores under a new name; the existing entry stays',
+  'collision.explain.delete': 'moves the existing entry to the Recovery Bin',
+  'collision.explain.refuse': 'nothing changes',
+  // Recovery Bin surface (issue #94, spec §9.5)
+  'recovery.title': 'Recovery Bin',
+  'recovery.subtitle': 'temp items auto-expire · backups are durable',
+  'recovery.section.items': 'Recovery Items (temporary)',
+  'recovery.section.backups': 'Profile Backups (durable)',
+  'recovery.itemCount': '{count} item(s)',
+  'recovery.backupCount': '{count} backup(s)',
+  'recovery.total': '{size} total',
+  'recovery.from': 'from {profile}',
+  'recovery.expires': 'expires {date}',
+  'recovery.never': 'never expires',
+  'recovery.backup.tag': 'backup',
+  'recovery.kind.profile': 'profile',
+  'recovery.kind.skill': 'skill',
+  'recovery.kind.agent': 'agent',
+  'recovery.kind.userMemory': 'user memory',
+  'recovery.kind.autoMemory': 'auto memory',
+  'recovery.kind.mcpServer': 'MCP server',
+  'recovery.kind.settingsField': 'settings field',
+  'recovery.kind.plugin': 'plugin',
+  'recovery.restore.success': 'Restored "{name}"',
+  'recovery.restore.renamed': 'Restored "{name}" as "{newName}"',
+  'recovery.restore.replaced': 'Restored "{name}" (existing moved to the Recovery Bin)',
+  'recovery.deleted.item': 'Permanently deleted "{name}"',
+  'recovery.deleted.backup': 'Permanently deleted backup "{id}"',
+  'recovery.emptied': 'Recovery Bin emptied',
+  'recovery.backup.restoreUnavailable':
+    'Restore-from-backup is a Profile action — not available here.',
+  'recovery.plugin.restoreUnavailable': 'This plugin item cannot be restored from the Workbench.',
+  'recovery.empty.bin': 'The Recovery Bin is empty.',
+  'recovery.empty.backups': 'No backups yet.',
+  'recovery.delete.confirm.item': 'Permanently delete "{name}"?',
+  'recovery.delete.confirm.backup': 'Permanently delete backup "{id}"?',
+  'recovery.delete.detail': 'This is permanent and unrecoverable.',
+  'recovery.delete.hint': '[y] delete · [esc] cancel',
+  'recovery.empty.confirm': 'Permanently delete {count} item(s) ({size} total)?',
+  'recovery.empty.detail': 'This is permanent and unrecoverable.',
+  'recovery.empty.hint': '[y] empty · [esc] cancel',
+  'recovery.hint': '[Enter] restore · [x] delete · [E] empty bin · [esc] back',
   'autoMemory.edit.opening': 'Opening "{entry}" in VS Code…',
   'autoMemory.edit.failed': 'Could not open VS Code: {message}',
   'autoMemory.edit.banner': 'Editing in VS Code — Workbench is watching',
@@ -352,7 +413,8 @@ export const en = {
   'bulk.category.mcp': 'MCP',
   'bulk.category.autoMemory': 'Auto Memory',
   'bulk.list.hint': '[space] select · [x] remove · [c] copy · [esc] back',
-  'bulk.list.hint.skills': '[space] select · [x] remove · [c] copy · [u] update · [d] discover · [esc] back',
+  'bulk.list.hint.skills':
+    '[space] select · [x] remove · [c] copy · [u] update · [d] discover · [esc] back',
   'bulk.list.hint.removeOnly': '[space] select · [x] remove · [esc] back',
   'bulk.selected': '{count} selected',
   'bulk.empty': 'Nothing to manage here.',
@@ -383,7 +445,8 @@ export const en = {
   // checks) mirror the core English defaults so both locales render complete.
   'common.none': '(none)',
   // Agents resource-list hint (extends resource.list.hint)
-  'resource.list.hint.agents': '[e] edit  [x] remove  [c] copy  [d] diff  [a] create  [f] frontmatter',
+  'resource.list.hint.agents':
+    '[e] edit  [x] remove  [c] copy  [d] diff  [a] create  [f] frontmatter',
   // Main-pane category drill hints
   'main.drillUserMemory': '[u]',
   'main.drillAgents': '[a] · [enter]',
@@ -406,8 +469,10 @@ export const en = {
   'skill.preview.acquire': 'acquire  {source}  →  staging',
   'skill.preview.stage': 'stage    {staged}/  (frontmatter name: {name})',
   'skill.preview.create': 'create   {target}/   (snapshot — Profile-owned)',
-  'skill.preview.record.copy': 'record   skills-provenance.json  ← copy · source {source} · sha256 fingerprint',
-  'skill.preview.record.link': 'record   skills-provenance.json  ← link · live source {source} · health checked',
+  'skill.preview.record.copy':
+    'record   skills-provenance.json  ← copy · source {source} · sha256 fingerprint',
+  'skill.preview.record.link':
+    'record   skills-provenance.json  ← link · live source {source} · health checked',
   'skill.preview.link': 'link    {target}  →  {source}',
   // Skill install health checks
   'skill.install.check.sourceReadable': 'source readable',
@@ -417,7 +482,8 @@ export const en = {
   'skill.install.check.canLink': 'platform can create {kind}s',
   'skill.install.check.cannotLink': 'platform cannot create links — {reason}',
   'skill.install.check.unknownReason': 'unknown reason',
-  'skill.install.check.selfReference': 'link target is inside this Profile — self-reference refused',
+  'skill.install.check.selfReference':
+    'link target is inside this Profile — self-reference refused',
   'skill.install.check.outsideProfile': 'link target is outside the Profile (live source)',
   // Platform link kinds (symlink/junction) rendered in the can-link check
   'link.kind.symlink': 'symlink',
@@ -476,7 +542,8 @@ export const en = {
   'launch.dryrun.mcpModeValue.strict': 'strict',
   'launch.dryrun.mcpModeValue.none': 'none',
   'launch.dryrun.warnings': 'Warnings:',
-  'launch.dryrun.projectConfig': 'Project config: preserved because Claude starts in the launch cwd.',
+  'launch.dryrun.projectConfig':
+    'Project config: preserved because Claude starts in the launch cwd.',
   'launch.dryrun.notStarted': 'Dry run: Claude Code was not started.',
   // Validator finding messages — core produces them English by default (CLI
   // contract); the workbench passes its catalog translator to localize them.
@@ -487,7 +554,8 @@ export const en = {
   'validate.ruleNotFile': 'The ccps-managed profile boundary path is not a file.',
   'validate.ruleCorrupt': 'The ccps-managed profile boundary markers are malformed.',
   'validate.ruleMissing': 'The ccps-managed profile boundary rule is missing.',
-  'validate.memoryDirMismatch': 'Profile settings must point Claude Code auto memory to this profile.',
+  'validate.memoryDirMismatch':
+    'Profile settings must point Claude Code auto memory to this profile.',
   'validate.requiredMissing': 'Required {type} is missing: {label}.',
   'validate.requiredWrongType': 'Required {type} has the wrong filesystem type: {label}.',
   'validate.jsonParseFailed': 'JSON file cannot be parsed.',

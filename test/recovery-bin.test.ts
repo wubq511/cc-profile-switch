@@ -9,6 +9,7 @@ import { createAppConfig, getAppHomePaths } from '../src/core/app-config';
 import {
   createFileTreeItem,
   createFragmentItem,
+  createPluginItem,
   listRecoveryBinItems,
   listRecoveryBinWithSizes,
   getRecoveryItem,
@@ -24,6 +25,8 @@ import {
   getLastSweepResult,
   formatSweepSummary,
   formatItemId,
+  computeItemExpiresAt,
+  getRecoveryItemDisplayName,
 } from '../src/core/recovery-bin';
 import { createProfileFromTemplate } from '../src/core/profile-template';
 
@@ -66,6 +69,143 @@ describe('Recovery Bin service', () => {
   }
 
   const fixedClock = () => new Date('2026-07-31T16:13:29.000Z');
+
+  // ─── Presentation helpers (§9.5) ──────────────────────────────────────
+
+  describe('computeItemExpiresAt', () => {
+    it('computes removedAt + configured retention for remove-origin items', async () => {
+      const appHome = await makeAppHome();
+      const profileDir = await makeProfile(appHome, 'coding');
+      const skillDir = join(profileDir, 'claude-home', 'skills', 'pdf');
+      await fs.ensureDir(skillDir);
+
+      const item = await createFileTreeItem({
+        appHomePath: appHome,
+        origin: 'remove',
+        kind: 'skill',
+        profile: 'coding',
+        coordinates: { targetRelativePath: 'claude-home/skills/pdf' },
+        sourcePath: skillDir,
+        clock: fixedClock,
+      });
+
+      const expiresAt = computeItemExpiresAt(item, 30);
+      expect(expiresAt).toEqual(new Date('2026-08-30T16:13:29.000Z'));
+    });
+
+    it('applies the fixed 3-day TTL for update-origin items', async () => {
+      const appHome = await makeAppHome();
+      const profileDir = await makeProfile(appHome, 'coding');
+      const skillDir = join(profileDir, 'claude-home', 'skills', 'pdf');
+      await fs.ensureDir(skillDir);
+
+      const item = await createFileTreeItem({
+        appHomePath: appHome,
+        origin: 'update',
+        kind: 'skill',
+        profile: 'coding',
+        coordinates: { targetRelativePath: 'claude-home/skills/pdf' },
+        sourcePath: skillDir,
+        clock: fixedClock,
+      });
+
+      const expiresAt = computeItemExpiresAt(item, 30);
+      expect(expiresAt).toEqual(new Date('2026-08-03T16:13:29.000Z'));
+    });
+
+    it('returns null when retention is null (Never)', async () => {
+      const appHome = await makeAppHome();
+      const profileDir = await makeProfile(appHome, 'coding');
+      const skillDir = join(profileDir, 'claude-home', 'skills', 'pdf');
+      await fs.ensureDir(skillDir);
+
+      const item = await createFileTreeItem({
+        appHomePath: appHome,
+        origin: 'remove',
+        kind: 'skill',
+        profile: 'coding',
+        coordinates: { targetRelativePath: 'claude-home/skills/pdf' },
+        sourcePath: skillDir,
+        clock: fixedClock,
+      });
+
+      expect(computeItemExpiresAt(item, null)).toBeNull();
+    });
+  });
+
+  describe('getRecoveryItemDisplayName', () => {
+    it('uses the profile name for whole-profile payloads', async () => {
+      const appHome = await makeAppHome();
+      const profileDir = await makeProfile(appHome, 'coding');
+
+      const item = await createFileTreeItem({
+        appHomePath: appHome,
+        origin: 'remove',
+        kind: 'profile',
+        profile: 'coding',
+        coordinates: { targetRelativePath: 'profiles/coding' },
+        sourcePath: profileDir,
+        clock: fixedClock,
+      });
+
+      expect(getRecoveryItemDisplayName(item)).toBe('coding');
+    });
+
+    it('uses the last path segment for file-tree entries', async () => {
+      const appHome = await makeAppHome();
+      const profileDir = await makeProfile(appHome, 'coding');
+      const skillDir = join(profileDir, 'claude-home', 'skills', 'pdf');
+      await fs.ensureDir(skillDir);
+
+      const item = await createFileTreeItem({
+        appHomePath: appHome,
+        origin: 'remove',
+        kind: 'skill',
+        profile: 'coding',
+        coordinates: { targetRelativePath: 'claude-home/skills/pdf' },
+        sourcePath: skillDir,
+        clock: fixedClock,
+      });
+
+      expect(getRecoveryItemDisplayName(item)).toBe('pdf');
+    });
+
+    it('uses the last keyPath segment for fragments', async () => {
+      const appHome = await makeAppHome();
+
+      const item = await createFragmentItem({
+        appHomePath: appHome,
+        origin: 'remove',
+        kind: 'mcp-server',
+        profile: 'coding',
+        coordinates: {
+          file: 'claude-home/.claude.json',
+          keyPath: 'mcpServers.myServer',
+          value: {},
+        },
+        clock: fixedClock,
+      });
+
+      expect(getRecoveryItemDisplayName(item)).toBe('myServer');
+    });
+
+    it('uses <plugin>@<marketplace> for plugin items', async () => {
+      const appHome = await makeAppHome();
+
+      const item = await createPluginItem({
+        appHomePath: appHome,
+        origin: 'remove',
+        profile: 'coding',
+        coordinates: {
+          plugin: 'pretty-ts-errors',
+          marketplace: 'ccps-marketplace',
+        },
+        clock: fixedClock,
+      });
+
+      expect(getRecoveryItemDisplayName(item)).toBe('pretty-ts-errors@ccps-marketplace');
+    });
+  });
 
   // ─── Item ID format ───────────────────────────────────────────────────
 
@@ -495,7 +635,11 @@ describe('Recovery Bin service', () => {
 
       // `pdf-2` already exists, so the rename target itself collides.
       await fs.ensureDir(join(profileDir, 'claude-home', 'skills', 'pdf-2'));
-      await fs.writeFile(join(profileDir, 'claude-home', 'skills', 'pdf-2', 'SKILL.md'), '# PDF 2', 'utf8');
+      await fs.writeFile(
+        join(profileDir, 'claude-home', 'skills', 'pdf-2', 'SKILL.md'),
+        '# PDF 2',
+        'utf8',
+      );
 
       await expect(
         restoreRecoveryItem({
@@ -705,7 +849,11 @@ describe('Recovery Bin service', () => {
     it('profile delete-and-restore bins the conflicting Profile then restores (S14)', async () => {
       const appHome = await makeAppHome();
       const profileDir = await makeProfile(appHome, 'coding');
-      await fs.writeFile(join(profileDir, 'profile.json'), '{"profileName":"coding","content":"original"}', 'utf8');
+      await fs.writeFile(
+        join(profileDir, 'profile.json'),
+        '{"profileName":"coding","content":"original"}',
+        'utf8',
+      );
 
       const item = await createFileTreeItem({
         appHomePath: appHome,
@@ -721,7 +869,11 @@ describe('Recovery Bin service', () => {
 
       // Recreate `coding` with different content (S14 conflict).
       await makeProfile(appHome, 'coding');
-      await fs.writeFile(join(profileDir, 'profile.json'), '{"profileName":"coding","content":"conflict"}', 'utf8');
+      await fs.writeFile(
+        join(profileDir, 'profile.json'),
+        '{"profileName":"coding","content":"conflict"}',
+        'utf8',
+      );
 
       const result = await restoreRecoveryItem({
         appHomePath: appHome,
@@ -928,10 +1080,7 @@ describe('Recovery Bin service', () => {
         clock: () => new Date('2026-07-31T10:00:00Z'),
       });
 
-      const result = await sweepExpiredItems(
-        appHome,
-        () => new Date('2026-07-31T16:00:00Z'),
-      );
+      const result = await sweepExpiredItems(appHome, () => new Date('2026-07-31T16:00:00Z'));
 
       expect(result.deletedCount).toBe(1);
       expect(result.reclaimedBytes).toBeGreaterThan(0);
@@ -996,10 +1145,7 @@ describe('Recovery Bin service', () => {
         clock: () => new Date('2026-07-27T10:00:00Z'),
       });
 
-      const result = await sweepExpiredItems(
-        appHome,
-        () => new Date('2026-07-31T16:00:00Z'),
-      );
+      const result = await sweepExpiredItems(appHome, () => new Date('2026-07-31T16:00:00Z'));
 
       // Only the update-origin item should be expired (4 days > 3 day TTL)
       expect(result.deletedCount).toBe(1);
@@ -1112,10 +1258,7 @@ describe('Recovery Bin service', () => {
         clock: () => new Date('2026-06-01T10:00:00Z'),
       });
 
-      const result = await performStartupSweep(
-        appHome,
-        () => new Date('2026-07-31T16:00:00Z'),
-      );
+      const result = await performStartupSweep(appHome, () => new Date('2026-07-31T16:00:00Z'));
 
       expect(result.deletedCount).toBe(1);
       expect(getLastSweepResult()).toEqual(result);

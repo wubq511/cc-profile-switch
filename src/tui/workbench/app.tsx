@@ -100,6 +100,8 @@ import { DiscoverView } from './skills/discover';
 import type { InstallSourceRef } from './skills/install-wizard-reducer';
 import { AutoMemoryView } from './resources/auto-memory-view';
 import { BulkOpsView, type BulkCategory } from './resources/bulk-ops-view';
+import { RecoveryView } from './resources/recovery-view';
+import { restorePluginItem } from '../../core/plugins';
 import {
   ErrorPanel,
   HintsProvider,
@@ -112,7 +114,8 @@ import { type CaptureProcess } from '../../platform/process';
 type DrillDown =
   | { kind: 'none' }
   | { kind: 'autoMemory' }
-  | { kind: 'bulk'; category: BulkCategory };
+  | { kind: 'bulk'; category: BulkCategory }
+  | { kind: 'recovery' };
 
 /** Result caps for the Discover catalog (bounded interactive search). */
 const DISCOVER_REPO_SKILL_LIMIT = 50;
@@ -523,6 +526,16 @@ function WorkbenchInner({
         setDiffResult(null);
         setDrilledAgent(null);
         setAgentFrontmatter(null);
+        return;
+      }
+
+      // Recovery Bin browse/restore (issue #94, spec §9.5): app-level `B`
+      // (uppercase) pairs with the sidebar's `b` backup. Works with zero
+      // Profiles — the Bin can hold items even after every Profile is removed.
+      if (input === 'B' && lifecycle.phase === 'idle' && !launchActive) {
+        markUsed('B');
+        setDrillDown({ kind: 'recovery' });
+        setCapture(true);
         return;
       }
 
@@ -1705,10 +1718,7 @@ function WorkbenchInner({
             );
           }
         } else if (kind === 'validate') {
-          const result = await validateProfile(
-            { appHomePath, name: profileName },
-            coreTranslator,
-          );
+          const result = await validateProfile({ appHomePath, name: profileName }, coreTranslator);
           const findings = result.findings.map((f) => ({
             severity: f.severity,
             code: f.code,
@@ -1816,40 +1826,40 @@ function WorkbenchInner({
   );
 
   // Launch action handlers
-  const handleLaunchBar = useCallback(async (profileName: string) => {
-    const appHomePath = getAppHomePaths().appHomePath;
-    let recentDirs: RecentDir[] = [];
-    try {
-      const state = await loadAppState(appHomePath);
-      recentDirs = state.recentProjectDirs;
-    } catch {
-      // Non-fatal
-    }
+  const handleLaunchBar = useCallback(
+    async (profileName: string) => {
+      const appHomePath = getAppHomePaths().appHomePath;
+      let recentDirs: RecentDir[] = [];
+      try {
+        const state = await loadAppState(appHomePath);
+        recentDirs = state.recentProjectDirs;
+      } catch {
+        // Non-fatal
+      }
 
-    // Validate the profile to get inline findings
-    let validationFindings: ValidationFinding[] = [];
-    try {
-      const result = await validateProfile(
-        { appHomePath, name: profileName },
-        coreTranslator,
-      );
-      validationFindings = result.findings;
-    } catch {
-      // Non-fatal — user can still try to launch
-    }
+      // Validate the profile to get inline findings
+      let validationFindings: ValidationFinding[] = [];
+      try {
+        const result = await validateProfile({ appHomePath, name: profileName }, coreTranslator);
+        validationFindings = result.findings;
+      } catch {
+        // Non-fatal — user can still try to launch
+      }
 
-    setLifecycle((prev) => ({
-      ...initialLifecycleState(),
-      profileName,
-      launch: {
-        ...prev.launch,
-        phase: 'bar',
-        dir: process.cwd(),
-        recentDirs,
-        validationFindings,
-      },
-    }));
-  }, [coreTranslator]);
+      setLifecycle((prev) => ({
+        ...initialLifecycleState(),
+        profileName,
+        launch: {
+          ...prev.launch,
+          phase: 'bar',
+          dir: process.cwd(),
+          recentDirs,
+          validationFindings,
+        },
+      }));
+    },
+    [coreTranslator],
+  );
 
   const handleLaunchDirScreen = useCallback(
     async (profileName: string) => {
@@ -2176,68 +2186,89 @@ function WorkbenchInner({
                         onSearchFocusChange: handleSearchFocusChange,
                         onRemoveCustomTemplate: handleRemoveCustomTemplate,
                       }),
-                      drillDown.kind === 'autoMemory' && selectedProfile
-                        ? React.createElement(AutoMemoryView, {
-                            profile: selectedProfile,
+                      drillDown.kind === 'recovery'
+                        ? React.createElement(RecoveryView, {
                             appHomePath: getAppHomePaths().appHomePath,
                             profileNames: workbenchData.profiles.map((p) => p.name),
                             width: mainWidth,
                             height: height - 1,
-                            editSessionManager,
                             onBack: handleExitDrillDown,
+                            onDataChanged: () => {
+                              void refreshData();
+                            },
+                            pluginRestore: async (item) => {
+                              // Plugin items reinstall from their marketplace
+                              // through the same delegation the CLI wires.
+                              await restorePluginItem({
+                                item,
+                                appHomePath: getAppHomePaths().appHomePath,
+                                captureProcess,
+                              });
+                            },
+                            headless,
                           })
-                        : drillDown.kind === 'bulk' && selectedProfile
-                          ? React.createElement(BulkOpsView, {
+                        : drillDown.kind === 'autoMemory' && selectedProfile
+                          ? React.createElement(AutoMemoryView, {
                               profile: selectedProfile,
                               appHomePath: getAppHomePaths().appHomePath,
-                              profileRootPath: getProfileTemplatePaths(
-                                getAppHomePaths().appHomePath,
-                                selectedProfile.name,
-                              ).profileRootPath,
                               profileNames: workbenchData.profiles.map((p) => p.name),
-                              category: drillDown.category,
                               width: mainWidth,
                               height: height - 1,
+                              editSessionManager,
                               onBack: handleExitDrillDown,
-                              onDataChanged: () => {
-                                void refreshData();
-                              },
-                              onDiscover: () => {
-                                void openDiscover();
-                              },
-                              captureProcess,
-                              headless,
                             })
-                          : React.createElement(MainPane, {
-                              profile: selectedProfile,
-                              profiles: workbenchData.profiles,
-                              nav: resourceNav,
-                              mcpFailed,
-                              width: mainWidth,
-                              height: height - 1,
-                              focused: mainPaneFocus,
-                              selectedCategoryIndex,
-                              editSession: topLevelEditSession,
-                              sessionFor,
-                              descriptionDraft: editingDescription ? descriptionDraft : null,
-                              editFallback: {
-                                systemEditor: (filePath: string) =>
-                                  void handleFallbackSystemEditor(filePath),
-                                retry: handleFallbackRetry,
-                                dismiss: handleFallbackDismiss,
-                              },
-                              content: resourceContent,
-                              diff: diffResult,
-                              drilledAgent,
-                              agentFrontmatter,
-                              searchResults,
-                              onSaveFrontmatter: saveAgentFrontmatter,
-                              onBack: () =>
-                                setResourceNav((prev) =>
-                                  resourceNavReducer(prev, { type: 'BACK' }),
-                                ),
-                              hintLine: resourceHintLine,
-                            }),
+                          : drillDown.kind === 'bulk' && selectedProfile
+                            ? React.createElement(BulkOpsView, {
+                                profile: selectedProfile,
+                                appHomePath: getAppHomePaths().appHomePath,
+                                profileRootPath: getProfileTemplatePaths(
+                                  getAppHomePaths().appHomePath,
+                                  selectedProfile.name,
+                                ).profileRootPath,
+                                profileNames: workbenchData.profiles.map((p) => p.name),
+                                category: drillDown.category,
+                                width: mainWidth,
+                                height: height - 1,
+                                onBack: handleExitDrillDown,
+                                onDataChanged: () => {
+                                  void refreshData();
+                                },
+                                onDiscover: () => {
+                                  void openDiscover();
+                                },
+                                captureProcess,
+                                headless,
+                              })
+                            : React.createElement(MainPane, {
+                                profile: selectedProfile,
+                                profiles: workbenchData.profiles,
+                                nav: resourceNav,
+                                mcpFailed,
+                                width: mainWidth,
+                                height: height - 1,
+                                focused: mainPaneFocus,
+                                selectedCategoryIndex,
+                                editSession: topLevelEditSession,
+                                sessionFor,
+                                descriptionDraft: editingDescription ? descriptionDraft : null,
+                                editFallback: {
+                                  systemEditor: (filePath: string) =>
+                                    void handleFallbackSystemEditor(filePath),
+                                  retry: handleFallbackRetry,
+                                  dismiss: handleFallbackDismiss,
+                                },
+                                content: resourceContent,
+                                diff: diffResult,
+                                drilledAgent,
+                                agentFrontmatter,
+                                searchResults,
+                                onSaveFrontmatter: saveAgentFrontmatter,
+                                onBack: () =>
+                                  setResourceNav((prev) =>
+                                    resourceNavReducer(prev, { type: 'BACK' }),
+                                  ),
+                                hintLine: resourceHintLine,
+                              }),
                     ),
                     renderGuidanceDialogs(),
                   ),
