@@ -113,6 +113,27 @@ describe('Recovery Bin service', () => {
       expect(expiresAt).toEqual(new Date('2026-08-03T16:13:29.000Z'));
     });
 
+    it('applies the fixed 3-day TTL for update-origin items even when retention is Never', async () => {
+      const appHome = await makeAppHome();
+      const profileDir = await makeProfile(appHome, 'coding');
+      const skillDir = join(profileDir, 'claude-home', 'skills', 'pdf');
+      await fs.ensureDir(skillDir);
+
+      const item = await createFileTreeItem({
+        appHomePath: appHome,
+        origin: 'update',
+        kind: 'skill',
+        profile: 'coding',
+        coordinates: { targetRelativePath: 'claude-home/skills/pdf' },
+        sourcePath: skillDir,
+        clock: fixedClock,
+      });
+
+      // §7.1: the update TTL is fixed at 3 days, independent of retention null.
+      const expiresAt = computeItemExpiresAt(item, null);
+      expect(expiresAt).toEqual(new Date('2026-08-03T16:13:29.000Z'));
+    });
+
     it('returns null when retention is null (Never)', async () => {
       const appHome = await makeAppHome();
       const profileDir = await makeProfile(appHome, 'coding');
@@ -1115,6 +1136,38 @@ describe('Recovery Bin service', () => {
 
       const result = await sweepExpiredItems(appHome);
       expect(result.deletedCount).toBe(0);
+    });
+
+    it('sweeps update-origin items even when retention is Never (fixed TTL)', async () => {
+      const appHome = await makeAppHome();
+      const profileDir = await makeProfile(appHome, 'coding');
+      const skillDir = join(profileDir, 'claude-home', 'skills', 'pdf');
+      await fs.ensureDir(skillDir);
+
+      // Set retention to Never.
+      const config = await fs.readJson(getAppHomePaths(appHome).configPath);
+      await fs.writeJson(getAppHomePaths(appHome).configPath, {
+        ...config,
+        recovery: { retentionDays: null },
+      });
+
+      // An update-origin item 4 days old: past its fixed 3-day TTL (§7.1), so
+      // the sweep removes it even though the configured retention is Never.
+      await createFileTreeItem({
+        appHomePath: appHome,
+        origin: 'update',
+        kind: 'skill',
+        profile: 'coding',
+        coordinates: { targetRelativePath: 'claude-home/skills/pdf' },
+        sourcePath: skillDir,
+        clock: () => new Date('2026-07-27T10:00:00Z'),
+      });
+
+      const result = await sweepExpiredItems(appHome, () => new Date('2026-07-31T16:00:00Z'));
+      expect(result.deletedCount).toBe(1);
+
+      const remaining = await listRecoveryBinItems(appHome);
+      expect(remaining).toHaveLength(0);
     });
 
     it('applies fixed 3-day TTL for update-origin items', async () => {

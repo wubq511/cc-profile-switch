@@ -4,6 +4,7 @@ import { Box, Text, useInput, useStdin } from 'ink';
 import { useI18n } from '../i18n/react';
 import type { LocaleKey } from '../i18n/en';
 import {
+  changeRetentionSetting,
   computeItemExpiresAt,
   emptyRecoveryBin,
   getRecoveryItemDisplayName,
@@ -37,12 +38,15 @@ import { formatBytes, formatDate } from '../format';
  */
 
 type Row =
-  | { key: string; kind: 'bin'; item: RecoveryBinItem; sizeBytes: number }
-  | { key: string; kind: 'backup'; entry: BackupEntry };
+  | { key: string; source: 'bin'; item: RecoveryBinItem; sizeBytes: number }
+  | { key: string; source: 'backup'; entry: BackupEntry };
 
-type Phase = 'list' | 'collision' | 'confirm-delete' | 'confirm-empty';
+type Phase = 'list' | 'collision' | 'retention' | 'confirm-delete' | 'confirm-empty';
 
-type DeleteTarget = { kind: 'bin'; id: string; name: string } | { kind: 'backup'; id: string };
+type DeleteTarget = { source: 'bin'; id: string; name: string } | { source: 'backup'; id: string };
+
+/** Recovery Bin retention options (spec §9.4): 7/30/90 days, or Never. */
+const RETENTION_OPTIONS: ReadonlyArray<number | null> = [7, 30, 90, null];
 
 export type RecoveryViewProps = {
   appHomePath: string;
@@ -59,9 +63,10 @@ export type RecoveryViewProps = {
   headless?: boolean;
 };
 
-// Recovery Item kind enum → localized labels. Unmapped kinds fall back to the
-// raw token (mirrors the bulk-ops MCP transport handling).
-const KIND_LABEL_KEYS: Partial<Record<RecoveryBinItem['kind'], LocaleKey>> = {
+// Recovery Item kind enum → localized labels. The kind union is closed (all
+// eight kinds are enumerated in the schema), so the map is total — there is no
+// unmapped fallback.
+const KIND_LABEL_KEYS: Record<RecoveryBinItem['kind'], LocaleKey> = {
   profile: 'recovery.kind.profile',
   skill: 'recovery.kind.skill',
   agent: 'recovery.kind.agent',
@@ -100,7 +105,7 @@ export function RecoveryView({
   const [retentionDays, setRetentionDays] = useState<number | null>(30);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [phase, setPhase] = useState<Phase>('list');
-  const [collisionItem, setCollisionItem] = useState<(Row & { kind: 'bin' }) | null>(null);
+  const [collisionItem, setCollisionItem] = useState<(Row & { source: 'bin' }) | null>(null);
   const [collisionSuggestedName, setCollisionSuggestedName] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [statusLines, setStatusLines] = useState<string[]>([]);
@@ -134,18 +139,24 @@ export function RecoveryView({
     for (const entry of binList.entries) {
       out.push({
         key: `bin:${entry.item.id}`,
-        kind: 'bin',
+        source: 'bin',
         item: entry.item,
         sizeBytes: entry.sizeBytes,
       });
     }
     for (const entry of backupList.entries) {
-      out.push({ key: `backup:${entry.id}`, kind: 'backup', entry });
+      out.push({ key: `backup:${entry.id}`, source: 'backup', entry });
     }
     return out;
   }, [binList, backupList]);
 
   const setStatus = (line: string): void => setStatusLines((prev) => [...prev.slice(-8), line]);
+
+  function retentionLabel(days: number | null): string {
+    return days === null
+      ? t('recovery.retention.never')
+      : t('recovery.retention.option', { days: String(days) });
+  }
 
   function expiryLabel(item: RecoveryBinItem): string {
     const expiresAt = computeItemExpiresAt(item, retentionDays);
@@ -154,12 +165,11 @@ export function RecoveryView({
   }
 
   function kindLabel(item: RecoveryBinItem): string {
-    const key = KIND_LABEL_KEYS[item.kind];
-    return key ? t(key) : item.kind;
+    return t(KIND_LABEL_KEYS[item.kind]);
   }
 
   /** Open the shared collision dialog, prefilled with a non-colliding name. */
-  function enterCollision(row: Row & { kind: 'bin' }, baseName?: string): void {
+  function enterCollision(row: Row & { source: 'bin' }, baseName?: string): void {
     const base = baseName ?? getRecoveryItemDisplayName(row.item);
     // Profile-kind items suggest against the live Profile names; other kinds
     // cannot be enumerated here, so a colliding new name is re-suggested on
@@ -174,7 +184,7 @@ export function RecoveryView({
     if (busy) return;
     const row = rows[selectedIndex];
     if (!row) return;
-    if (row.kind === 'backup') {
+    if (row.source === 'backup') {
       // Restore-from-backup is a Profile-lifecycle action (spec §2 note), not
       // a resource action of this surface — say so instead of pretending.
       setStatus(t('recovery.backup.restoreUnavailable'));
@@ -247,14 +257,14 @@ export function RecoveryView({
   function startDelete(): void {
     const row = rows[selectedIndex];
     if (!row) return;
-    if (row.kind === 'bin') {
+    if (row.source === 'bin') {
       setDeleteTarget({
-        kind: 'bin',
+        source: 'bin',
         id: row.item.id,
         name: getRecoveryItemDisplayName(row.item),
       });
     } else {
-      setDeleteTarget({ kind: 'backup', id: row.entry.id });
+      setDeleteTarget({ source: 'backup', id: row.entry.id });
     }
     setPhase('confirm-delete');
   }
@@ -265,7 +275,7 @@ export function RecoveryView({
     setPhase('list');
     setDeleteTarget(null);
     try {
-      if (target.kind === 'bin') {
+      if (target.source === 'bin') {
         await permanentlyDeleteItem(target.id, appHomePath);
         setStatus(t('recovery.deleted.item', { name: target.name }));
       } else {
@@ -284,6 +294,24 @@ export function RecoveryView({
     try {
       await emptyRecoveryBin(appHomePath);
       setStatus(t('recovery.emptied'));
+      await reload();
+      onDataChanged?.();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  /** S114: apply a retention change and report how many items would expire. */
+  async function applyRetention(days: number | null): Promise<void> {
+    setPhase('list');
+    try {
+      const impact = await changeRetentionSetting(days, appHomePath);
+      setStatus(
+        t('recovery.retention.result', {
+          label: retentionLabel(days),
+          count: String(impact.wouldExpireCount),
+        }),
+      );
       await reload();
       onDataChanged?.();
     } catch (error) {
@@ -321,9 +349,27 @@ export function RecoveryView({
         return;
       }
 
+      if (phase === 'retention') {
+        if (key.escape) {
+          setPhase('list');
+          return;
+        }
+        const choice = parseInt(input, 10);
+        if (choice >= 1 && choice <= RETENTION_OPTIONS.length) {
+          void applyRetention(RETENTION_OPTIONS[choice - 1]!);
+        }
+        return;
+      }
+
       // List phase
       if (key.escape) {
         onBack();
+        return;
+      }
+      // Retention is a Bin-wide setting, so `r` stays reachable even when the
+      // Bin and Backups are both empty.
+      if (input === 'r') {
+        setPhase('retention');
         return;
       }
       if (rows.length === 0) return;
@@ -372,7 +418,7 @@ export function RecoveryView({
       ) : phase === 'confirm-delete' && deleteTarget ? (
         <Box flexDirection="column" flexGrow={1}>
           <Text bold color="yellow" wrap="wrap">
-            {deleteTarget.kind === 'bin'
+            {deleteTarget.source === 'bin'
               ? t('recovery.delete.confirm.item', { name: deleteTarget.name })
               : t('recovery.delete.confirm.backup', { id: deleteTarget.id })}
           </Text>
@@ -390,6 +436,24 @@ export function RecoveryView({
           <Text dimColor>{t('recovery.empty.detail')}</Text>
           <Text dimColor>{t('recovery.empty.hint')}</Text>
         </Box>
+      ) : phase === 'retention' ? (
+        <Box flexDirection="column" flexGrow={1}>
+          <Text bold color="cyan" wrap="wrap">
+            {t('recovery.retention.title')}
+          </Text>
+          <Text dimColor wrap="wrap">
+            {t('recovery.retention.detail')}
+          </Text>
+          <Text dimColor>
+            {t('recovery.retention.current', { label: retentionLabel(retentionDays) })}
+          </Text>
+          {RETENTION_OPTIONS.map((days, i) => (
+            <Text key={i}>
+              {i + 1}) {retentionLabel(days)}
+            </Text>
+          ))}
+          <Text dimColor>{t('recovery.retention.hint')}</Text>
+        </Box>
       ) : (
         <Box flexDirection="column" flexGrow={1}>
           {rows.length === 0 ? (
@@ -406,7 +470,7 @@ export function RecoveryView({
                   {t('recovery.total', { size: formatBytes(binList.totalSizeBytes) })}
                 </Text>
               )}
-              {renderBinRows()}
+              {renderRows()}
               {backupList.entries.length > 0 && (
                 <Box marginTop={1}>
                   <Text bold dimColor wrap="truncate">
@@ -416,7 +480,6 @@ export function RecoveryView({
                   </Text>
                 </Box>
               )}
-              {renderBackupRows()}
             </Box>
           )}
           {statusLines.length > 0 && (
@@ -437,42 +500,33 @@ export function RecoveryView({
     </Box>
   );
 
-  function renderBinRows(): React.ReactElement[] {
-    const out: React.ReactElement[] = [];
-    for (let i = 0; i < binList.entries.length; i++) {
-      const entry = binList.entries[i]!;
+  function renderRows(): React.ReactElement[] {
+    // One pass over the combined rows: Bin rows first (cyan), then Backup rows
+    // (green ◆), so the single cursor walks both sections in order (S115).
+    return rows.map((row, i) => {
       const isSel = i === selectedIndex;
-      out.push(
-        <Text
-          key={rows[i]!.key}
-          bold={isSel}
-          color={isSel ? 'cyan' : undefined}
-          inverse={isSel}
-          wrap="truncate"
-        >
-          {isSel ? '▸ ' : '  '}
-          {getRecoveryItemDisplayName(entry.item)} · {kindLabel(entry.item)} ·{' '}
-          {t('recovery.from', { profile: entry.item.profile })} · {expiryLabel(entry.item)} ·{' '}
-          {formatBytes(entry.sizeBytes)}
-        </Text>,
+      if (row.source === 'bin') {
+        return (
+          <Text
+            key={row.key}
+            bold={isSel}
+            color={isSel ? 'cyan' : undefined}
+            inverse={isSel}
+            wrap="truncate"
+          >
+            {isSel ? '▸ ' : '  '}
+            {getRecoveryItemDisplayName(row.item)} · {kindLabel(row.item)} ·{' '}
+            {t('recovery.from', { profile: row.item.profile })} · {expiryLabel(row.item)} ·{' '}
+            {formatBytes(row.sizeBytes)}
+          </Text>
+        );
+      }
+      return (
+        <Text key={row.key} bold={isSel} color="green" inverse={isSel} wrap="truncate">
+          {isSel ? '▸ ' : '  '}◆ {row.entry.id} · {t('recovery.backup.tag')} ·{' '}
+          {formatBytes(row.entry.sizeBytes)}
+        </Text>
       );
-    }
-    return out;
-  }
-
-  function renderBackupRows(): React.ReactElement[] {
-    const out: React.ReactElement[] = [];
-    for (let i = 0; i < backupList.entries.length; i++) {
-      const entry = backupList.entries[i]!;
-      const rowIndex = binList.entries.length + i;
-      const isSel = rowIndex === selectedIndex;
-      out.push(
-        <Text key={rows[rowIndex]!.key} bold={isSel} color="green" inverse={isSel} wrap="truncate">
-          {isSel ? '▸ ' : '  '}◆ {entry.id} · {t('recovery.backup.tag')} ·{' '}
-          {formatBytes(entry.sizeBytes)}
-        </Text>,
-      );
-    }
-    return out;
+    });
   }
 }

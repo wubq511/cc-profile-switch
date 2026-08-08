@@ -155,7 +155,8 @@ export const KEYMAP_GROUPS: readonly KeymapGroup[] = [
   {
     // Recovery Bin surface (issue #94, spec §9.5): browse the temporary
     // items and durable Profile Backups; Enter restores a Bin item, x
-    // permanently deletes the focused item/backup, E empties the Bin.
+    // permanently deletes the focused item/backup, E empties the Bin, r
+    // changes the retention setting (§9.4/S114).
     id: 'recovery',
     titleKey: 'keymap.recovery',
     bindings: [
@@ -163,6 +164,7 @@ export const KEYMAP_GROUPS: readonly KeymapGroup[] = [
       { id: 'restore', key: 'Enter', labelKey: 'keymap.recovery.restore' },
       { id: 'delete', key: 'x', labelKey: 'keymap.recovery.delete' },
       { id: 'emptyBin', key: 'E', labelKey: 'keymap.recovery.emptyBin' },
+      { id: 'retention', key: 'r', labelKey: 'keymap.recovery.retention' },
       { id: 'esc', key: 'Esc', labelKey: 'keymap.esc' },
     ],
   },

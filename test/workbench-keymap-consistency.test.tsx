@@ -12,7 +12,7 @@ import { WorkbenchApp, resetWelcomeSessionForTests } from '../src/tui/workbench/
 import { KEYMAP_GROUPS } from '../src/tui/workbench/keymap';
 import { DiscoverView } from '../src/tui/workbench/skills/discover';
 import { SkillsDiscoverySession } from '../src/core/skills-discovery';
-import { createAppConfig, getAppHomePaths } from '../src/core/app-config';
+import { createAppConfig, getAppHomePaths, loadAppConfig } from '../src/core/app-config';
 import { createProfileFromTemplate } from '../src/core/profile-template';
 import { createAgent, removeUserMemory } from '../src/core/resource';
 import { createFileTreeItem, listRecoveryBinItems } from '../src/core/recovery-bin';
@@ -1023,6 +1023,20 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
     await h.press('y');
     await h.waitFor('Recovery Bin emptied');
     expect(await listRecoveryBinItems(appHome)).toHaveLength(0);
+  });
+
+  scenario('recovery:retention', async (h) => {
+    const { appHome, data } = await setupReal(['coding']);
+    await h.renderApp(data);
+    await h.press('B');
+    await h.waitFor('Recovery Bin');
+    await h.press('r');
+    await h.waitFor('Recovery Bin retention');
+    await h.press('1'); // 7 days
+    await h.waitFor('Recovery Bin retention set to 7 days.');
+    // The §9.4 change is persisted, not cosmetic.
+    const config = await loadAppConfig(appHome);
+    expect(config.recovery.retentionDays).toBe(7);
   });
 
   scenario('recovery:esc', async (h) => {

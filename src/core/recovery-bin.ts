@@ -612,17 +612,21 @@ export async function listRecoveryBinWithSizes(appHomePath?: string): Promise<Re
 /**
  * When a Recovery Item expires under the given retention setting, or null when
  * it never expires (retention null). update-origin items carry the fixed 3-day
- * TTL (UPDATE_ORIGIN_TTL_DAYS) regardless of the configured retention — same
- * rule the startup sweep applies, exposed here so the Workbench view can show
- * a per-item expiry date.
+ * TTL (UPDATE_ORIGIN_TTL_DAYS) regardless of the configured retention —
+ * including Never (retention null), per §7.1 — same rule the startup sweep
+ * applies, exposed here so the Workbench view can show a per-item expiry date.
  */
 export function computeItemExpiresAt(
   item: RecoveryItem,
   retentionDays: number | null,
 ): Date | null {
+  if (item.origin === 'update') {
+    return new Date(
+      new Date(item.removedAt).getTime() + UPDATE_ORIGIN_TTL_DAYS * 24 * 60 * 60 * 1000,
+    );
+  }
   if (retentionDays === null) return null;
-  const effectiveDays = item.origin === 'update' ? UPDATE_ORIGIN_TTL_DAYS : retentionDays;
-  return new Date(new Date(item.removedAt).getTime() + effectiveDays * 24 * 60 * 60 * 1000);
+  return new Date(new Date(item.removedAt).getTime() + retentionDays * 24 * 60 * 60 * 1000);
 }
 
 /**
@@ -638,8 +642,7 @@ export function getRecoveryItemDisplayName(item: RecoveryItem): string {
   }
   if (item.shape === 'file-tree') {
     const coords = item.coordinates as FileTreeCoordinates;
-    const segments = coords.targetRelativePath.split(/[/\\]+/).filter(Boolean);
-    return segments[segments.length - 1] ?? coords.targetRelativePath;
+    return lastPathSegment(coords.targetRelativePath) ?? coords.targetRelativePath;
   }
   if (item.shape === 'fragment') {
     const coords = item.coordinates as FragmentCoordinates;
@@ -661,9 +664,13 @@ function isExpired(item: RecoveryItem, retentionDays: number | null, now: Date):
   return now.getTime() > expiresAt.getTime();
 }
 
-function deriveSlug(relativePath: string): string {
+function lastPathSegment(relativePath: string): string | undefined {
   const segments = relativePath.split(/[/\\]+/).filter(Boolean);
-  const last = segments[segments.length - 1] ?? 'item';
+  return segments[segments.length - 1];
+}
+
+function deriveSlug(relativePath: string): string {
+  const last = lastPathSegment(relativePath) ?? 'item';
   return last.replace(/[^A-Za-z0-9_-]/g, '-').slice(0, 32);
 }
 

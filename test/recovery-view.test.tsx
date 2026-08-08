@@ -9,7 +9,7 @@ import { render } from 'ink';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { RecoveryView } from '../src/tui/workbench/resources/recovery-view';
-import { createAppConfig, getAppHomePaths } from '../src/core/app-config';
+import { createAppConfig, getAppHomePaths, loadAppConfig } from '../src/core/app-config';
 import { createProfileFromTemplate } from '../src/core/profile-template';
 import { createFileTreeItem, listRecoveryBinItems } from '../src/core/recovery-bin';
 import { backupProfile } from '../src/core/profile';
@@ -248,6 +248,67 @@ describe('RecoveryView render (issue #94)', () => {
     expect(await fs.readFile(claudeMd, 'utf8')).toBe('# Coding profile');
     expect(await listRecoveryBinItems(appHome)).toHaveLength(1);
     expect(await fs.pathExists(item.itemDirPath)).toBe(true);
+
+    instance.unmount();
+    await instance.waitUntilExit();
+  }, 20000);
+
+  it('changes retention via the numbered panel and reports the would-expire count (S114)', async () => {
+    const appHome = await makeAppHome();
+    const { profilesPath } = getAppHomePaths(appHome);
+    const claudeMd = join(profilesPath, 'coding', 'claude-home', 'CLAUDE.md');
+    await fs.ensureDir(join(profilesPath, 'coding', 'claude-home'));
+    await fs.writeFile(claudeMd, '# Coding profile', 'utf8');
+    // A month-old item: would expire under the 7-day setting.
+    await createFileTreeItem({
+      appHomePath: appHome,
+      origin: 'remove',
+      kind: 'user-memory',
+      profile: 'coding',
+      coordinates: { targetRelativePath: 'claude-home/CLAUDE.md' },
+      sourcePath: claudeMd,
+      clock: () => new Date('2026-07-01T00:00:00Z'),
+    });
+
+    const stdout = new FakeTtyStdout();
+    const stdin = new FakeTtyStdin();
+    const instance = render(
+      React.createElement(RecoveryView, {
+        appHomePath: appHome,
+        profileNames: ['coding'],
+        width: 80,
+        height: 24,
+        onBack: () => {},
+        headless: false,
+      }),
+      {
+        stdout: stdout as unknown as NodeJS.WriteStream,
+        stdin: stdin as unknown as NodeJS.ReadStream,
+        exitOnCtrlC: false,
+        patchConsole: false,
+        interactive: true,
+      },
+    );
+    await instance.waitUntilRenderFlush();
+    await waitForInputListener(stdin);
+
+    await waitForOutput(stdout, 'Recovery Items (temporary)');
+    await stdin.press('r');
+    await waitForOutput(stdout, 'Recovery Bin retention');
+
+    // The numbered panel lists all four retention options.
+    const panel = flatten(stripAnsi(stdout.output));
+    expect(panel).toMatch(/1\) 7 days/);
+    expect(panel).toMatch(/3\) 90 days/);
+    expect(panel).toMatch(/4\) Never/);
+
+    await stdin.press('1'); // 7 days
+    await waitForOutput(stdout, 'Recovery Bin retention set to 7 days.');
+    expect(flatten(stripAnsi(stdout.output))).toContain('1 existing item(s) would expire');
+
+    // The §9.4 change is persisted, and the view reloaded to the new setting.
+    const config = await loadAppConfig(appHome);
+    expect(config.recovery.retentionDays).toBe(7);
 
     instance.unmount();
     await instance.waitUntilExit();
