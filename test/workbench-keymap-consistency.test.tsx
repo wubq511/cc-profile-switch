@@ -1,4 +1,4 @@
-import { Readable, Writable } from 'node:stream';
+import { Readable } from 'node:stream';
 import fs from 'fs-extra';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -21,7 +21,7 @@ import { loadWorkbenchData } from '../src/tui/workbench/profile-data';
 import type { WorkbenchData } from '../src/tui/workbench/profile-data';
 import type { CaptureProcess } from '../src/platform/process';
 import { apiRepo, apiTree, makeHttp, rawSkill } from './fixtures/discovery-http';
-import { flatten, setupSpawnSuccess, stripAnsi } from './render-helpers';
+import { FakeTtyStdout, flatten, setupSpawnSuccess, stripAnsi } from './render-helpers';
 
 vi.mock('node:child_process', () => ({
   spawn: vi.fn(),
@@ -40,32 +40,15 @@ vi.mock('node:child_process', () => ({
  *   - a key whose real behavior diverges from the documented effect fails the
  *     scenario itself;
  *   - a scenario that no longer matches any documented binding fails the
- *     orphan check (catches a rename/removal of the key or label in the sheet).
+ *     orphan check (catches a rename/removal of the binding's stable id in the
+ *     sheet; the display `key` stays free to change cosmetically).
  */
 describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
   // ---------------------------------------------------------------- harness
 
-  class FakeTtyStdout extends Writable {
-    public readonly isTTY = true;
+  class KeymapTtyStdout extends FakeTtyStdout {
     public columns = 120;
     public rows = 40;
-    private readonly chunks: Buffer[] = [];
-
-    public override _write(chunk: Buffer, _encoding: string, callback: () => void): void {
-      this.chunks.push(Buffer.from(chunk));
-      callback();
-    }
-
-    public get output(): string {
-      return Buffer.concat(this.chunks).toString('utf8');
-    }
-
-    /** Return and clear the accumulated writes so a later frame can be asserted alone. */
-    public snapshot(): string {
-      const out = this.output;
-      this.chunks.length = 0;
-      return out;
-    }
   }
 
   class FakeTtyStdin extends Readable {
@@ -140,7 +123,7 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
       extraProps: Partial<React.ComponentProps<typeof WorkbenchApp>> = {},
     ): Promise<void> {
       resetWelcomeSessionForTests();
-      const stdout = new FakeTtyStdout();
+      const stdout = new KeymapTtyStdout();
       const stdin = new FakeTtyStdin();
       const instance = render(
         React.createElement(WorkbenchApp, {
@@ -165,7 +148,7 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
     }
 
     async renderComponent(element: React.ReactElement): Promise<void> {
-      const stdout = new FakeTtyStdout();
+      const stdout = new KeymapTtyStdout();
       const stdin = new FakeTtyStdin();
       const instance = render(element, {
         stdout: stdout as unknown as NodeJS.WriteStream,
@@ -197,11 +180,6 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
     text(): string {
       if (!this.stdout) throw new Error('Harness not rendered');
       return flatten(stripAnsi(this.stdout.output));
-    }
-
-    raw(): string {
-      if (!this.stdout) throw new Error('Harness not rendered');
-      return stripAnsi(this.stdout.output);
     }
 
     snapshot(): string {
@@ -417,7 +395,7 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
 
   // ---------------------------------------------------------------- navigation group
 
-  scenario('navigation:↑/↓', async (h) => {
+  scenario('navigation:move', async (h) => {
     const { data } = await setupReal(['coding', 'study']);
     await h.renderApp(data);
     h.snapshot();
@@ -427,7 +405,7 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
     expect(text).not.toContain('Focused software development profile.');
   });
 
-  scenario('navigation:←/→', async (h) => {
+  scenario('navigation:tree', async (h) => {
     const { data } = await setupReal(['coding']);
     await h.renderApp(data);
     await h.press('\x1b[C'); // → expands the tree
@@ -441,7 +419,7 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
     expect(collapsed).not.toContain('▾ coding');
   });
 
-  scenario('navigation:Enter', async (h) => {
+  scenario('navigation:enter', async (h) => {
     const { data } = await setupReal(['coding']);
     await h.renderApp(data);
     await h.press('\x1b[C'); // expand so the category rows appear
@@ -450,21 +428,21 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
     await h.waitFor('coding › User Memory');
   });
 
-  scenario('navigation:/', async (h) => {
+  scenario('navigation:search', async (h) => {
     const { data } = await setupReal(['coding']);
     await h.renderApp(data);
     await h.press('/');
     expect(h.text()).toContain('/█');
   });
 
-  scenario('navigation:?', async (h) => {
+  scenario('navigation:help', async (h) => {
     const { data } = await setupReal(['coding']);
     await h.renderApp(data);
     await h.press('?');
     await h.waitFor('Keyboard Shortcuts');
   });
 
-  scenario('navigation:q/Ctrl+C', async (h) => {
+  scenario('navigation:quit', async (h) => {
     const { data } = await setupReal(['coding']);
     // Both documented chords quit: Ctrl+C (app's own hard-quit handler,
     // reachable because the harness renders with exitOnCtrlC: false) and `q`.
@@ -484,51 +462,70 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
     }
   });
 
+  scenario('navigation:escSidebar', async (h) => {
+    const { data } = await setupReal(['coding']);
+    await h.renderApp(data);
+    // Search sub-state (§4.2): Esc clears the active search box and restores focus.
+    await h.press('/');
+    await h.press('c');
+    await h.press('o');
+    expect(h.text()).toContain('/co');
+    h.snapshot(); // drop the search frame so `text()` sees only post-Esc frames
+    await h.press('\x1b');
+    expect(h.text()).not.toContain('/co');
+    // Lifecycle prompt: Esc cancels the create flow back to the profile list.
+    await h.press('n');
+    await h.waitFor('Select template:');
+    h.snapshot(); // drop the prompt frame so `text()` sees only post-Esc frames
+    await h.press('\x1b');
+    expect(h.text()).not.toContain('Select template:');
+  });
+
   // ---------------------------------------------------------------- profile group
 
-  scenario('profile:l', async (h) => {
+  scenario('profile:launch', async (h) => {
     const { data } = await setupReal(['coding']);
     await h.renderApp(data);
     await h.press('l');
     await h.waitFor('Enter to launch');
   });
 
-  scenario('profile:L', async (h) => {
+  scenario('profile:launchDir', async (h) => {
     const { data } = await setupReal(['coding']);
     await h.renderApp(data);
     await h.press('L');
     await h.waitFor('Type a path:');
   });
 
-  scenario('profile:a', async (h) => {
+  scenario('profile:addSkill', async (h) => {
     const { data } = await setupReal(['coding']);
     await h.renderApp(data);
     await h.press('a');
     await h.waitFor('Skills › add local skill');
   });
 
-  scenario('profile:n', async (h) => {
+  scenario('profile:create', async (h) => {
     const { data } = await setupReal(['coding']);
     await h.renderApp(data);
     await h.press('n');
     await h.waitFor('Select template:');
   });
 
-  scenario('profile:c', async (h) => {
+  scenario('profile:copy', async (h) => {
     const { data } = await setupReal(['coding']);
     await h.renderApp(data);
     await h.press('c');
     await h.waitFor('Copy to:');
   });
 
-  scenario('profile:r', async (h) => {
+  scenario('profile:rename', async (h) => {
     const { data } = await setupReal(['coding']);
     await h.renderApp(data);
     await h.press('r');
     await h.waitFor('Rename to:');
   });
 
-  scenario('profile:d', async (h) => {
+  scenario('profile:default', async (h) => {
     const { data } = await setupReal(['coding']);
     await h.renderApp(data);
     await h.press('d');
@@ -537,28 +534,28 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
     expect(text.includes('Set as default') || text.includes('Default cleared')).toBe(true);
   });
 
-  scenario('profile:v', async (h) => {
+  scenario('profile:validate', async (h) => {
     const { data } = await setupReal(['coding']);
     await h.renderApp(data);
     await h.press('v');
     await h.waitFor('Valid');
   });
 
-  scenario('profile:b', async (h) => {
+  scenario('profile:backup', async (h) => {
     const { data } = await setupReal(['coding']);
     await h.renderApp(data);
     await h.press('b');
     await h.waitFor('backed up');
   });
 
-  scenario('profile:s', async (h) => {
+  scenario('profile:saveTemplate', async (h) => {
     const { data } = await setupReal(['coding']);
     await h.renderApp(data);
     await h.press('s');
     await h.waitFor('Template name:');
   });
 
-  scenario('profile:x', async (h) => {
+  scenario('profile:remove', async (h) => {
     const { data } = await setupReal(['coding']);
     await h.renderApp(data);
     await h.press('x');
@@ -566,7 +563,7 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
     await h.press('\x1b'); // cancel — the destructive panel must not run
   });
 
-  scenario('profile:e', async (h) => {
+  scenario('profile:edit', async (h) => {
     setupSpawnSuccess();
     const { data } = await setupReal(['coding']);
     await h.renderApp(data);
@@ -574,7 +571,7 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
     await h.waitFor('watching');
   });
 
-  scenario('profile:D', async (h) => {
+  scenario('profile:editDescription', async (h) => {
     const { data } = await setupReal(['coding']);
     await h.renderApp(data);
     h.snapshot();
@@ -590,14 +587,14 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
     await h.waitFor('Description updated');
   });
 
-  scenario('profile:u', async (h) => {
+  scenario('profile:userMemory', async (h) => {
     const { data } = await setupReal(['coding']);
     await h.renderApp(data);
     await h.press('u');
     await h.waitFor('coding › User Memory');
   });
 
-  scenario('profile:Tab', async (h) => {
+  scenario('profile:focusCategories', async (h) => {
     const { data } = await setupReal(['coding']);
     await h.renderApp(data);
     await h.press('\t');
@@ -606,7 +603,7 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
 
   // ---------------------------------------------------------------- categories group
 
-  scenario('categories:↑/↓', async (h) => {
+  scenario('categories:move', async (h) => {
     const { data } = await setupReal(['coding']);
     await h.renderApp(data);
     await h.press('\t');
@@ -618,7 +615,7 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
     expect(text).not.toContain('▸ User Memory');
   });
 
-  scenario('categories:a', async (h) => {
+  scenario('categories:agents', async (h) => {
     const { data } = await setupReal(['coding'], { agents: ['explore'] });
     await h.renderApp(data);
     await h.press('\t');
@@ -626,7 +623,7 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
     await h.waitFor('coding › Agents');
   });
 
-  scenario('categories:u', async (h) => {
+  scenario('categories:userMemory', async (h) => {
     const { data } = await setupReal(['coding']);
     await h.renderApp(data);
     await h.press('\t');
@@ -634,14 +631,14 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
     await h.waitFor('coding › User Memory');
   });
 
-  scenario('categories:Enter', async (h) => {
+  scenario('categories:openBulk', async (h) => {
     const { data } = await setupReal(['coding']);
     await h.renderApp(data);
     await openBulkSkills(h);
     await h.waitFor('Bulk operations');
   });
 
-  scenario('categories:d', async (h) => {
+  scenario('categories:diff', async (h) => {
     const { data } = await setupReal(['coding', 'study']);
     await h.renderApp(data);
     await h.press('\t');
@@ -649,7 +646,7 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
     await h.waitFor('coding → study');
   });
 
-  scenario('categories:Esc/←', async (h) => {
+  scenario('categories:back', async (h) => {
     const { data } = await setupReal(['coding']);
     // Both documented chords return to the sidebar: `←` and Esc.
     for (const ch of ['\x1b[D', '\x1b']) {
@@ -665,7 +662,7 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
 
   // ---------------------------------------------------------------- resource group
 
-  scenario('resource:↑/↓', async (h) => {
+  scenario('resource:move', async (h) => {
     const { data } = await setupReal(['coding'], { agents: ['explore', 'shell'] });
     await h.renderApp(data);
     await openAgentsList(h);
@@ -677,7 +674,7 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
     expect(text).not.toContain('▸ explore');
   });
 
-  scenario('resource:Enter', async (h) => {
+  scenario('resource:preview', async (h) => {
     const { data } = await setupReal(['coding'], { agents: ['explore'] });
     await h.renderApp(data);
     await openAgentsList(h);
@@ -686,7 +683,7 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
     expect(h.text()).toContain('coding › Agents › explore');
   });
 
-  scenario('resource:/', async (h) => {
+  scenario('resource:search', async (h) => {
     const { data } = await setupReal(['coding']);
     await h.renderApp(data);
     await openUserMemory(h);
@@ -694,7 +691,7 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
     await h.waitFor('Search ›');
   });
 
-  scenario('resource:a', async (h) => {
+  scenario('resource:createAgent', async (h) => {
     const { data } = await setupReal(['coding'], { agents: ['explore'] });
     await h.renderApp(data);
     await openAgentsList(h);
@@ -702,7 +699,7 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
     await h.waitFor('Agent name:');
   });
 
-  scenario('resource:n', async (h) => {
+  scenario('resource:recreateMemory', async (h) => {
     const { appHome } = await setupReal(['coding']);
     // Remove CLAUDE.md so the User Memory row shows the missing state that the
     // [n] recreate binding targets (advertised by the missing-state hint).
@@ -717,7 +714,7 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
     );
   });
 
-  scenario('resource:e', async (h) => {
+  scenario('resource:edit', async (h) => {
     setupSpawnSuccess();
     const { data } = await setupReal(['coding']);
     await h.renderApp(data);
@@ -726,7 +723,7 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
     await h.waitFor('watching');
   });
 
-  scenario('resource:x', async (h) => {
+  scenario('resource:remove', async (h) => {
     const { appHome, data } = await setupReal(['coding']);
     await h.renderApp(data);
     await openUserMemory(h);
@@ -742,7 +739,7 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
     );
   });
 
-  scenario('resource:c', async (h) => {
+  scenario('resource:copy', async (h) => {
     const { appHome } = await setupReal(['coding', 'study']);
     // Clear the target's CLAUDE.md so the copy lands cleanly (a pre-existing
     // target CLAUDE.md rejects with a collision).
@@ -756,7 +753,7 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
     await h.waitFor('Copied to study');
   });
 
-  scenario('resource:d', async (h) => {
+  scenario('resource:diff', async (h) => {
     const { data } = await setupReal(['coding', 'study']);
     await h.renderApp(data);
     await openUserMemory(h);
@@ -764,7 +761,7 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
     await h.waitFor('coding → study');
   });
 
-  scenario('resource:f', async (h) => {
+  scenario('resource:frontmatter', async (h) => {
     const { data } = await setupReal(['coding'], { agents: ['explore'] });
     await h.renderApp(data);
     await openAgentsList(h);
@@ -772,7 +769,7 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
     await h.waitFor('explore › Agent frontmatter');
   });
 
-  scenario('resource:Esc', async (h) => {
+  scenario('resource:esc', async (h) => {
     const { data } = await setupReal(['coding']);
     await h.renderApp(data);
     await openUserMemory(h);
@@ -783,13 +780,13 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
 
   // ---------------------------------------------------------------- discover group
 
-  scenario('discover:/', async (h) => {
+  scenario('discover:search', async (h) => {
     await renderDiscover(h, browseSession().session);
     await h.press('/');
     expect(h.text()).toContain('/ █');
   });
 
-  scenario('discover:Enter', async (h) => {
+  scenario('discover:install', async (h) => {
     const onInstall = vi.fn();
     await renderDiscover(h, browseSession().session, { onInstallSource: onInstall });
     await h.press('\r');
@@ -797,13 +794,13 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
     expect(String(onInstall.mock.calls[0][0])).toContain('vercel-labs/skills');
   });
 
-  scenario('discover:s', async (h) => {
+  scenario('discover:source', async (h) => {
     await renderDiscover(h, browseSession().session);
     await h.press('s');
     expect(h.text()).toContain('Install from source:');
   });
 
-  scenario('discover:b', async (h) => {
+  scenario('discover:browser', async (h) => {
     const onOpenBrowser = vi.fn();
     await renderDiscover(h, browseSession().session, { onOpenBrowser });
     await h.press('b');
@@ -811,7 +808,7 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
     expect(h.text()).toContain('Opened skills.sh');
   });
 
-  scenario('discover:r', async (h) => {
+  scenario('discover:refresh', async (h) => {
     const { session, calls } = browseSession();
     await renderDiscover(h, session);
     const initialCalls = calls.length;
@@ -824,7 +821,7 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
     expect(calls.length).toBeGreaterThan(initialCalls);
   });
 
-  scenario('discover:Esc', async (h) => {
+  scenario('discover:esc', async (h) => {
     const onBack = vi.fn();
     await renderDiscover(h, browseSession().session, { onBack });
     await h.press('\x1b');
@@ -833,7 +830,7 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
 
   // ---------------------------------------------------------------- bulk group
 
-  scenario('bulk:space', async (h) => {
+  scenario('bulk:select', async (h) => {
     const { data } = await setupReal(['coding'], { skills: ['skill-a', 'skill-b'] });
     await h.renderApp(data);
     await openBulkSkills(h);
@@ -841,7 +838,7 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
     await h.waitFor('1 selected');
   });
 
-  scenario('bulk:a', async (h) => {
+  scenario('bulk:selectAll', async (h) => {
     const { data } = await setupReal(['coding'], { skills: ['skill-a', 'skill-b'] });
     await h.renderApp(data);
     await openBulkSkills(h);
@@ -849,7 +846,7 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
     await h.waitFor('2 selected');
   });
 
-  scenario('bulk:x', async (h) => {
+  scenario('bulk:remove', async (h) => {
     const { data } = await setupReal(['coding'], { skills: ['skill-a', 'skill-b'] });
     await h.renderApp(data);
     await openBulkSkills(h);
@@ -859,7 +856,7 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
     await h.waitFor('Removed 2 to the Recovery Bin');
   });
 
-  scenario('bulk:c', async (h) => {
+  scenario('bulk:copy', async (h) => {
     const { data } = await setupReal(['coding', 'study'], { skills: ['skill-a'] });
     await h.renderApp(data);
     await openBulkSkills(h);
@@ -869,7 +866,7 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
     await h.waitFor('Copy to profiles:');
   });
 
-  scenario('bulk:u', async (h) => {
+  scenario('bulk:update', async (h) => {
     const { appHome, data } = await setupReal(['coding'], {
       skills: ['updatable-skill', 'frozen-skill'],
     });
@@ -905,7 +902,7 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
     expect(h.text()).toContain('frozen-skill');
   });
 
-  scenario('bulk:d', async (h) => {
+  scenario('bulk:discover', async (h) => {
     const { data } = await setupReal(['coding']);
     await h.renderApp(data, {
       discoverySessionFactory: () => browseSession().session,
@@ -920,7 +917,7 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
     await h.waitFor('Discover');
   });
 
-  scenario('bulk:Esc', async (h) => {
+  scenario('bulk:esc', async (h) => {
     const { data } = await setupReal(['coding'], { skills: ['skill-a'] });
     await h.renderApp(data);
     await openBulkSkills(h);
@@ -936,7 +933,7 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
 
   // ---------------------------------------------------------------- help group
 
-  scenario('help:l', async (h) => {
+  scenario('help:language', async (h) => {
     const { data } = await setupReal(['coding']);
     await h.renderApp(data);
     await h.press('?');
@@ -945,7 +942,7 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
     await h.waitFor('键盘快捷键');
   });
 
-  scenario('help:Esc/?', async (h) => {
+  scenario('help:close', async (h) => {
     const { data } = await setupReal(['coding']);
     // Both documented chords close the sheet: `?` (toggle) and Esc.
     for (const ch of ['?', '\x1b']) {
@@ -963,11 +960,11 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
 
   it('every documented binding has a consistency scenario and every scenario is documented', () => {
     const documented = new Set(
-      KEYMAP_GROUPS.flatMap((g) => g.bindings.map((b) => `${g.id}:${b.key}`)),
+      KEYMAP_GROUPS.flatMap((g) => g.bindings.map((b) => `${g.id}:${b.id}`)),
     );
     for (const group of KEYMAP_GROUPS) {
       for (const binding of group.bindings) {
-        const id = `${group.id}:${binding.key}`;
+        const id = `${group.id}:${binding.id}`;
         expect(
           SCENARIOS.has(id),
           `help sheet documents ${id} but no consistency scenario covers it`,
@@ -985,7 +982,7 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
   for (const group of KEYMAP_GROUPS) {
     describe(`context: ${group.id}`, () => {
       for (const binding of group.bindings) {
-        const id = `${group.id}:${binding.key}`;
+        const id = `${group.id}:${binding.id}`;
         const sc = SCENARIOS.get(id);
         if (!sc) continue; // covered by the completeness check above
         it(`[${binding.key}] acts as documented`, async () => {
