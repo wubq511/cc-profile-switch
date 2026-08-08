@@ -342,10 +342,10 @@ describe('top-level `e` edit in VS Code (§4.3/§8)', () => {
     expect(flatten(stripAnsi(stdout.output))).toContain('watching');
 
     await fs.writeFile(claudeMdPath, '# coding memory\nupdated line\n', 'utf8');
-    const saveBaseline = stdout.output;
-    await waitForOutputSettled(stdout, saveBaseline);
-
-    const refreshed = stripAnsi(stdout.output);
+    // fs.watch delivery can exceed waitForOutputSettled's 3s deadline on slow
+    // Windows CI runners; poll for the counter like 'watching' above instead.
+    // The badge renders the counter and the updated timestamp in one frame.
+    const refreshed = await waitForOutput(stdout, '(#1)', 10000);
     expect(flatten(refreshed)).toContain('(#1)');
     expect(flatten(refreshed)).toMatch(/updated \d{2}:\d{2}:\d{2}/);
 
