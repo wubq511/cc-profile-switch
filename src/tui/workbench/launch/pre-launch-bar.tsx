@@ -17,6 +17,8 @@ export function PreLaunchBar({
   profileName,
 }: PreLaunchBarProps): React.ReactElement {
   const { t } = useI18n();
+  const severityLabel = (severity: 'error' | 'warning'): string =>
+    t(severity === 'error' ? 'finding.severity.error' : 'finding.severity.warning');
   const hasErrors = launch.validationFindings.some(
     (f: ValidationFinding) => f.severity === 'error',
   );
@@ -44,7 +46,7 @@ export function PreLaunchBar({
         React.createElement(
           Box,
           { key: `err-${i}` },
-          React.createElement(Text, { color: 'red' }, `✗ [${f.severity}] ${f.code}: ${f.message}`),
+          React.createElement(Text, { color: 'red' }, `✗ [${severityLabel(f.severity)}] ${f.code}: ${f.message}`),
         ),
       ),
     // Validation warnings (inline, yellow)
@@ -52,7 +54,7 @@ export function PreLaunchBar({
       React.createElement(
         Box,
         { key: `warn-${i}` },
-        React.createElement(Text, { color: 'yellow' }, `⚠ [${f.severity}] ${f.code}: ${f.message}`),
+        React.createElement(Text, { color: 'yellow' }, `⚠ [${severityLabel(f.severity)}] ${f.code}: ${f.message}`),
       ),
     ),
     // Action hint

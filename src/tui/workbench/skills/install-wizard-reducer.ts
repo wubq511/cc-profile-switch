@@ -1,5 +1,9 @@
 import { getSkillsDirectoryPath } from '../../../core/skills-provenance';
 import { resolveInside } from '../../../platform/path';
+import { translate } from '../i18n';
+import type { I18nParams, LocaleKey } from '../i18n';
+import type { SkillSourceKind } from '../../../schemas/skills-provenance';
+import { sourceKindLabelCore } from '../../../utils/i18n';
 import type { RemoteInstallPreview } from '../../../core/skills-remote-install';
 import type {
   CatalogedLocalSkillSource,
@@ -79,7 +83,7 @@ export type InstallWizardState = {
 
 export type InstallWizardAction =
   | { type: 'START'; profileName: string; profileRootPath?: string }
-  | { type: 'START_REMOTE'; profileName: string; profileRootPath?: string } & InstallSourceRef
+  | ({ type: 'START_REMOTE'; profileName: string; profileRootPath?: string } & InstallSourceRef)
   | { type: 'KIND_SELECT_LOCAL' } // → source-list
   | { type: 'KIND_SELECT_REMOTE' } // → source-remote
   | { type: 'SOURCES_LOADED'; sources: CatalogedLocalSkillSource[] } // populate the step-1 list
@@ -109,6 +113,22 @@ export type InstallWizardAction =
   | { type: 'INSTALL_ERROR'; message: string }
   | { type: 'DISMISS' } // success/error → closed
   | { type: 'CANCEL' }; // esc: walk back one decision
+
+// The wizard's useReducer wrapper supplies `t`; direct reducer calls (tests)
+// omit it and fall back to the English catalog via translate('en', …).
+type WizardTranslator = (key: LocaleKey, params?: I18nParams) => string;
+
+function tx(t: WizardTranslator | undefined, key: LocaleKey, params?: I18nParams): string {
+  return t ? t(key, params) : translate('en', key, params);
+}
+
+// SkillSource.kind values shown in the remote-confirm provenance section are
+// machine protocol tokens — localized so a zh-locale user sees no raw English.
+// The kind→key map lives in core (src/utils/i18n.ts); this facade adapts the
+// wizard's LocaleKey-typed translator to the core string-key translator.
+export function sourceKindLabel(t: WizardTranslator | undefined, kind: SkillSourceKind): string {
+  return sourceKindLabelCore(t ? (key, params) => t(key as LocaleKey, params) : undefined, kind);
+}
 
 export function initialInstallWizardState(): InstallWizardState {
   return {
@@ -142,6 +162,7 @@ export function initialInstallWizardState(): InstallWizardState {
 export function installWizardReducer(
   state: InstallWizardState,
   action: InstallWizardAction,
+  t?: WizardTranslator,
 ): InstallWizardState {
   switch (action.type) {
     case 'START': {
@@ -275,12 +296,20 @@ export function installWizardReducer(
 
     case 'REMOTE_SOURCE_CHAR': {
       if (state.phase !== 'source-remote') return state;
-      return { ...state, remoteSourceInput: state.remoteSourceInput + action.char, remoteSourceError: '' };
+      return {
+        ...state,
+        remoteSourceInput: state.remoteSourceInput + action.char,
+        remoteSourceError: '',
+      };
     }
 
     case 'REMOTE_SOURCE_BACKSPACE': {
       if (state.phase !== 'source-remote') return state;
-      return { ...state, remoteSourceInput: state.remoteSourceInput.slice(0, -1), remoteSourceError: '' };
+      return {
+        ...state,
+        remoteSourceInput: state.remoteSourceInput.slice(0, -1),
+        remoteSourceError: '',
+      };
     }
 
     case 'REMOTE_SOURCE_SUBMIT': {
@@ -382,14 +411,14 @@ export function installWizardReducer(
       if (state.phase !== 'collision') return state;
       const trimmed = state.collisionInput.trim();
       if (trimmed.length === 0) {
-        return { ...state, collisionError: 'Name cannot be empty.' };
+        return { ...state, collisionError: tx(t, 'skill.install.collision.nameEmpty') };
       }
       if (state.kind === 'remote' && state.remotePreview && state.profileRootPath) {
         // The staged tree is unchanged; recompute the preview purely with the new
         // name (no re-acquire). Collision is re-checked against existingNames.
         const newTarget = resolveInside(getSkillsDirectoryPath(state.profileRootPath), trimmed);
         const collides = state.remotePreview.existingNames.includes(trimmed);
-        const previewLines = rebuildRemotePreviewLines(state.remotePreview, newTarget);
+        const previewLines = rebuildRemotePreviewLines(state.remotePreview, newTarget, t);
         const remotePreview: RemoteInstallPreview = {
           ...state.remotePreview,
           name: trimmed,
@@ -402,7 +431,7 @@ export function installWizardReducer(
           name: trimmed,
           phase: collides ? 'collision' : 'confirm',
           collisionResolution: 'rename',
-          collisionError: collides ? 'Name already in use.' : '',
+          collisionError: collides ? tx(t, 'skill.install.collision.nameInUse') : '',
           remotePreview,
         };
       }
@@ -501,11 +530,14 @@ export function installWizardReducer(
 function rebuildRemotePreviewLines(
   preview: RemoteInstallPreview,
   targetPath: string,
+  t?: WizardTranslator,
 ): string[] {
   return [
-    `acquire  ${preview.provenanceSource.url ?? ''}  →  staging`,
-    `stage    ${preview.stagedName}/  (frontmatter name: ${preview.identity.name})`,
-    `create   ${targetPath}/   (snapshot — Profile-owned)`,
-    `record   skills-provenance.json  ← copy · source ${preview.provenanceSource.kind} · sha256 fingerprint`,
+    tx(t, 'skill.preview.acquire', { source: preview.provenanceSource.url ?? '' }),
+    tx(t, 'skill.preview.stage', { staged: preview.stagedName, name: preview.identity.name }),
+    tx(t, 'skill.preview.create', { target: targetPath }),
+    tx(t, 'skill.preview.record.copy', {
+      source: sourceKindLabel(t, preview.provenanceSource.kind),
+    }),
   ];
 }

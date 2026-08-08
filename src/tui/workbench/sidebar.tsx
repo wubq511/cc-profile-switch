@@ -678,7 +678,7 @@ export function Sidebar({
         React.createElement(
           Text,
           { key: i, color: f.severity === 'error' ? 'red' : 'yellow', wrap: 'wrap' },
-          `[${f.severity}] ${f.code}: ${f.message}`,
+          `[${t(f.severity === 'error' ? 'finding.severity.error' : 'finding.severity.warning')}] ${f.code}: ${f.message}`,
         ),
       ),
     ),

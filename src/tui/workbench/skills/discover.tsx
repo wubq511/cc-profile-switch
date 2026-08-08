@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Box, Text, useInput, useStdin } from 'ink';
 
-import { useI18n, type I18nParams } from '../i18n/react';
+import { useI18n, type I18nParams, type Locale } from '../i18n/react';
 import type { LocaleKey } from '../i18n/en';
 import type { AuditView } from '../../../schemas/skills-provenance';
 import {
@@ -50,7 +50,7 @@ export function DiscoverView({
   onInstallSource,
   onOpenBrowser,
 }: DiscoverViewProps): React.ReactElement {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { stdin: inkStdin } = useStdin();
   const canUseInput = !headless && inkStdin.isTTY === true;
 
@@ -284,7 +284,7 @@ export function DiscoverView({
             {query.trim().length > 0 ? t('discover.loading.search') : t('discover.loading.browse')}
           </Text>
         ) : results.length > 0 ? (
-          renderWindow(results, selectedIndex, listHeight, width, t).map((row) => row)
+          renderWindow(results, selectedIndex, listHeight, width, t, locale).map((row) => row)
         ) : anyUnavailable ? (
           <Text color="yellow" wrap="wrap">
             {formatLayerNote(catalog!.layers, 'discover.unavailable', t)}
@@ -310,6 +310,7 @@ function renderWindow(
   listHeight: number,
   width: number,
   t: (key: LocaleKey, params?: I18nParams) => string,
+  locale: Locale,
 ): React.ReactElement[] {
   const windowSize = Math.max(1, listHeight);
   const start = Math.max(0, selectedIndex - Math.floor(windowSize / 2));
@@ -323,7 +324,7 @@ function renderWindow(
       skill.repository,
       audit.label,
       skill.installs !== undefined
-        ? t('discover.installs', { count: formatCount(skill.installs) })
+        ? t('discover.installs', { count: formatCount(skill.installs, locale) })
         : '',
       skill.trending ? t('discover.trending') : '',
       t('discover.fetchedAt', { time: formatTime(skill.fetchedAt) }),
@@ -448,8 +449,8 @@ function renderAudit(audit: AuditView, t: (key: LocaleKey) => string): { label: 
   }
 }
 
-function formatCount(count: number): string {
-  return count.toLocaleString('en-US');
+function formatCount(count: number, locale: Locale): string {
+  return count.toLocaleString(locale === 'zh' ? 'zh-CN' : 'en-US');
 }
 
 function formatTime(iso: string): string {

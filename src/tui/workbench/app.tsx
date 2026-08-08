@@ -38,7 +38,7 @@ import { resolveInside } from '../../platform/path';
 import { CcpsError } from '../../utils/errors';
 import { listMcpServers, type McpServerState } from '../../core/mcp-list';
 import { I18nProvider, useI18n } from './i18n/react';
-import type { Locale } from './i18n/react';
+import type { Locale, LocaleKey } from './i18n/react';
 import { CaptureProvider } from './capture-context';
 import { EditSessionManager, type EditSession } from '../../core/edit-session';
 import {
@@ -267,6 +267,13 @@ function WorkbenchInner({
   editorOverride?: string;
 }): React.ReactElement {
   const { t, locale, switchLocale } = useI18n();
+  // Core services (buildLaunchPlan, validateProfile, preview…) produce user-
+  // visible text with an English default; the workbench hands them its
+  // catalog-backed translator so a zh-locale user sees localized messages.
+  const coreTranslator = useCallback(
+    (key: string, params?: Record<string, string | number>) => t(key as LocaleKey, params),
+    [t],
+  );
   const { exit } = useApp();
   const { stdout } = useStdout();
   const { stdin: inkStdin } = useStdin();
@@ -1473,11 +1480,14 @@ function WorkbenchInner({
 
     try {
       // Build the launch plan (may throw on validation errors)
-      const plan = await buildLaunchPlan({
-        appHomePath,
-        profileName,
-        cwd: launch.dir,
-      });
+      const plan = await buildLaunchPlan(
+        {
+          appHomePath,
+          profileName,
+          cwd: launch.dir,
+        },
+        coreTranslator,
+      );
 
       // Run async side effects before spawning
       await ensureProfileClaudeMdExcludes(resolveInside(plan.claudeHomePath, 'settings.json'));
@@ -1527,7 +1537,7 @@ function WorkbenchInner({
         },
       }));
     }
-  }, [lifecycle, selectedIndex, onLaunch]);
+  }, [lifecycle, selectedIndex, onLaunch, coreTranslator]);
 
   const onLifecycleAction = useCallback((action: LifecycleAction) => {
     setLifecycle((prev) => lifecycleReducer(prev, action));
@@ -1695,7 +1705,10 @@ function WorkbenchInner({
             );
           }
         } else if (kind === 'validate') {
-          const result = await validateProfile({ appHomePath, name: profileName });
+          const result = await validateProfile(
+            { appHomePath, name: profileName },
+            coreTranslator,
+          );
           const findings = result.findings.map((f) => ({
             severity: f.severity,
             code: f.code,
@@ -1750,7 +1763,7 @@ function WorkbenchInner({
         }
       }
     },
-    [workbenchData, t, lifecycle.kind],
+    [workbenchData, t, lifecycle.kind, coreTranslator],
   );
 
   const handleConfirmInput = useCallback(
@@ -1816,7 +1829,10 @@ function WorkbenchInner({
     // Validate the profile to get inline findings
     let validationFindings: ValidationFinding[] = [];
     try {
-      const result = await validateProfile({ appHomePath, name: profileName });
+      const result = await validateProfile(
+        { appHomePath, name: profileName },
+        coreTranslator,
+      );
       validationFindings = result.findings;
     } catch {
       // Non-fatal — user can still try to launch
@@ -1833,7 +1849,7 @@ function WorkbenchInner({
         validationFindings,
       },
     }));
-  }, []);
+  }, [coreTranslator]);
 
   const handleLaunchDirScreen = useCallback(
     async (profileName: string) => {
@@ -1856,11 +1872,14 @@ function WorkbenchInner({
     async (profileName: string) => {
       const appHomePath = getAppHomePaths().appHomePath;
       try {
-        const plan = await buildLaunchPlan({
-          appHomePath,
-          profileName,
-          cwd: lifecycle.launch.dir,
-        });
+        const plan = await buildLaunchPlan(
+          {
+            appHomePath,
+            profileName,
+            cwd: lifecycle.launch.dir,
+          },
+          coreTranslator,
+        );
         setLifecycle((prev) => ({
           ...prev,
           launch: {
@@ -1882,7 +1901,7 @@ function WorkbenchInner({
         }));
       }
     },
-    [lifecycle.launch.dir],
+    [lifecycle.launch.dir, coreTranslator],
   );
 
   // Skill install wizard (issue #64, spec §7.2). The wizard overlay drives a
@@ -1957,12 +1976,17 @@ function WorkbenchInner({
         const appHomePath = getAppHomePaths().appHomePath;
         const { profilesPath } = getAppHomePaths(appHomePath);
         const profileRootPath = path.join(profilesPath, wizardProfileName!);
-        return previewInstall({
-          profileRootPath,
-          sourcePath: input.sourcePath,
-          mode: input.mode,
-          name: input.name,
-        });
+        return previewInstall(
+          {
+            profileRootPath,
+            sourcePath: input.sourcePath,
+            mode: input.mode,
+            name: input.name,
+          },
+          // Core preview/health strings stay English by default; the wizard's
+          // catalog-backed translator localizes them for the confirm step.
+          coreTranslator,
+        );
       },
       onInstall: async (input: {
         sourcePath: string;
@@ -1987,15 +2011,18 @@ function WorkbenchInner({
         const appHomePath = getAppHomePaths().appHomePath;
         const { profilesPath } = getAppHomePaths(appHomePath);
         const profileRootPath = path.join(profilesPath, wizardProfileName!);
-        return acquireAndPreviewRemoteInstall({
-          appHomePath,
-          profileName: wizardProfileName!,
-          profileRootPath,
-          rawSource: input.rawSource,
-          skill: input.skill,
-          // name omitted: derived from the staged Skill's directory name
-          // (its frontmatter name) — the remote wizard has no name-input step.
-        });
+        return acquireAndPreviewRemoteInstall(
+          {
+            appHomePath,
+            profileName: wizardProfileName!,
+            profileRootPath,
+            rawSource: input.rawSource,
+            skill: input.skill,
+            // name omitted: derived from the staged Skill's directory name
+            // (its frontmatter name) — the remote wizard has no name-input step.
+          },
+          coreTranslator,
+        );
       },
       onInstallRemote: async (input: {
         stagingRoot: string;
@@ -2058,7 +2085,7 @@ function WorkbenchInner({
   const resourceHintLine =
     resourceNav.phase === 'list'
       ? resourceNav.category === 'agents'
-        ? `${t('resource.list.hint')}  [a] create  [f] frontmatter`
+        ? t('resource.list.hint.agents')
         : resourceNav.category === 'user-memory' &&
             selectedProfile &&
             !selectedProfile.resourceDetails.userMemory.exists
