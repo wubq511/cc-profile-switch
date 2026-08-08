@@ -383,7 +383,10 @@ describe('copied-remote update', () => {
     expect(await fs.readFile(oldPayload, 'utf8')).toContain('# find-skills');
     // No transaction residue.
     expect(await fs.readdir(skillsDirOf(profileDir))).toEqual(['find-skills']);
-  });
+    // Git-remote re-acquisition does real fs work (clone + apply + hash + Bin);
+    // on a loaded Windows CI runner it can exceed Vitest's 5s default (observed
+    // 6.1s), so grant the explicit 15s headroom like the workbench keymap test.
+  }, 15000);
 
   it('undo of a successful update is the standard Bin restore; delete-and-restore preserves redo', async () => {
     const appHome = await makeAppHome();

@@ -15,7 +15,7 @@ import { createAppConfig, getAppHomePaths } from '../src/core/app-config';
 import { createProfileFromTemplate } from '../src/core/profile-template';
 import { getProfileTemplatePaths } from '../src/core/profile-template';
 import type { WorkbenchProfile, WorkbenchData } from '../src/tui/workbench/profile-data';
-import { flatten, setupSpawnSuccess, stripAnsi } from './render-helpers';
+import { flatten, noPluginsReader, setupSpawnSuccess, stripAnsi } from './render-helpers';
 
 vi.mock('node:child_process', () => ({
   spawn: vi.fn(),
@@ -278,7 +278,12 @@ describe('top-level `e` edit in VS Code (§4.3/§8)', () => {
     resetWelcomeSessionForTests();
 
     const { instance, stdout, stdin } = await renderInteractive(
-      React.createElement(WorkbenchApp, { data, initialLocale: 'en', skipWelcome: true }),
+      React.createElement(WorkbenchApp, {
+        data,
+        initialLocale: 'en',
+        skipWelcome: true,
+        pluginInventoryReader: noPluginsReader,
+      }),
     );
 
     const baseline = stdout.output;
@@ -305,7 +310,12 @@ describe('top-level `e` edit in VS Code (§4.3/§8)', () => {
     resetWelcomeSessionForTests();
 
     const { instance, stdout, stdin } = await renderInteractive(
-      React.createElement(WorkbenchApp, { data, initialLocale: 'en', skipWelcome: true }),
+      React.createElement(WorkbenchApp, {
+        data,
+        initialLocale: 'en',
+        skipWelcome: true,
+        pluginInventoryReader: noPluginsReader,
+      }),
     );
 
     // Tab focuses the category grid; the sidebar action keys are captured, but
@@ -332,7 +342,12 @@ describe('top-level `e` edit in VS Code (§4.3/§8)', () => {
     resetWelcomeSessionForTests();
 
     const { instance, stdout, stdin } = await renderInteractive(
-      React.createElement(WorkbenchApp, { data, initialLocale: 'en', skipWelcome: true }),
+      React.createElement(WorkbenchApp, {
+        data,
+        initialLocale: 'en',
+        skipWelcome: true,
+        pluginInventoryReader: noPluginsReader,
+      }),
     );
 
     const baseline = stdout.output;
@@ -360,7 +375,12 @@ describe('top-level `e` edit in VS Code (§4.3/§8)', () => {
     resetWelcomeSessionForTests();
 
     const { instance, stdout, stdin } = await renderInteractive(
-      React.createElement(WorkbenchApp, { data, initialLocale: 'en', skipWelcome: true }),
+      React.createElement(WorkbenchApp, {
+        data,
+        initialLocale: 'en',
+        skipWelcome: true,
+        pluginInventoryReader: noPluginsReader,
+      }),
     );
 
     const baseline = stdout.output;
@@ -385,7 +405,12 @@ describe('top-level `e` edit in VS Code (§4.3/§8)', () => {
     resetWelcomeSessionForTests();
 
     const { instance, stdout, stdin } = await renderInteractive(
-      React.createElement(WorkbenchApp, { data, initialLocale: 'en', skipWelcome: true }),
+      React.createElement(WorkbenchApp, {
+        data,
+        initialLocale: 'en',
+        skipWelcome: true,
+        pluginInventoryReader: noPluginsReader,
+      }),
     );
 
     try {
@@ -422,7 +447,12 @@ describe('top-level `e` edit in VS Code (§4.3/§8)', () => {
     resetWelcomeSessionForTests();
 
     const { instance, stdout, stdin } = await renderInteractive(
-      React.createElement(WorkbenchApp, { data, initialLocale: 'zh', skipWelcome: true }),
+      React.createElement(WorkbenchApp, {
+        data,
+        initialLocale: 'zh',
+        skipWelcome: true,
+        pluginInventoryReader: noPluginsReader,
+      }),
     );
 
     const baseline = stdout.output;
