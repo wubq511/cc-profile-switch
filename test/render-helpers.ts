@@ -30,6 +30,13 @@ export class FakeTtyStdout extends Writable {
   public get output(): string {
     return Buffer.concat(this.chunks).toString('utf8');
   }
+
+  /** Return and clear the accumulated writes so a later frame can be asserted alone. */
+  public snapshot(): string {
+    const out = this.output;
+    this.chunks.length = 0;
+    return out;
+  }
 }
 
 function dummyStdin(): Readable {

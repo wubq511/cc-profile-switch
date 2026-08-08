@@ -16,7 +16,10 @@ import type { LocaleKey } from './i18n/en';
  *
  * `KEYMAP_GROUPS` is exported so the keymap/handler consistency test can send
  * every documented keypress in its documented context and assert the
- * documented effect; the sheet itself only renders this data.
+ * documented effect; the sheet itself only renders this data. Each binding
+ * carries a stable `id` — the scenario identity the test keys on
+ * (`${group.id}:${binding.id}`) — decoupled from the display `key`, so a
+ * cosmetic change to the chip text never renames or breaks test scenarios.
  */
 export type KeymapContextId =
   | 'navigation'
@@ -28,6 +31,8 @@ export type KeymapContextId =
   | 'help';
 
 export type KeymapBinding = {
+  /** Stable action id; the consistency test's scenario identity within the group. */
+  id: string;
   /** Display form of the key, e.g. `↑/↓`, `q/Ctrl+C`, `Esc/?`. */
   key: string;
   labelKey: LocaleKey;
@@ -41,19 +46,21 @@ export type KeymapGroup = {
 
 export const KEYMAP_GROUPS: readonly KeymapGroup[] = [
   {
-    // Base/sidebar focus: Esc has no effect here (it closes overlays, which
-    // own their own Esc bindings below), so it is not documented as a
-    // navigation key — issue #92 keeps the sheet truthful about what each key
-    // does in each context.
+    // Sidebar context: at plain profile-list focus Esc is a no-op (overlays
+    // own their Esc bindings in their own groups below), but within sidebar
+    // sub-states it cancels lifecycle prompts, clears the active search box
+    // (§4.2), and dismisses the success/error bar — documented once here as
+    // the sidebar-context Esc behavior (issue #92).
     id: 'navigation',
     titleKey: 'keymap.nav',
     bindings: [
-      { key: '↑/↓', labelKey: 'keymap.up' },
-      { key: '←/→', labelKey: 'keymap.tree' },
-      { key: 'Enter', labelKey: 'keymap.enter' },
-      { key: '/', labelKey: 'keymap.search' },
-      { key: '?', labelKey: 'keymap.help' },
-      { key: 'q/Ctrl+C', labelKey: 'keymap.quit' },
+      { id: 'move', key: '↑/↓', labelKey: 'keymap.up' },
+      { id: 'tree', key: '←/→', labelKey: 'keymap.tree' },
+      { id: 'enter', key: 'Enter', labelKey: 'keymap.enter' },
+      { id: 'search', key: '/', labelKey: 'keymap.search' },
+      { id: 'help', key: '?', labelKey: 'keymap.help' },
+      { id: 'quit', key: 'q/Ctrl+C', labelKey: 'keymap.quit' },
+      { id: 'escSidebar', key: 'Esc', labelKey: 'keymap.escSidebar' },
     ],
   },
   {
@@ -64,36 +71,36 @@ export const KEYMAP_GROUPS: readonly KeymapGroup[] = [
     id: 'profile',
     titleKey: 'keymap.actions',
     bindings: [
-      { key: 'l', labelKey: 'keymap.launch' },
-      { key: 'L', labelKey: 'lifecycle.launchDir' },
-      { key: 'a', labelKey: 'skill.add' },
-      { key: 'n', labelKey: 'lifecycle.create' },
-      { key: 'c', labelKey: 'lifecycle.copy' },
-      { key: 'r', labelKey: 'lifecycle.rename' },
-      { key: 'd', labelKey: 'lifecycle.default' },
-      { key: 'v', labelKey: 'lifecycle.validate' },
-      { key: 'b', labelKey: 'lifecycle.backup' },
-      { key: 's', labelKey: 'lifecycle.saveTemplate' },
-      { key: 'x', labelKey: 'lifecycle.remove' },
-      { key: 'e', labelKey: 'keymap.edit' },
-      { key: 'D', labelKey: 'lifecycle.editDescription' },
-      { key: 'u', labelKey: 'main.category.userMemory' },
-      { key: 'Tab', labelKey: 'main.focusHint' },
+      { id: 'launch', key: 'l', labelKey: 'keymap.launch' },
+      { id: 'launchDir', key: 'L', labelKey: 'lifecycle.launchDir' },
+      { id: 'addSkill', key: 'a', labelKey: 'skill.add' },
+      { id: 'create', key: 'n', labelKey: 'lifecycle.create' },
+      { id: 'copy', key: 'c', labelKey: 'lifecycle.copy' },
+      { id: 'rename', key: 'r', labelKey: 'lifecycle.rename' },
+      { id: 'default', key: 'd', labelKey: 'lifecycle.default' },
+      { id: 'validate', key: 'v', labelKey: 'lifecycle.validate' },
+      { id: 'backup', key: 'b', labelKey: 'lifecycle.backup' },
+      { id: 'saveTemplate', key: 's', labelKey: 'lifecycle.saveTemplate' },
+      { id: 'remove', key: 'x', labelKey: 'lifecycle.remove' },
+      { id: 'edit', key: 'e', labelKey: 'keymap.edit' },
+      { id: 'editDescription', key: 'D', labelKey: 'lifecycle.editDescription' },
+      { id: 'userMemory', key: 'u', labelKey: 'main.category.userMemory' },
+      { id: 'focusCategories', key: 'Tab', labelKey: 'main.focusHint' },
     ],
   },
   {
     // Main-pane category grid focus: `a` drills into Agents (sidebar-focus
     // Add Skill is captured by the Sidebar), `u` drills User Memory, Enter
-    // opens bulk ops for the focused category.
+    // opens the bulk-ops surface for the focused category (spec §11.1).
     id: 'categories',
     titleKey: 'keymap.categories',
     bindings: [
-      { key: '↑/↓', labelKey: 'keymap.catNav' },
-      { key: 'a', labelKey: 'main.category.agents' },
-      { key: 'u', labelKey: 'main.category.userMemory' },
-      { key: 'Enter', labelKey: 'keymap.enter' },
-      { key: 'd', labelKey: 'resource.diff.title' },
-      { key: 'Esc/←', labelKey: 'keymap.backToSidebar' },
+      { id: 'move', key: '↑/↓', labelKey: 'keymap.catNav' },
+      { id: 'agents', key: 'a', labelKey: 'main.category.agents' },
+      { id: 'userMemory', key: 'u', labelKey: 'main.category.userMemory' },
+      { id: 'openBulk', key: 'Enter', labelKey: 'keymap.openBulkOps' },
+      { id: 'diff', key: 'd', labelKey: 'resource.diff.title' },
+      { id: 'back', key: 'Esc/←', labelKey: 'keymap.backToSidebar' },
     ],
   },
   {
@@ -103,17 +110,17 @@ export const KEYMAP_GROUPS: readonly KeymapGroup[] = [
     id: 'resource',
     titleKey: 'keymap.resources',
     bindings: [
-      { key: '↑/↓', labelKey: 'keymap.up' },
-      { key: 'Enter', labelKey: 'keymap.enter' },
-      { key: '/', labelKey: 'keymap.searchResource' },
-      { key: 'e', labelKey: 'resource.edit' },
-      { key: 'a', labelKey: 'resource.agents.create' },
-      { key: 'n', labelKey: 'resource.userMemory.recreate' },
-      { key: 'x', labelKey: 'resource.remove' },
-      { key: 'c', labelKey: 'resource.copy' },
-      { key: 'd', labelKey: 'resource.diff.title' },
-      { key: 'f', labelKey: 'resource.agent.frontmatter.edit' },
-      { key: 'Esc', labelKey: 'keymap.esc' },
+      { id: 'move', key: '↑/↓', labelKey: 'keymap.up' },
+      { id: 'preview', key: 'Enter', labelKey: 'keymap.enter' },
+      { id: 'search', key: '/', labelKey: 'keymap.searchResource' },
+      { id: 'edit', key: 'e', labelKey: 'resource.edit' },
+      { id: 'createAgent', key: 'a', labelKey: 'resource.agents.create' },
+      { id: 'recreateMemory', key: 'n', labelKey: 'resource.userMemory.recreate' },
+      { id: 'remove', key: 'x', labelKey: 'resource.remove' },
+      { id: 'copy', key: 'c', labelKey: 'resource.copy' },
+      { id: 'diff', key: 'd', labelKey: 'resource.diff.title' },
+      { id: 'frontmatter', key: 'f', labelKey: 'resource.agent.frontmatter.edit' },
+      { id: 'esc', key: 'Esc', labelKey: 'keymap.esc' },
     ],
   },
   {
@@ -121,12 +128,12 @@ export const KEYMAP_GROUPS: readonly KeymapGroup[] = [
     id: 'discover',
     titleKey: 'keymap.discover',
     bindings: [
-      { key: '/', labelKey: 'keymap.discover.search' },
-      { key: 'Enter', labelKey: 'keymap.discover.install' },
-      { key: 's', labelKey: 'keymap.discover.source' },
-      { key: 'b', labelKey: 'keymap.discover.browser' },
-      { key: 'r', labelKey: 'keymap.discover.refresh' },
-      { key: 'Esc', labelKey: 'keymap.esc' },
+      { id: 'search', key: '/', labelKey: 'keymap.discover.search' },
+      { id: 'install', key: 'Enter', labelKey: 'keymap.discover.install' },
+      { id: 'source', key: 's', labelKey: 'keymap.discover.source' },
+      { id: 'browser', key: 'b', labelKey: 'keymap.discover.browser' },
+      { id: 'refresh', key: 'r', labelKey: 'keymap.discover.refresh' },
+      { id: 'esc', key: 'Esc', labelKey: 'keymap.esc' },
     ],
   },
   {
@@ -134,13 +141,13 @@ export const KEYMAP_GROUPS: readonly KeymapGroup[] = [
     id: 'bulk',
     titleKey: 'keymap.bulk',
     bindings: [
-      { key: 'space', labelKey: 'keymap.bulk.select' },
-      { key: 'a', labelKey: 'keymap.bulk.selectAll' },
-      { key: 'x', labelKey: 'keymap.bulk.remove' },
-      { key: 'c', labelKey: 'keymap.bulk.copy' },
-      { key: 'u', labelKey: 'keymap.bulk.update' },
-      { key: 'd', labelKey: 'keymap.bulk.discover' },
-      { key: 'Esc', labelKey: 'keymap.esc' },
+      { id: 'select', key: 'space', labelKey: 'keymap.bulk.select' },
+      { id: 'selectAll', key: 'a', labelKey: 'keymap.bulk.selectAll' },
+      { id: 'remove', key: 'x', labelKey: 'keymap.bulk.remove' },
+      { id: 'copy', key: 'c', labelKey: 'keymap.bulk.copy' },
+      { id: 'update', key: 'u', labelKey: 'keymap.bulk.update' },
+      { id: 'discover', key: 'd', labelKey: 'keymap.bulk.discover' },
+      { id: 'esc', key: 'Esc', labelKey: 'keymap.esc' },
     ],
   },
   {
@@ -150,8 +157,8 @@ export const KEYMAP_GROUPS: readonly KeymapGroup[] = [
     id: 'help',
     titleKey: 'keymap.helpSheet',
     bindings: [
-      { key: 'l', labelKey: 'keymap.language' },
-      { key: 'Esc/?', labelKey: 'keymap.close' },
+      { id: 'language', key: 'l', labelKey: 'keymap.language' },
+      { id: 'close', key: 'Esc/?', labelKey: 'keymap.close' },
     ],
   },
 ];
@@ -184,7 +191,7 @@ export function KeymapOverlay({ visible }: KeymapOverlayProps): React.ReactEleme
       ...bindings.map((b) =>
         React.createElement(
           Box,
-          { key: b.key, marginRight: 2 },
+          { key: b.id, marginRight: 2 },
           React.createElement(Text, { color: 'cyan' }, `[${b.key}]`),
           React.createElement(Text, { dimColor: true }, ` ${t(b.labelKey)}`),
         ),
