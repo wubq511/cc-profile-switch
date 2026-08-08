@@ -10,6 +10,7 @@ import {
 } from '../platform/path';
 import { profileConfigSchema, profileTemplateSchema, type ProfileConfig } from '../schemas/profile';
 import { CcpsError } from '../utils/errors';
+import { isNodeError, isRecord } from '../utils/type-guards';
 import { type Clock, writeJsonFile } from './app-config';
 
 export type ProfileTemplateName = 'coding' | 'study' | 'work' | 'research' | 'general' | 'blank';
@@ -202,6 +203,26 @@ export async function createProfileFromTemplate(
   await ensureCcpsProfileRule(paths.ccpsProfileRulePath);
 
   return { config, paths };
+}
+
+/**
+ * Ensure the Auto Memory directory and its MEMORY.md entrypoint exist.
+ * The entrypoint is written only when missing — session-derived content is
+ * never overwritten (used by create-from-custom-template, where Auto Memory
+ * was excluded from the template; spec §11.3).
+ */
+export async function ensureAutoMemoryEntrypoint(
+  paths: ProfileTemplatePaths,
+  profileName: string,
+): Promise<void> {
+  await fs.ensureDir(paths.autoMemoryPath);
+  if (await fs.pathExists(paths.autoMemoryEntrypointPath)) {
+    return;
+  }
+  await fs.writeFile(paths.autoMemoryEntrypointPath, autoMemoryEntrypoint(profileName), {
+    encoding: 'utf8',
+    flag: 'wx',
+  });
 }
 
 export async function ensureCcpsProfileRule(rulePath: string): Promise<boolean> {
@@ -443,12 +464,4 @@ function autoMemoryEntrypoint(profileName: string): string {
 This file is the entrypoint for Claude Code auto memory for the "${profileName}" ccps profile.
 Claude Code may update this file and create topic files in this directory during sessions.
 `;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error;
 }

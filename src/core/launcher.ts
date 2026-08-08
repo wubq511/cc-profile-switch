@@ -1,6 +1,7 @@
 import fs from 'fs-extra';
 
 import { loadAppConfig, saveAppConfig, type Clock } from './app-config';
+import { recordRecentProjectDir } from './app-state';
 import { resolveApiSettings, type ApiSettingsSource } from './api-settings';
 import { extractAnthropicApiEnv, getClaudeSettingsPath } from './claude-settings';
 import { resolveLaunchProfile } from './profile-management';
@@ -13,6 +14,8 @@ import { spawnProcess as defaultSpawnProcess, type SpawnProcess } from '../platf
 import { resolveFilesystemPath, resolveInside } from '../platform/path';
 import { type ProfileLaunchConfig } from '../schemas/profile';
 import { CcpsError } from '../utils/errors';
+import { isNodeError, isRecord } from '../utils/type-guards';
+import { coreTx, type CoreTranslator } from '../utils/i18n';
 import {
   isLaunchBlocking,
   validateProfile,
@@ -70,17 +73,23 @@ export type LaunchPlan = {
   validationFindings: ValidationFinding[];
 };
 
-export async function buildLaunchPlan(options: LaunchPlanOptions): Promise<LaunchPlan> {
+export async function buildLaunchPlan(
+  options: LaunchPlanOptions,
+  t?: CoreTranslator,
+): Promise<LaunchPlan> {
   await loadAppConfig(options.appHomePath);
   const profileName = await resolveLaunchProfile({
     appHomePath: options.appHomePath,
     requestedProfile: options.profileName,
   });
 
-  const validation = await validateProfile({
-    appHomePath: options.appHomePath,
-    name: profileName,
-  });
+  const validation = await validateProfile(
+    {
+      appHomePath: options.appHomePath,
+      name: profileName,
+    },
+    t,
+  );
 
   if (isLaunchBlocking(validation)) {
     throw new CcpsError(
@@ -155,40 +164,78 @@ export async function buildLaunchPlan(options: LaunchPlanOptions): Promise<Launc
   };
 }
 
-export function formatLaunchDryRun(plan: LaunchPlan): string {
+export function formatLaunchDryRun(plan: LaunchPlan, t?: CoreTranslator): string {
+  const statusLabel = coreTx(
+    t,
+    `launch.dryrun.status.${plan.validationStatus}`,
+    plan.validationStatus,
+  );
+  const mcpModeLabel = coreTx(t, `launch.dryrun.mcpModeValue.${plan.mcpMode}`, plan.mcpMode);
+
   const lines = [
-    `Launch dry-run for profile "${plan.profileName}"`,
-    `Profile path: ${plan.profileRootPath}`,
-    `Claude home: ${plan.claudeHomePath}`,
-    `Cwd: ${plan.cwd}`,
-    `MCP mode: native user scope (${plan.userMcpConfigPath})`,
-    `Legacy MCP mode: ${plan.mcpMode}`,
-    `Legacy MCP config: ${plan.legacyMcpConfigActive ? `active (${plan.legacyMcpConfigPath})` : 'inactive'}`,
-    'Plugin dirs:',
-    ...formatList(plan.pluginDirs),
-    'CLAUDE.md excludes:',
-    ...formatList(plan.claudeMdExcludes),
-    `Command: ${plan.command}`,
-    'Args:',
-    ...formatList(plan.args),
-    'Env changes:',
+    coreTx(t, 'launch.dryrun.heading', 'Launch dry-run for profile "{name}"', {
+      name: plan.profileName,
+    }),
+    coreTx(t, 'launch.dryrun.profilePath', 'Profile path: {path}', {
+      path: plan.profileRootPath,
+    }),
+    coreTx(t, 'launch.dryrun.claudeHome', 'Claude home: {path}', {
+      path: plan.claudeHomePath,
+    }),
+    coreTx(t, 'launch.dryrun.cwd', 'Cwd: {cwd}', { cwd: plan.cwd }),
+    coreTx(t, 'launch.dryrun.mcpMode', 'MCP mode: native user scope ({path})', {
+      path: plan.userMcpConfigPath,
+    }),
+    coreTx(t, 'launch.dryrun.legacyMcpMode', 'Legacy MCP mode: {mode}', {
+      mode: mcpModeLabel,
+    }),
+    coreTx(
+      t,
+      plan.legacyMcpConfigActive ? 'launch.dryrun.legacyMcpActive' : 'launch.dryrun.legacyMcpInactive',
+      plan.legacyMcpConfigActive
+        ? `Legacy MCP config: active (${plan.legacyMcpConfigPath})`
+        : 'Legacy MCP config: inactive',
+      plan.legacyMcpConfigActive ? { path: plan.legacyMcpConfigPath } : undefined,
+    ),
+    coreTx(t, 'launch.dryrun.pluginDirs', 'Plugin dirs:'),
+    ...formatList(plan.pluginDirs, t),
+    coreTx(t, 'launch.dryrun.claudeMdExcludes', 'CLAUDE.md excludes:'),
+    ...formatList(plan.claudeMdExcludes, t),
+    coreTx(t, 'launch.dryrun.command', 'Command: {command}', { command: plan.command }),
+    coreTx(t, 'launch.dryrun.args', 'Args:'),
+    ...formatList(plan.args, t),
+    coreTx(t, 'launch.dryrun.envChanges', 'Env changes:'),
     `  CLAUDE_CONFIG_DIR=${plan.envChanges.CLAUDE_CONFIG_DIR}`,
-    'Memory:',
-    `  user: ${plan.memoryConfig.userMemoryPath}`,
-    `  auto: ${plan.memoryConfig.autoMemoryDirectory}`,
-    `  auto entrypoint: ${plan.memoryConfig.autoMemoryEntrypointPath}`,
-    'API config:',
-    `  common: ${formatApiSource(plan.apiConfig.common)}`,
-    `  profile: ${formatApiSource(plan.apiConfig.profile)}`,
-    '  env keys:',
-    ...formatList(plan.apiConfig.keys),
-    'Real Claude settings env:',
-    ...formatList(sortedKeys(plan.realClaudeEnv)),
-    `Validation: ${plan.validationStatus}`,
-    'Warnings:',
-    ...formatWarnings(plan.warnings),
-    'Project config: preserved because Claude starts in the launch cwd.',
-    'Dry run: Claude Code was not started.',
+    coreTx(t, 'launch.dryrun.memory', 'Memory:'),
+    coreTx(t, 'launch.dryrun.memoryUser', '  user: {path}', {
+      path: plan.memoryConfig.userMemoryPath,
+    }),
+    coreTx(t, 'launch.dryrun.memoryAuto', '  auto: {path}', {
+      path: plan.memoryConfig.autoMemoryDirectory,
+    }),
+    coreTx(t, 'launch.dryrun.memoryEntrypoint', '  auto entrypoint: {path}', {
+      path: plan.memoryConfig.autoMemoryEntrypointPath,
+    }),
+    coreTx(t, 'launch.dryrun.apiConfig', 'API config:'),
+    coreTx(t, 'launch.dryrun.apiCommon', '  common: {source}', {
+      source: formatApiSource(plan.apiConfig.common, t),
+    }),
+    coreTx(t, 'launch.dryrun.apiProfile', '  profile: {source}', {
+      source: formatApiSource(plan.apiConfig.profile, t),
+    }),
+    coreTx(t, 'launch.dryrun.apiEnvKeys', '  env keys:'),
+    ...formatList(plan.apiConfig.keys, t),
+    coreTx(t, 'launch.dryrun.realEnv', 'Real Claude settings env:'),
+    ...formatList(sortedKeys(plan.realClaudeEnv), t),
+    coreTx(t, 'launch.dryrun.validation', 'Validation: {status}', { status: statusLabel }),
+    coreTx(t, 'launch.dryrun.warnings', 'Warnings:'),
+    ...formatWarnings(plan.warnings, t),
+    coreTx(
+      t,
+      'launch.dryrun.projectConfig',
+      'Project config: preserved because Claude starts in the launch cwd.',
+    ),
+    coreTx(t, 'launch.dryrun.notStarted', 'Dry run: Claude Code was not started.'),
     '',
   ];
 
@@ -230,20 +277,27 @@ export async function launchProfile(options: LaunchProfileOptions): Promise<Laun
     });
   }
 
-  const config = await loadAppConfig(options.appHomePath);
-  await saveAppConfig(
-    options.appHomePath,
-    {
-      ...config,
-      lastUsedProfile: plan.profileName,
-    },
-    { clock: options.clock },
-  );
-
   if (result.exitCode !== null && result.exitCode !== 0) {
     throw new CcpsError('CLAUDE_EXITED_WITH_ERROR', 'Claude Code exited with a non-zero status.', {
       guidance: `Claude Code exited with status ${result.exitCode}. Review the Claude Code output above.`,
     });
+  }
+
+  // Recents and last-used profile record a successful real launch only
+  // (exit 0, spec §13.3): non-zero exits throw above, and signal exits (null)
+  // record nothing — mirroring the Workbench launch path.
+  if (result.exitCode === 0) {
+    const config = await loadAppConfig(options.appHomePath);
+    await saveAppConfig(
+      options.appHomePath,
+      {
+        ...config,
+        lastUsedProfile: plan.profileName,
+      },
+      { clock: options.clock },
+    );
+
+    await recordRecentProjectDir(options.appHomePath, plan.cwd, { clock: options.clock });
   }
 
   return { plan, exitCode: result.exitCode };
@@ -309,28 +363,42 @@ async function resolveLaunchCwd(cwd?: string): Promise<string> {
   return resolvedCwd;
 }
 
-function formatList(values: string[]): string[] {
+function formatList(values: string[], t?: CoreTranslator): string[] {
   if (values.length === 0) {
-    return ['  (none)'];
+    return [`  ${coreTx(t, 'common.none', '(none)')}`];
   }
 
   return values.map((value) => `  - ${value}`);
 }
 
-function formatWarnings(warnings: ValidationFinding[]): string[] {
+function formatWarnings(warnings: ValidationFinding[], t?: CoreTranslator): string[] {
   if (warnings.length === 0) {
-    return ['  (none)'];
+    return [`  ${coreTx(t, 'common.none', '(none)')}`];
   }
 
   return warnings.map((warning) => {
     const pathSuffix = warning.path ? ` (${warning.path})` : '';
-    return `  [${warning.severity}] ${warning.code}: ${warning.message}${pathSuffix}`;
+    const severity = coreTx(
+      t,
+      warning.severity === 'error' ? 'finding.severity.error' : 'finding.severity.warning',
+      warning.severity,
+    );
+    return `  [${severity}] ${warning.code}: ${warning.message}${pathSuffix}`;
   });
 }
 
-function formatApiSource(source: ApiSettingsSource): string {
-  const status = source.present ? 'present' : 'missing';
-  const keySummary = source.keys.length === 0 ? 'no env keys' : `${source.keys.length} env key(s)`;
+function formatApiSource(source: ApiSettingsSource, t?: CoreTranslator): string {
+  const status = coreTx(
+    t,
+    source.present ? 'launch.dryrun.apiPresent' : 'launch.dryrun.apiMissing',
+    source.present ? 'present' : 'missing',
+  );
+  const keySummary =
+    source.keys.length === 0
+      ? coreTx(t, 'launch.dryrun.apiNoKeys', 'no env keys')
+      : coreTx(t, 'launch.dryrun.apiKeyCount', '{count} env key(s)', {
+          count: source.keys.length,
+        });
 
   return `${status} (${keySummary})`;
 }
@@ -339,14 +407,6 @@ function invalidLaunchCwd(cwd: string, message: string): CcpsError {
   return new CcpsError('INVALID_LAUNCH_CWD', message, {
     guidance: `Choose an existing project directory for --cwd: ${cwd}`,
   });
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function sortedKeys(value: Record<string, string>): string[] {

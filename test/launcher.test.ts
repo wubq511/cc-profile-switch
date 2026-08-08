@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { createAppConfig, getAppHomePaths } from '../src/core/app-config';
+import { loadAppState } from '../src/core/app-state';
 import {
   createProfileFromTemplate,
   getProfileTemplatePaths,
@@ -696,5 +697,95 @@ describe('launcher', () => {
     const afterLaunch = await fs.readJson(paths.settingsPath);
     expect(afterLaunch).toHaveProperty('claudeMdExcludes');
     expect(Array.isArray(afterLaunch.claudeMdExcludes)).toBe(true);
+  });
+
+  it('records cwd in state.json after a successful real launch', async () => {
+    const { appHome } = await makeProfile();
+    const projectCwd = await makeTempRoot('ccps-project-');
+
+    await launchProfile({
+      appHomePath: appHome,
+      profileName: 'coding',
+      cwd: projectCwd,
+      spawnProcess: async () => ({ exitCode: 0 }),
+      clock: () => new Date('2026-05-20T11:30:00Z'),
+    });
+
+    const state = await loadAppState(appHome);
+    expect(state.recentProjectDirs).toHaveLength(1);
+    expect(state.recentProjectDirs[0].path).toBe(projectCwd);
+  });
+
+  it('does not record cwd in state.json on a dry-run launch', async () => {
+    const { appHome } = await makeProfile();
+    const projectCwd = await makeTempRoot('ccps-project-');
+
+    await buildLaunchPlan({
+      appHomePath: appHome,
+      profileName: 'coding',
+      cwd: projectCwd,
+    });
+
+    const state = await loadAppState(appHome);
+    expect(state.recentProjectDirs).toHaveLength(0);
+  });
+
+  it('does not record cwd in state.json when profile validation blocks launch', async () => {
+    const { appHome, paths } = await makeProfile();
+    const projectCwd = await makeTempRoot('ccps-project-');
+    await rm(paths.settingsPath);
+
+    await expect(
+      launchProfile({
+        appHomePath: appHome,
+        profileName: 'coding',
+        cwd: projectCwd,
+        spawnProcess: async () => ({ exitCode: 0 }),
+      }),
+    ).rejects.toMatchObject({ code: 'PROFILE_VALIDATION_FAILED' });
+
+    const state = await loadAppState(appHome);
+    expect(state.recentProjectDirs).toHaveLength(0);
+  });
+
+  it('does not record recents or last-used on a non-zero exit (spec §13.3)', async () => {
+    const { appHome } = await makeProfile();
+    const projectCwd = await makeTempRoot('ccps-project-');
+
+    await expect(
+      launchProfile({
+        appHomePath: appHome,
+        profileName: 'coding',
+        cwd: projectCwd,
+        spawnProcess: async () => ({ exitCode: 2 }),
+      }),
+    ).rejects.toMatchObject({ code: 'CLAUDE_EXITED_WITH_ERROR' });
+
+    await expect(fs.readJson(join(appHome, 'config.json'))).resolves.toMatchObject({
+      lastUsedProfile: null,
+    });
+    const state = await loadAppState(appHome);
+    expect(state.recentProjectDirs).toHaveLength(0);
+  });
+
+  it('does not record recents or last-used on a signal exit (null exit code)', async () => {
+    const { appHome } = await makeProfile();
+    const projectCwd = await makeTempRoot('ccps-project-');
+
+    const result = await launchProfile({
+      appHomePath: appHome,
+      profileName: 'coding',
+      cwd: projectCwd,
+      spawnProcess: async () => ({ exitCode: null }),
+    });
+
+    // A signal exit is not a launch failure, but it is not a successful real
+    // launch either (spec §13.3) — metadata records nothing.
+    expect(result.exitCode).toBeNull();
+    await expect(fs.readJson(join(appHome, 'config.json'))).resolves.toMatchObject({
+      lastUsedProfile: null,
+    });
+    const state = await loadAppState(appHome);
+    expect(state.recentProjectDirs).toHaveLength(0);
   });
 });

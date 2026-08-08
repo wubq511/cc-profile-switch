@@ -1,0 +1,2584 @@
+{
+  "appHome": {
+    "apiSettings": {
+      "env": {
+        "ANTHROPIC_API_KEY": "fixture-placeholder-707cc77-001",
+        "ANTHROPIC_AUTH_TOKEN": "fixture-placeholder-707cc77-002"
+      }
+    },
+    "config": {
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "defaultProfile": "profile-001",
+      "lastUsedProfile": "profile-001",
+      "recovery": {
+        "retentionDays": 30
+      },
+      "updatedAt": "2026-01-01T00:00:00.000Z",
+      "version": 2,
+      "workbench": {
+        "skillsDiscoveryExperimental": true
+      }
+    },
+    "state": {
+      "recentProjectDirs": [
+        {
+          "lastUsedAt": "2026-01-01T00:00:00.000Z",
+          "path": "<userhome>/fixture/project-a"
+        },
+        {
+          "lastUsedAt": "2026-01-01T00:00:00.000Z",
+          "path": "<userhome>/fixture/project-b"
+        }
+      ],
+      "version": 1
+    }
+  },
+  "entries": [
+    {
+      "content": "{\n  \"env\": {\n    \"ANTHROPIC_API_KEY\": \"fixture-placeholder-707cc77-001\",\n    \"ANTHROPIC_AUTH_TOKEN\": \"fixture-placeholder-707cc77-002\"\n  }\n}\n",
+      "path": "api-settings.json",
+      "type": "file"
+    },
+    {
+      "path": "backups",
+      "type": "dir"
+    },
+    {
+      "content": "{\n  \"createdAt\": \"2026-01-01T00:00:00.000Z\",\n  \"defaultProfile\": \"profile-001\",\n  \"lastUsedProfile\": \"profile-001\",\n  \"recovery\": {\n    \"retentionDays\": 30\n  },\n  \"updatedAt\": \"2026-01-01T00:00:00.000Z\",\n  \"version\": 2,\n  \"workbench\": {\n    \"skillsDiscoveryExperimental\": true\n  }\n}\n",
+      "path": "config.json",
+      "type": "file"
+    },
+    {
+      "path": "profiles",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p1",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p1/claude-home",
+      "type": "dir"
+    },
+    {
+      "content": "{\n  \"mcpServers\": {\n    \"fixture-server-pathology-p1\": {\n      \"args\": [\n        \"-y\",\n        \"@fixture/server\"\n      ],\n      \"command\": \"npx\",\n      \"env\": {\n        \"FIXTURE_MODE\": \"demo\"\n      },\n      \"type\": \"stdio\"\n    }\n  }\n}\n",
+      "path": "profiles/pathology-p1/claude-home/.claude.json",
+      "type": "file"
+    },
+    {
+      "content": "# pathology-p1 Profile\n\nPathology P1 fixture profile.\n\nThis is a synthetic ccps fixture profile. Content is deterministic and contains no real user data.\n",
+      "path": "profiles/pathology-p1/claude-home/CLAUDE.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p1/claude-home/agents",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: agent-01\ndescription: Deterministic fixture agent.\ntools: Read, Grep\n---\n\n# agent-01\n\nSynthetic fixture agent body.\n",
+      "path": "profiles/pathology-p1/claude-home/agents/agent-01.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p1/claude-home/memory",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p1/claude-home/memory/auto",
+      "type": "dir"
+    },
+    {
+      "content": "# pathology-p1 Auto Memory (fixture)\n\nSynthetic auto memory entry. No real user data.\n",
+      "path": "profiles/pathology-p1/claude-home/memory/auto/MEMORY.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p1/claude-home/plugins",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p1/claude-home/rules",
+      "type": "dir"
+    },
+    {
+      "content": "<!-- ccps-managed-profile-boundary:start:v2 -->\n# CCPS Profile Boundary\n\nFixture-managed boundary rule.\n<!-- ccps-managed-profile-boundary:end:v2 -->\n",
+      "path": "profiles/pathology-p1/claude-home/rules/ccps-profile.md",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"autoMemoryDirectory\": \"<apphome>/profiles/pathology-p1/claude-home/memory/auto\",\n  \"claudeMdExcludes\": [\n    \"<userhome>/.claude/CLAUDE.md\"\n  ],\n  \"env\": {\n    \"CLAUDE_CODE_ATTRIBUTION_HEADER\": \"0\"\n  }\n}\n",
+      "path": "profiles/pathology-p1/claude-home/settings.json",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p1/claude-home/skills",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p1/claude-home/skills/skill-alpha",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: skill-alpha\ndescription: Deterministic fixture skill for pathology-p1.\nversion: 1.0.0\n---\n\n# skill-alpha\n\nSynthetic fixture skill derived from seed. No real credentials.\n\n## Notes\n- fzmiosni item 1\n- jygyiekg item 2\n- ogbwzrxj item 3\n",
+      "path": "profiles/pathology-p1/claude-home/skills/skill-alpha/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p1/claude-home/skills/skill-alpha/references",
+      "type": "dir"
+    },
+    {
+      "content": "# skill-alpha reference\n\nDeterministic reference content.\n",
+      "path": "profiles/pathology-p1/claude-home/skills/skill-alpha/references/detail.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p1/claude-home/skills/skill-beta",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: skill-beta\ndescription: Deterministic fixture skill for pathology-p1.\nversion: 1.0.0\n---\n\n# skill-beta\n\nSynthetic fixture skill derived from seed. No real credentials.\n\n## Notes\n- yykzluqm item 1\n- jsnozptn item 2\n- sswigsxg item 3\n",
+      "path": "profiles/pathology-p1/claude-home/skills/skill-beta/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p1/claude-home/skills/skill-beta/references",
+      "type": "dir"
+    },
+    {
+      "content": "# skill-beta reference\n\nDeterministic reference content.\n",
+      "path": "profiles/pathology-p1/claude-home/skills/skill-beta/references/detail.md",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"name\": \"pathology-p1\",\n  \"broken\":\n}\n",
+      "path": "profiles/pathology-p1/profile.json",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"skills\": {\n    \"skill-alpha\": {\n      \"contentHash\": \"38623ebd93cf91ef35a8056d808475aff7c1f5b4a4da9ba2cea9ea8001ee75b3\",\n      \"installedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"mode\": \"copy\",\n      \"source\": {\n        \"kind\": \"git-remote\",\n        \"ref\": \"main\",\n        \"url\": \"https://example.invalid/skills/skill-alpha.git\"\n      },\n      \"sourceCheckedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n    },\n    \"skill-beta\": {\n      \"contentHash\": \"93b43e6971f172b2b909a0831eacd23a793a0fc7592088db68474d6c85717e2e\",\n      \"installedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"mode\": \"copy\",\n      \"source\": {\n        \"kind\": \"git-remote\",\n        \"ref\": \"main\",\n        \"url\": \"https://example.invalid/skills/skill-beta.git\"\n      },\n      \"sourceCheckedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n    }\n  },\n  \"version\": 1\n}\n",
+      "path": "profiles/pathology-p1/skills-provenance.json",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p10",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p10/claude-home",
+      "type": "dir"
+    },
+    {
+      "content": "{\n  \"mcpServers\": {\n    \"fixture-server-pathology-p10\": {\n      \"args\": [\n        \"-y\",\n        \"@fixture/server\"\n      ],\n      \"command\": \"npx\",\n      \"env\": {\n        \"FIXTURE_MODE\": \"demo\"\n      },\n      \"type\": \"stdio\"\n    }\n  }\n}\n",
+      "path": "profiles/pathology-p10/claude-home/.claude.json",
+      "type": "file"
+    },
+    {
+      "content": "# pathology-p10 Profile\n\nPathology P10 fixture profile.\n\nThis is a synthetic ccps fixture profile. Content is deterministic and contains no real user data.\n",
+      "path": "profiles/pathology-p10/claude-home/CLAUDE.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p10/claude-home/agents",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: agent-01\ndescription: Deterministic fixture agent.\ntools: Read, Grep\n---\n\n# agent-01\n\nSynthetic fixture agent body.\n",
+      "path": "profiles/pathology-p10/claude-home/agents/agent-01.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p10/claude-home/memory",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p10/claude-home/memory/auto",
+      "type": "dir"
+    },
+    {
+      "content": "# pathology-p10 Auto Memory (fixture)\n\nSynthetic auto memory entry. No real user data.\n",
+      "path": "profiles/pathology-p10/claude-home/memory/auto/MEMORY.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p10/claude-home/plugins",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p10/claude-home/rules",
+      "type": "dir"
+    },
+    {
+      "content": "<!-- ccps-managed-profile-boundary:start:v2 -->\n# CCPS Profile Boundary\n\nFixture-managed boundary rule.\n<!-- ccps-managed-profile-boundary:end:v2 -->\n",
+      "path": "profiles/pathology-p10/claude-home/rules/ccps-profile.md",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"autoMemoryDirectory\": \"<apphome>/profiles/pathology-p10/claude-home/memory/auto\",\n  \"claudeMdExcludes\": [\n    \"<userhome>/.claude/CLAUDE.md\"\n  ],\n  \"env\": {\n    \"CLAUDE_CODE_ATTRIBUTION_HEADER\": \"0\"\n  }\n}\n",
+      "path": "profiles/pathology-p10/claude-home/settings.json",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p10/claude-home/skills",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p10/claude-home/skills/skill-alpha",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: skill-alpha\ndescription: Deterministic fixture skill for pathology-p10.\nversion: 1.0.0\n---\n\n# skill-alpha\n\nSynthetic fixture skill derived from seed. No real credentials.\n\n## Notes\n- zffvmpqd item 1\n- jpyrrrep item 2\n- dyubyass item 3\n",
+      "path": "profiles/pathology-p10/claude-home/skills/skill-alpha/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p10/claude-home/skills/skill-alpha/references",
+      "type": "dir"
+    },
+    {
+      "content": "# skill-alpha reference\n\nDeterministic reference content.\n",
+      "path": "profiles/pathology-p10/claude-home/skills/skill-alpha/references/detail.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p10/claude-home/skills/skill-beta",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: skill-beta\ndescription: Deterministic fixture skill for pathology-p10.\nversion: 1.0.0\n---\n\n# skill-beta\n\nSynthetic fixture skill derived from seed. No real credentials.\n\n## Notes\n- naimnele item 1\n- nnnswisb item 2\n- yfmcfdlt item 3\n",
+      "path": "profiles/pathology-p10/claude-home/skills/skill-beta/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p10/claude-home/skills/skill-beta/references",
+      "type": "dir"
+    },
+    {
+      "content": "# skill-beta reference\n\nDeterministic reference content.\n",
+      "path": "profiles/pathology-p10/claude-home/skills/skill-beta/references/detail.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p10/claude-home/skills/skill-expired-removal",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: skill-expired-removal\ndescription: Deterministic fixture skill for pathology-p10.\nversion: 1.0.0\n---\n\n# skill-expired-removal\n\nSynthetic fixture skill derived from seed. No real credentials.\n\n## Notes\n- tramgzpn item 1\n- oipysjoc item 2\n- bwuagqmi item 3\n",
+      "path": "profiles/pathology-p10/claude-home/skills/skill-expired-removal/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p10/claude-home/skills/skill-expired-removal/references",
+      "type": "dir"
+    },
+    {
+      "content": "# skill-expired-removal reference\n\nDeterministic reference content.\n",
+      "path": "profiles/pathology-p10/claude-home/skills/skill-expired-removal/references/detail.md",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"createdAt\": \"2026-01-01T00:00:00.000Z\",\n  \"description\": \"Pathology P10 fixture profile.\",\n  \"launch\": {\n    \"claudeArgs\": [],\n    \"disableAutoMemory\": false,\n    \"mcpMode\": \"none\",\n    \"pluginDirs\": [],\n    \"skipPermissions\": true\n  },\n  \"name\": \"pathology-p10\",\n  \"template\": \"coding\",\n  \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n}\n",
+      "path": "profiles/pathology-p10/profile.json",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"skills\": {\n    \"skill-alpha\": {\n      \"contentHash\": \"0210f1de96f06c0d82bd3b91d38df0296354ce2944a808a33265ae42fee6d329\",\n      \"installedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"mode\": \"copy\",\n      \"source\": {\n        \"kind\": \"git-remote\",\n        \"ref\": \"main\",\n        \"url\": \"https://example.invalid/skills/skill-alpha.git\"\n      },\n      \"sourceCheckedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n    },\n    \"skill-beta\": {\n      \"contentHash\": \"4120dfeca554625afd91ffdd20d0aeee5f0376eb31b2bf0acee079587dd1c5b0\",\n      \"installedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"mode\": \"copy\",\n      \"source\": {\n        \"kind\": \"git-remote\",\n        \"ref\": \"main\",\n        \"url\": \"https://example.invalid/skills/skill-beta.git\"\n      },\n      \"sourceCheckedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n    },\n    \"skill-expired-removal\": {\n      \"contentHash\": \"20e3996499b454ffc223720fd9f6d6a1223bfef1d9184d22c524462ff4d47877\",\n      \"installedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"mode\": \"copy\",\n      \"source\": {\n        \"kind\": \"git-remote\",\n        \"ref\": \"main\",\n        \"url\": \"https://example.invalid/skills/skill-expired-removal.git\"\n      },\n      \"sourceCheckedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n    }\n  },\n  \"version\": 1\n}\n",
+      "path": "profiles/pathology-p10/skills-provenance.json",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p11",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p11/claude-home",
+      "type": "dir"
+    },
+    {
+      "content": "{\n  \"mcpServers\": {\n    \"fixture-server-pathology-p11\": {\n      \"args\": [\n        \"-y\",\n        \"@fixture/server\"\n      ],\n      \"command\": \"npx\",\n      \"env\": {\n        \"FIXTURE_MODE\": \"demo\"\n      },\n      \"type\": \"stdio\"\n    }\n  }\n}\n",
+      "path": "profiles/pathology-p11/claude-home/.claude.json",
+      "type": "file"
+    },
+    {
+      "content": "# pathology-p11 Profile\n\nPathology P11 fixture profile.\n\nThis is a synthetic ccps fixture profile. Content is deterministic and contains no real user data.\n",
+      "path": "profiles/pathology-p11/claude-home/CLAUDE.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p11/claude-home/agents",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: agent-01\ndescription: Deterministic fixture agent.\ntools: Read, Grep\n---\n\n# agent-01\n\nSynthetic fixture agent body.\n",
+      "path": "profiles/pathology-p11/claude-home/agents/agent-01.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p11/claude-home/memory",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p11/claude-home/memory/auto",
+      "type": "dir"
+    },
+    {
+      "content": "# pathology-p11 Auto Memory (fixture)\n\nSynthetic auto memory entry. No real user data.\n",
+      "path": "profiles/pathology-p11/claude-home/memory/auto/MEMORY.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p11/claude-home/plugins",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p11/claude-home/rules",
+      "type": "dir"
+    },
+    {
+      "content": "<!-- ccps-managed-profile-boundary:start:v2 -->\n# CCPS Profile Boundary\n\nFixture-managed boundary rule.\n<!-- ccps-managed-profile-boundary:end:v2 -->\n",
+      "path": "profiles/pathology-p11/claude-home/rules/ccps-profile.md",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"autoMemoryDirectory\": \"<apphome>/profiles/pathology-p11/claude-home/memory/auto\",\n  \"claudeMdExcludes\": [\n    \"<userhome>/.claude/CLAUDE.md\"\n  ],\n  \"env\": {\n    \"ANTHROPIC_API_KEY\": 12345,\n    \"ANTHROPIC_AUTH_TOKEN\": {\n      \"nested\": \"invalid\"\n    },\n    \"CLAUDE_CODE_ATTRIBUTION_HEADER\": \"0\"\n  }\n}\n",
+      "path": "profiles/pathology-p11/claude-home/settings.json",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p11/claude-home/skills",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p11/claude-home/skills/skill-alpha",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: skill-alpha\ndescription: Deterministic fixture skill for pathology-p11.\nversion: 1.0.0\n---\n\n# skill-alpha\n\nSynthetic fixture skill derived from seed. No real credentials.\n\n## Notes\n- gisodjdk item 1\n- vsqhbfti item 2\n- qegdjhie item 3\n",
+      "path": "profiles/pathology-p11/claude-home/skills/skill-alpha/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p11/claude-home/skills/skill-alpha/references",
+      "type": "dir"
+    },
+    {
+      "content": "# skill-alpha reference\n\nDeterministic reference content.\n",
+      "path": "profiles/pathology-p11/claude-home/skills/skill-alpha/references/detail.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p11/claude-home/skills/skill-beta",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: skill-beta\ndescription: Deterministic fixture skill for pathology-p11.\nversion: 1.0.0\n---\n\n# skill-beta\n\nSynthetic fixture skill derived from seed. No real credentials.\n\n## Notes\n- febgelkt item 1\n- nqubrxeu item 2\n- ofvfvwwm item 3\n",
+      "path": "profiles/pathology-p11/claude-home/skills/skill-beta/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p11/claude-home/skills/skill-beta/references",
+      "type": "dir"
+    },
+    {
+      "content": "# skill-beta reference\n\nDeterministic reference content.\n",
+      "path": "profiles/pathology-p11/claude-home/skills/skill-beta/references/detail.md",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"createdAt\": \"2026-01-01T00:00:00.000Z\",\n  \"description\": \"Pathology P11 fixture profile.\",\n  \"launch\": {\n    \"claudeArgs\": [],\n    \"disableAutoMemory\": false,\n    \"mcpMode\": \"none\",\n    \"pluginDirs\": [],\n    \"skipPermissions\": true\n  },\n  \"name\": \"pathology-p11\",\n  \"template\": \"coding\",\n  \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n}\n",
+      "path": "profiles/pathology-p11/profile.json",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"skills\": {\n    \"skill-alpha\": {\n      \"contentHash\": \"8ef46b082b0d555484e83cae10a38c841957e792762ca68d75141d7cea732dee\",\n      \"installedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"mode\": \"copy\",\n      \"source\": {\n        \"kind\": \"git-remote\",\n        \"ref\": \"main\",\n        \"url\": \"https://example.invalid/skills/skill-alpha.git\"\n      },\n      \"sourceCheckedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n    },\n    \"skill-beta\": {\n      \"contentHash\": \"f443779bbac2ce6c58f8461f1e1bafe52be750e83684f5a06b97c2b9aac156d8\",\n      \"installedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"mode\": \"copy\",\n      \"source\": {\n        \"kind\": \"git-remote\",\n        \"ref\": \"main\",\n        \"url\": \"https://example.invalid/skills/skill-beta.git\"\n      },\n      \"sourceCheckedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n    }\n  },\n  \"version\": 1\n}\n",
+      "path": "profiles/pathology-p11/skills-provenance.json",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p12",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p12/claude-home",
+      "type": "dir"
+    },
+    {
+      "content": "{\n  \"_fixtureNote\": \"malformed MCP entries for pathology-p12\",\n  \"mcpServers\": {\n    \"fixture-server-pathology-p12\": {\n      \"args\": [\n        \"-y\",\n        \"@fixture/server\"\n      ],\n      \"command\": \"npx\",\n      \"env\": {\n        \"FIXTURE_MODE\": \"demo\"\n      },\n      \"type\": \"stdio\"\n    },\n    \"malformed-string-entry\": \"not-a-server-object\",\n    \"missing-command-entry\": {\n      \"args\": [\n        \"-y\",\n        \"@fixture/missing-command\"\n      ],\n      \"type\": \"stdio\"\n    }\n  }\n}\n",
+      "path": "profiles/pathology-p12/claude-home/.claude.json",
+      "type": "file"
+    },
+    {
+      "content": "# pathology-p12 Profile\n\nPathology P12 fixture profile.\n\nThis is a synthetic ccps fixture profile. Content is deterministic and contains no real user data.\n",
+      "path": "profiles/pathology-p12/claude-home/CLAUDE.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p12/claude-home/agents",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: agent-01\ndescription: Deterministic fixture agent.\ntools: Read, Grep\n---\n\n# agent-01\n\nSynthetic fixture agent body.\n",
+      "path": "profiles/pathology-p12/claude-home/agents/agent-01.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p12/claude-home/memory",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p12/claude-home/memory/auto",
+      "type": "dir"
+    },
+    {
+      "content": "# pathology-p12 Auto Memory (fixture)\n\nSynthetic auto memory entry. No real user data.\n",
+      "path": "profiles/pathology-p12/claude-home/memory/auto/MEMORY.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p12/claude-home/plugins",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p12/claude-home/rules",
+      "type": "dir"
+    },
+    {
+      "content": "<!-- ccps-managed-profile-boundary:start:v2 -->\n# CCPS Profile Boundary\n\nFixture-managed boundary rule.\n<!-- ccps-managed-profile-boundary:end:v2 -->\n",
+      "path": "profiles/pathology-p12/claude-home/rules/ccps-profile.md",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"autoMemoryDirectory\": \"<apphome>/profiles/pathology-p12/claude-home/memory/auto\",\n  \"claudeMdExcludes\": [\n    \"<userhome>/.claude/CLAUDE.md\"\n  ],\n  \"env\": {\n    \"CLAUDE_CODE_ATTRIBUTION_HEADER\": \"0\"\n  }\n}\n",
+      "path": "profiles/pathology-p12/claude-home/settings.json",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p12/claude-home/skills",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p12/claude-home/skills/skill-alpha",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: skill-alpha\ndescription: Deterministic fixture skill for pathology-p12.\nversion: 1.0.0\n---\n\n# skill-alpha\n\nSynthetic fixture skill derived from seed. No real credentials.\n\n## Notes\n- zviwkmkw item 1\n- pnplopzr item 2\n- vjknzriy item 3\n",
+      "path": "profiles/pathology-p12/claude-home/skills/skill-alpha/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p12/claude-home/skills/skill-alpha/references",
+      "type": "dir"
+    },
+    {
+      "content": "# skill-alpha reference\n\nDeterministic reference content.\n",
+      "path": "profiles/pathology-p12/claude-home/skills/skill-alpha/references/detail.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p12/claude-home/skills/skill-beta",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: skill-beta\ndescription: Deterministic fixture skill for pathology-p12.\nversion: 1.0.0\n---\n\n# skill-beta\n\nSynthetic fixture skill derived from seed. No real credentials.\n\n## Notes\n- raaqfuay item 1\n- rdjlsuca item 2\n- qsinkhpn item 3\n",
+      "path": "profiles/pathology-p12/claude-home/skills/skill-beta/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p12/claude-home/skills/skill-beta/references",
+      "type": "dir"
+    },
+    {
+      "content": "# skill-beta reference\n\nDeterministic reference content.\n",
+      "path": "profiles/pathology-p12/claude-home/skills/skill-beta/references/detail.md",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"createdAt\": \"2026-01-01T00:00:00.000Z\",\n  \"description\": \"Pathology P12 fixture profile.\",\n  \"launch\": {\n    \"claudeArgs\": [],\n    \"disableAutoMemory\": false,\n    \"mcpMode\": \"none\",\n    \"pluginDirs\": [],\n    \"skipPermissions\": true\n  },\n  \"name\": \"pathology-p12\",\n  \"template\": \"coding\",\n  \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n}\n",
+      "path": "profiles/pathology-p12/profile.json",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"skills\": {\n    \"skill-alpha\": {\n      \"contentHash\": \"480d4945ced3a039adb87029a37a0f6b25ba3e1f7969036db1ee2cf27e7042a0\",\n      \"installedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"mode\": \"copy\",\n      \"source\": {\n        \"kind\": \"git-remote\",\n        \"ref\": \"main\",\n        \"url\": \"https://example.invalid/skills/skill-alpha.git\"\n      },\n      \"sourceCheckedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n    },\n    \"skill-beta\": {\n      \"contentHash\": \"f0e6ed4aac54ba18ce2280fa32ef7d6cd4c509dfe841ce2f2ba7d7ae0dfe1651\",\n      \"installedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"mode\": \"copy\",\n      \"source\": {\n        \"kind\": \"git-remote\",\n        \"ref\": \"main\",\n        \"url\": \"https://example.invalid/skills/skill-beta.git\"\n      },\n      \"sourceCheckedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n    }\n  },\n  \"version\": 1\n}\n",
+      "path": "profiles/pathology-p12/skills-provenance.json",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p13",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p13/claude-home",
+      "type": "dir"
+    },
+    {
+      "content": "{\n  \"mcpServers\": {\n    \"fixture-server-pathology-p13\": {\n      \"args\": [\n        \"-y\",\n        \"@fixture/server\"\n      ],\n      \"command\": \"npx\",\n      \"env\": {\n        \"FIXTURE_MODE\": \"demo\"\n      },\n      \"type\": \"stdio\"\n    }\n  }\n}\n",
+      "path": "profiles/pathology-p13/claude-home/.claude.json",
+      "type": "file"
+    },
+    {
+      "content": "# pathology-p13 Profile\n\nPathology P13 fixture profile.\n\nThis is a synthetic ccps fixture profile. Content is deterministic and contains no real user data.\n",
+      "path": "profiles/pathology-p13/claude-home/CLAUDE.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p13/claude-home/agents",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: agent-01\ndescription: Deterministic fixture agent.\ntools: Read, Grep\n---\n\n# agent-01\n\nSynthetic fixture agent body.\n",
+      "path": "profiles/pathology-p13/claude-home/agents/agent-01.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p13/claude-home/memory",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p13/claude-home/memory/auto",
+      "type": "dir"
+    },
+    {
+      "content": "# pathology-p13 Auto Memory (fixture)\n\nSynthetic auto memory entry. No real user data.\n",
+      "path": "profiles/pathology-p13/claude-home/memory/auto/MEMORY.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p13/claude-home/plugins",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p13/claude-home/rules",
+      "type": "dir"
+    },
+    {
+      "content": "<!-- ccps-managed-profile-boundary:start:v2 -->\n# CCPS Profile Boundary\n\nFixture-managed boundary rule.\n<!-- ccps-managed-profile-boundary:end:v2 -->\n",
+      "path": "profiles/pathology-p13/claude-home/rules/ccps-profile.md",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"autoMemoryDirectory\": \"<apphome>/profiles/pathology-p13/claude-home/memory/auto\",\n  \"claudeMdExcludes\": [\n    \"<userhome>/.claude/CLAUDE.md\"\n  ],\n  \"env\": {\n    \"CLAUDE_CODE_ATTRIBUTION_HEADER\": \"0\"\n  }\n}\n",
+      "path": "profiles/pathology-p13/claude-home/settings.json",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p13/claude-home/skills",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p13/claude-home/skills/.ccps-old-skill-crash-old-and-final",
+      "type": "dir"
+    },
+    {
+      "content": "# crash old\n\nPre-swap tree left behind after a successful apply.\n",
+      "path": "profiles/pathology-p13/claude-home/skills/.ccps-old-skill-crash-old-and-final/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p13/claude-home/skills/.ccps-old-skill-crash-old-no-final",
+      "type": "dir"
+    },
+    {
+      "content": "# crash old no final\n\nOld tree awaiting rename-back reconciliation.\n",
+      "path": "profiles/pathology-p13/claude-home/skills/.ccps-old-skill-crash-old-no-final/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p13/claude-home/skills/.ccps-tmp-skill-crash-tmp",
+      "type": "dir"
+    },
+    {
+      "content": "# crash tmp\n\nStaged tree from an interrupted apply.\n",
+      "path": "profiles/pathology-p13/claude-home/skills/.ccps-tmp-skill-crash-tmp/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p13/claude-home/skills/skill-alpha",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: skill-alpha\ndescription: Deterministic fixture skill for pathology-p13.\nversion: 1.0.0\n---\n\n# skill-alpha\n\nSynthetic fixture skill derived from seed. No real credentials.\n\n## Notes\n- yweuokbu item 1\n- jbxurqvs item 2\n- qmrmndbe item 3\n",
+      "path": "profiles/pathology-p13/claude-home/skills/skill-alpha/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p13/claude-home/skills/skill-alpha/references",
+      "type": "dir"
+    },
+    {
+      "content": "# skill-alpha reference\n\nDeterministic reference content.\n",
+      "path": "profiles/pathology-p13/claude-home/skills/skill-alpha/references/detail.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p13/claude-home/skills/skill-beta",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: skill-beta\ndescription: Deterministic fixture skill for pathology-p13.\nversion: 1.0.0\n---\n\n# skill-beta\n\nSynthetic fixture skill derived from seed. No real credentials.\n\n## Notes\n- pgbionyo item 1\n- wlkutpgx item 2\n- nhwncrew item 3\n",
+      "path": "profiles/pathology-p13/claude-home/skills/skill-beta/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p13/claude-home/skills/skill-beta/references",
+      "type": "dir"
+    },
+    {
+      "content": "# skill-beta reference\n\nDeterministic reference content.\n",
+      "path": "profiles/pathology-p13/claude-home/skills/skill-beta/references/detail.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p13/claude-home/skills/skill-crash-old-and-final",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: skill-crash-old-and-final\ndescription: Deterministic fixture skill for pathology-p13.\nversion: 1.0.0\n---\n\n# skill-crash-old-and-final\n\nSynthetic fixture skill derived from seed. No real credentials.\n\n## Notes\n- tdyyebla item 1\n- xnjixcqu item 2\n- dhvcbjrz item 3\n",
+      "path": "profiles/pathology-p13/claude-home/skills/skill-crash-old-and-final/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p13/claude-home/skills/skill-crash-old-and-final/references",
+      "type": "dir"
+    },
+    {
+      "content": "# skill-crash-old-and-final reference\n\nDeterministic reference content.\n",
+      "path": "profiles/pathology-p13/claude-home/skills/skill-crash-old-and-final/references/detail.md",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"createdAt\": \"2026-01-01T00:00:00.000Z\",\n  \"description\": \"Pathology P13 fixture profile.\",\n  \"launch\": {\n    \"claudeArgs\": [],\n    \"disableAutoMemory\": false,\n    \"mcpMode\": \"none\",\n    \"pluginDirs\": [],\n    \"skipPermissions\": true\n  },\n  \"name\": \"pathology-p13\",\n  \"template\": \"coding\",\n  \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n}\n",
+      "path": "profiles/pathology-p13/profile.json",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"skills\": {\n    \"skill-alpha\": {\n      \"contentHash\": \"f383de2a6baeda9e9a5b8523442a2f08e4453f9d611a4da89ce9e8adec134683\",\n      \"installedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"mode\": \"copy\",\n      \"source\": {\n        \"kind\": \"git-remote\",\n        \"ref\": \"main\",\n        \"url\": \"https://example.invalid/skills/skill-alpha.git\"\n      },\n      \"sourceCheckedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n    },\n    \"skill-beta\": {\n      \"contentHash\": \"37f5687156cc6e6096733834a7cbf706abae40dbdc30bb3508711e51a03d0b2f\",\n      \"installedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"mode\": \"copy\",\n      \"source\": {\n        \"kind\": \"git-remote\",\n        \"ref\": \"main\",\n        \"url\": \"https://example.invalid/skills/skill-beta.git\"\n      },\n      \"sourceCheckedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n    }\n  },\n  \"version\": 1\n}\n",
+      "path": "profiles/pathology-p13/skills-provenance.json",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p2",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p2/claude-home",
+      "type": "dir"
+    },
+    {
+      "content": "{\n  \"mcpServers\": {\n    \"fixture-server-pathology-p2\": {\n      \"args\": [\n        \"-y\",\n        \"@fixture/server\"\n      ],\n      \"command\": \"npx\",\n      \"env\": {\n        \"FIXTURE_MODE\": \"demo\"\n      },\n      \"type\": \"stdio\"\n    }\n  }\n}\n",
+      "path": "profiles/pathology-p2/claude-home/.claude.json",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p2/claude-home/agents",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: agent-01\ndescription: Deterministic fixture agent.\ntools: Read, Grep\n---\n\n# agent-01\n\nSynthetic fixture agent body.\n",
+      "path": "profiles/pathology-p2/claude-home/agents/agent-01.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p2/claude-home/memory",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p2/claude-home/memory/auto",
+      "type": "dir"
+    },
+    {
+      "content": "# pathology-p2 Auto Memory (fixture)\n\nSynthetic auto memory entry. No real user data.\n",
+      "path": "profiles/pathology-p2/claude-home/memory/auto/MEMORY.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p2/claude-home/plugins",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p2/claude-home/rules",
+      "type": "dir"
+    },
+    {
+      "content": "<!-- ccps-managed-profile-boundary:start:v2 -->\n# CCPS Profile Boundary\n\nFixture-managed boundary rule.\n<!-- ccps-managed-profile-boundary:end:v2 -->\n",
+      "path": "profiles/pathology-p2/claude-home/rules/ccps-profile.md",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"autoMemoryDirectory\": \"<apphome>/profiles/pathology-p2/claude-home/memory/auto\",\n  \"claudeMdExcludes\": [\n    \"<userhome>/.claude/CLAUDE.md\"\n  ],\n  \"env\": {\n    \"CLAUDE_CODE_ATTRIBUTION_HEADER\": \"0\"\n  }\n}\n",
+      "path": "profiles/pathology-p2/claude-home/settings.json",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p2/claude-home/skills",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p2/claude-home/skills/skill-alpha",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: skill-alpha\ndescription: Deterministic fixture skill for pathology-p2.\nversion: 1.0.0\n---\n\n# skill-alpha\n\nSynthetic fixture skill derived from seed. No real credentials.\n\n## Notes\n- bmjvdpac item 1\n- saxibusi item 2\n- ekebexwf item 3\n",
+      "path": "profiles/pathology-p2/claude-home/skills/skill-alpha/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p2/claude-home/skills/skill-alpha/references",
+      "type": "dir"
+    },
+    {
+      "content": "# skill-alpha reference\n\nDeterministic reference content.\n",
+      "path": "profiles/pathology-p2/claude-home/skills/skill-alpha/references/detail.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p2/claude-home/skills/skill-beta",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: skill-beta\ndescription: Deterministic fixture skill for pathology-p2.\nversion: 1.0.0\n---\n\n# skill-beta\n\nSynthetic fixture skill derived from seed. No real credentials.\n\n## Notes\n- hioisoic item 1\n- twpkbtqs item 2\n- qtlkcomt item 3\n",
+      "path": "profiles/pathology-p2/claude-home/skills/skill-beta/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p2/claude-home/skills/skill-beta/references",
+      "type": "dir"
+    },
+    {
+      "content": "# skill-beta reference\n\nDeterministic reference content.\n",
+      "path": "profiles/pathology-p2/claude-home/skills/skill-beta/references/detail.md",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"createdAt\": \"2026-01-01T00:00:00.000Z\",\n  \"description\": \"Pathology P2 fixture profile.\",\n  \"launch\": {\n    \"claudeArgs\": [],\n    \"disableAutoMemory\": false,\n    \"mcpMode\": \"none\",\n    \"pluginDirs\": [],\n    \"skipPermissions\": true\n  },\n  \"name\": \"pathology-p2\",\n  \"template\": \"coding\",\n  \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n}\n",
+      "path": "profiles/pathology-p2/profile.json",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"skills\": {\n    \"skill-alpha\": {\n      \"contentHash\": \"a5a706905c3e2dd389cee791ff5bea6ef00401b1b59c09879659961b1e31316b\",\n      \"installedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"mode\": \"copy\",\n      \"source\": {\n        \"kind\": \"git-remote\",\n        \"ref\": \"main\",\n        \"url\": \"https://example.invalid/skills/skill-alpha.git\"\n      },\n      \"sourceCheckedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n    },\n    \"skill-beta\": {\n      \"contentHash\": \"628e11ada9a34cc5ab38d8d3833e162ec7e7a169130d079f7bec754f48745430\",\n      \"installedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"mode\": \"copy\",\n      \"source\": {\n        \"kind\": \"git-remote\",\n        \"ref\": \"main\",\n        \"url\": \"https://example.invalid/skills/skill-beta.git\"\n      },\n      \"sourceCheckedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n    }\n  },\n  \"version\": 1\n}\n",
+      "path": "profiles/pathology-p2/skills-provenance.json",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p3",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p3/claude-home",
+      "type": "dir"
+    },
+    {
+      "content": "{\n  \"mcpServers\": {\n    \"fixture-server-pathology-p3\": {\n      \"args\": [\n        \"-y\",\n        \"@fixture/server\"\n      ],\n      \"command\": \"npx\",\n      \"env\": {\n        \"FIXTURE_MODE\": \"demo\"\n      },\n      \"type\": \"stdio\"\n    }\n  }\n}\n",
+      "path": "profiles/pathology-p3/claude-home/.claude.json",
+      "type": "file"
+    },
+    {
+      "content": "# pathology-p3 Profile\n\nPathology P3 fixture profile.\n\nThis is a synthetic ccps fixture profile. Content is deterministic and contains no real user data.\n",
+      "path": "profiles/pathology-p3/claude-home/CLAUDE.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p3/claude-home/agents",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: agent-01\ndescription: Deterministic fixture agent.\ntools: Read, Grep\n---\n\n# agent-01\n\nSynthetic fixture agent body.\n",
+      "path": "profiles/pathology-p3/claude-home/agents/agent-01.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p3/claude-home/memory",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p3/claude-home/memory/auto",
+      "type": "dir"
+    },
+    {
+      "content": "# pathology-p3 Auto Memory (fixture)\n\nSynthetic auto memory entry. No real user data.\n",
+      "path": "profiles/pathology-p3/claude-home/memory/auto/MEMORY.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p3/claude-home/plugins",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p3/claude-home/rules",
+      "type": "dir"
+    },
+    {
+      "content": "<!-- ccps-managed-profile-boundary:start:v2 -->\n# CCPS Profile Boundary\n\nFixture-managed boundary rule.\n<!-- ccps-managed-profile-boundary:end:v2 -->\n",
+      "path": "profiles/pathology-p3/claude-home/rules/ccps-profile.md",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"someOtherField\": \"value\"\n}\n",
+      "path": "profiles/pathology-p3/claude-home/settings.json",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p3/claude-home/skills",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p3/claude-home/skills/skill-alpha",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: skill-alpha\ndescription: Deterministic fixture skill for pathology-p3.\nversion: 1.0.0\n---\n\n# skill-alpha\n\nSynthetic fixture skill derived from seed. No real credentials.\n\n## Notes\n- ngeettzq item 1\n- jtisugad item 2\n- cjcfhpvt item 3\n",
+      "path": "profiles/pathology-p3/claude-home/skills/skill-alpha/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p3/claude-home/skills/skill-alpha/references",
+      "type": "dir"
+    },
+    {
+      "content": "# skill-alpha reference\n\nDeterministic reference content.\n",
+      "path": "profiles/pathology-p3/claude-home/skills/skill-alpha/references/detail.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p3/claude-home/skills/skill-beta",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: skill-beta\ndescription: Deterministic fixture skill for pathology-p3.\nversion: 1.0.0\n---\n\n# skill-beta\n\nSynthetic fixture skill derived from seed. No real credentials.\n\n## Notes\n- lclxabun item 1\n- ilcugbgo item 2\n- scighpjh item 3\n",
+      "path": "profiles/pathology-p3/claude-home/skills/skill-beta/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p3/claude-home/skills/skill-beta/references",
+      "type": "dir"
+    },
+    {
+      "content": "# skill-beta reference\n\nDeterministic reference content.\n",
+      "path": "profiles/pathology-p3/claude-home/skills/skill-beta/references/detail.md",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"createdAt\": \"2026-01-01T00:00:00.000Z\",\n  \"description\": \"Pathology P3 fixture profile.\",\n  \"launch\": {\n    \"claudeArgs\": [],\n    \"disableAutoMemory\": false,\n    \"mcpMode\": \"none\",\n    \"pluginDirs\": [],\n    \"skipPermissions\": true\n  },\n  \"name\": \"pathology-p3\",\n  \"template\": \"coding\",\n  \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n}\n",
+      "path": "profiles/pathology-p3/profile.json",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"skills\": {\n    \"skill-alpha\": {\n      \"contentHash\": \"5960fe09bc8ad8aa9f4d4c34fcb39e3f00a5262ac5fb758d59922fa8073a35bf\",\n      \"installedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"mode\": \"copy\",\n      \"source\": {\n        \"kind\": \"git-remote\",\n        \"ref\": \"main\",\n        \"url\": \"https://example.invalid/skills/skill-alpha.git\"\n      },\n      \"sourceCheckedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n    },\n    \"skill-beta\": {\n      \"contentHash\": \"16a389f532f7693584d89b9b04ad9ea02c59ea43c2bb988889bf7612477fb984\",\n      \"installedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"mode\": \"copy\",\n      \"source\": {\n        \"kind\": \"git-remote\",\n        \"ref\": \"main\",\n        \"url\": \"https://example.invalid/skills/skill-beta.git\"\n      },\n      \"sourceCheckedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n    }\n  },\n  \"version\": 1\n}\n",
+      "path": "profiles/pathology-p3/skills-provenance.json",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p4",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p4/claude-home",
+      "type": "dir"
+    },
+    {
+      "content": "{\n  \"mcpServers\": {\n    \"fixture-server-pathology-p4\": {\n      \"args\": [\n        \"-y\",\n        \"@fixture/server\"\n      ],\n      \"command\": \"npx\",\n      \"env\": {\n        \"FIXTURE_MODE\": \"demo\"\n      },\n      \"type\": \"stdio\"\n    }\n  }\n}\n",
+      "path": "profiles/pathology-p4/claude-home/.claude.json",
+      "type": "file"
+    },
+    {
+      "content": "# pathology-p4 Profile\n\nPathology P4 fixture profile.\n\nThis is a synthetic ccps fixture profile. Content is deterministic and contains no real user data.\n",
+      "path": "profiles/pathology-p4/claude-home/CLAUDE.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p4/claude-home/agents",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: agent-01\ndescription: Deterministic fixture agent.\ntools: Read, Grep\n---\n\n# agent-01\n\nSynthetic fixture agent body.\n",
+      "path": "profiles/pathology-p4/claude-home/agents/agent-01.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p4/claude-home/memory",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p4/claude-home/memory/auto",
+      "type": "dir"
+    },
+    {
+      "content": "# pathology-p4 Auto Memory (fixture)\n\nSynthetic auto memory entry. No real user data.\n",
+      "path": "profiles/pathology-p4/claude-home/memory/auto/MEMORY.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p4/claude-home/plugins",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p4/claude-home/rules",
+      "type": "dir"
+    },
+    {
+      "content": "<!-- ccps-managed-profile-boundary:start:v2 -->\n# CCPS Profile Boundary\n\nFixture-managed boundary rule.\n<!-- ccps-managed-profile-boundary:end:v2 -->\n",
+      "path": "profiles/pathology-p4/claude-home/rules/ccps-profile.md",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"env\": \"not-an-object\",\n}\n",
+      "path": "profiles/pathology-p4/claude-home/settings.json",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p4/claude-home/skills",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p4/claude-home/skills/skill-alpha",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: skill-alpha\ndescription: Deterministic fixture skill for pathology-p4.\nversion: 1.0.0\n---\n\n# skill-alpha\n\nSynthetic fixture skill derived from seed. No real credentials.\n\n## Notes\n- zlgcdbuy item 1\n- guguqygm item 2\n- izscbtix item 3\n",
+      "path": "profiles/pathology-p4/claude-home/skills/skill-alpha/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p4/claude-home/skills/skill-alpha/references",
+      "type": "dir"
+    },
+    {
+      "content": "# skill-alpha reference\n\nDeterministic reference content.\n",
+      "path": "profiles/pathology-p4/claude-home/skills/skill-alpha/references/detail.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p4/claude-home/skills/skill-beta",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: skill-beta\ndescription: Deterministic fixture skill for pathology-p4.\nversion: 1.0.0\n---\n\n# skill-beta\n\nSynthetic fixture skill derived from seed. No real credentials.\n\n## Notes\n- vlyyjtqg item 1\n- xfitlonu item 2\n- biaopotw item 3\n",
+      "path": "profiles/pathology-p4/claude-home/skills/skill-beta/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p4/claude-home/skills/skill-beta/references",
+      "type": "dir"
+    },
+    {
+      "content": "# skill-beta reference\n\nDeterministic reference content.\n",
+      "path": "profiles/pathology-p4/claude-home/skills/skill-beta/references/detail.md",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"createdAt\": \"2026-01-01T00:00:00.000Z\",\n  \"description\": \"Pathology P4 fixture profile.\",\n  \"launch\": {\n    \"claudeArgs\": [],\n    \"disableAutoMemory\": false,\n    \"mcpMode\": \"none\",\n    \"pluginDirs\": [],\n    \"skipPermissions\": true\n  },\n  \"name\": \"pathology-p4\",\n  \"template\": \"coding\",\n  \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n}\n",
+      "path": "profiles/pathology-p4/profile.json",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"skills\": {\n    \"skill-alpha\": {\n      \"contentHash\": \"978b5e139ad1d4ffdecbc9667ab56c44949127143abdf6dd692e4bc4c0576770\",\n      \"installedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"mode\": \"copy\",\n      \"source\": {\n        \"kind\": \"git-remote\",\n        \"ref\": \"main\",\n        \"url\": \"https://example.invalid/skills/skill-alpha.git\"\n      },\n      \"sourceCheckedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n    },\n    \"skill-beta\": {\n      \"contentHash\": \"00acdf63a2d1c5ff487ccf93a079c626fd930cffab765fe70756259947c43b50\",\n      \"installedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"mode\": \"copy\",\n      \"source\": {\n        \"kind\": \"git-remote\",\n        \"ref\": \"main\",\n        \"url\": \"https://example.invalid/skills/skill-beta.git\"\n      },\n      \"sourceCheckedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n    }\n  },\n  \"version\": 1\n}\n",
+      "path": "profiles/pathology-p4/skills-provenance.json",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p5",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p5/claude-home",
+      "type": "dir"
+    },
+    {
+      "content": "{\n  \"mcpServers\": {\n    \"fixture-server-pathology-p5\": {\n      \"args\": [\n        \"-y\",\n        \"@fixture/server\"\n      ],\n      \"command\": \"npx\",\n      \"env\": {\n        \"FIXTURE_MODE\": \"demo\"\n      },\n      \"type\": \"stdio\"\n    }\n  }\n}\n",
+      "path": "profiles/pathology-p5/claude-home/.claude.json",
+      "type": "file"
+    },
+    {
+      "content": "# pathology-p5 Profile\n\nPathology P5 fixture profile.\n\nThis is a synthetic ccps fixture profile. Content is deterministic and contains no real user data.\n",
+      "path": "profiles/pathology-p5/claude-home/CLAUDE.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p5/claude-home/agents",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: agent-01\ndescription: Deterministic fixture agent.\ntools: Read, Grep\n---\n\n# agent-01\n\nSynthetic fixture agent body.\n",
+      "path": "profiles/pathology-p5/claude-home/agents/agent-01.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p5/claude-home/memory",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p5/claude-home/memory/auto",
+      "type": "dir"
+    },
+    {
+      "content": "# pathology-p5 Auto Memory (fixture)\n\nSynthetic auto memory entry. No real user data.\n",
+      "path": "profiles/pathology-p5/claude-home/memory/auto/MEMORY.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p5/claude-home/plugins",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p5/claude-home/rules",
+      "type": "dir"
+    },
+    {
+      "content": "<!-- ccps-managed-profile-boundary:start:v2 -->\n# CCPS Profile Boundary\n\nFixture-managed boundary rule.\n<!-- ccps-managed-profile-boundary:end:v2 -->\n",
+      "path": "profiles/pathology-p5/claude-home/rules/ccps-profile.md",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"autoMemoryDirectory\": \"<apphome>/profiles/pathology-p5/claude-home/memory/auto\",\n  \"claudeMdExcludes\": [\n    \"<userhome>/.claude/CLAUDE.md\"\n  ],\n  \"env\": {\n    \"CLAUDE_CODE_ATTRIBUTION_HEADER\": \"0\"\n  }\n}\n",
+      "path": "profiles/pathology-p5/claude-home/settings.json",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p5/claude-home/skills",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p5/claude-home/skills/skill-alpha",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: skill-alpha\ndescription: Deterministic fixture skill for pathology-p5.\nversion: 1.0.0\n---\n\n# skill-alpha\n\nSynthetic fixture skill derived from seed. No real credentials.\n\n## Notes\n- qyvwdjgb item 1\n- cyquglps item 2\n- uoefeptx item 3\n",
+      "path": "profiles/pathology-p5/claude-home/skills/skill-alpha/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p5/claude-home/skills/skill-alpha/references",
+      "type": "dir"
+    },
+    {
+      "content": "# skill-alpha reference\n\nDeterministic reference content.\n",
+      "path": "profiles/pathology-p5/claude-home/skills/skill-alpha/references/detail.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p5/claude-home/skills/skill-beta",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: skill-beta\ndescription: Deterministic fixture skill for pathology-p5.\nversion: 1.0.0\n---\n\n# skill-beta\n\nSynthetic fixture skill derived from seed. No real credentials.\n\n## Notes\n- weclgkgy item 1\n- rfaucyyg item 2\n- mxmbcvzv item 3\n",
+      "path": "profiles/pathology-p5/claude-home/skills/skill-beta/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p5/claude-home/skills/skill-beta/references",
+      "type": "dir"
+    },
+    {
+      "content": "# skill-beta reference\n\nDeterministic reference content.\n",
+      "path": "profiles/pathology-p5/claude-home/skills/skill-beta/references/detail.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p5/claude-home/skills/skill-premanifest",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: skill-premanifest\ndescription: Deterministic fixture skill for pathology-p5.\nversion: 1.0.0\n---\n\n# skill-premanifest\n\nSynthetic fixture skill derived from seed. No real credentials.\n\n## Notes\n- wcfhveqk item 1\n- ffuktrez item 2\n- tgysnvqb item 3\n",
+      "path": "profiles/pathology-p5/claude-home/skills/skill-premanifest/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p5/claude-home/skills/skill-premanifest/references",
+      "type": "dir"
+    },
+    {
+      "content": "# skill-premanifest reference\n\nDeterministic reference content.\n",
+      "path": "profiles/pathology-p5/claude-home/skills/skill-premanifest/references/detail.md",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"createdAt\": \"2026-01-01T00:00:00.000Z\",\n  \"description\": \"Pathology P5 fixture profile.\",\n  \"launch\": {\n    \"claudeArgs\": [],\n    \"disableAutoMemory\": false,\n    \"mcpMode\": \"none\",\n    \"pluginDirs\": [],\n    \"skipPermissions\": true\n  },\n  \"name\": \"pathology-p5\",\n  \"template\": \"coding\",\n  \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n}\n",
+      "path": "profiles/pathology-p5/profile.json",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"skills\": {\n    \"skill-alpha\": {\n      \"contentHash\": \"9783ce65236416ee884ab71db94c9619ca776ecee824e303468685a22ceec736\",\n      \"installedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"mode\": \"copy\",\n      \"source\": {\n        \"kind\": \"git-remote\",\n        \"ref\": \"main\",\n        \"url\": \"https://example.invalid/skills/skill-alpha.git\"\n      },\n      \"sourceCheckedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n    },\n    \"skill-beta\": {\n      \"contentHash\": \"8e563f82b83158323bd2bb2cff267d0647ff346a07a9ec99b632ad6b084b1323\",\n      \"installedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"mode\": \"copy\",\n      \"source\": {\n        \"kind\": \"git-remote\",\n        \"ref\": \"main\",\n        \"url\": \"https://example.invalid/skills/skill-beta.git\"\n      },\n      \"sourceCheckedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n    }\n  },\n  \"version\": 1\n}\n",
+      "path": "profiles/pathology-p5/skills-provenance.json",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p6",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p6/claude-home",
+      "type": "dir"
+    },
+    {
+      "content": "{\n  \"mcpServers\": {\n    \"fixture-server-pathology-p6\": {\n      \"args\": [\n        \"-y\",\n        \"@fixture/server\"\n      ],\n      \"command\": \"npx\",\n      \"env\": {\n        \"FIXTURE_MODE\": \"demo\"\n      },\n      \"type\": \"stdio\"\n    }\n  }\n}\n",
+      "path": "profiles/pathology-p6/claude-home/.claude.json",
+      "type": "file"
+    },
+    {
+      "content": "# pathology-p6 Profile\n\nPathology P6 fixture profile.\n\nThis is a synthetic ccps fixture profile. Content is deterministic and contains no real user data.\n",
+      "path": "profiles/pathology-p6/claude-home/CLAUDE.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p6/claude-home/agents",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: agent-01\ndescription: Deterministic fixture agent.\ntools: Read, Grep\n---\n\n# agent-01\n\nSynthetic fixture agent body.\n",
+      "path": "profiles/pathology-p6/claude-home/agents/agent-01.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p6/claude-home/memory",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p6/claude-home/memory/auto",
+      "type": "dir"
+    },
+    {
+      "content": "# pathology-p6 Auto Memory (fixture)\n\nSynthetic auto memory entry. No real user data.\n",
+      "path": "profiles/pathology-p6/claude-home/memory/auto/MEMORY.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p6/claude-home/plugins",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p6/claude-home/rules",
+      "type": "dir"
+    },
+    {
+      "content": "<!-- ccps-managed-profile-boundary:start:v2 -->\n# CCPS Profile Boundary\n\nFixture-managed boundary rule.\n<!-- ccps-managed-profile-boundary:end:v2 -->\n",
+      "path": "profiles/pathology-p6/claude-home/rules/ccps-profile.md",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"autoMemoryDirectory\": \"<apphome>/profiles/pathology-p6/claude-home/memory/auto\",\n  \"claudeMdExcludes\": [\n    \"<userhome>/.claude/CLAUDE.md\"\n  ],\n  \"env\": {\n    \"CLAUDE_CODE_ATTRIBUTION_HEADER\": \"0\"\n  }\n}\n",
+      "path": "profiles/pathology-p6/claude-home/settings.json",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p6/claude-home/skills",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p6/claude-home/skills/skill-alpha",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: skill-alpha\ndescription: Deterministic fixture skill for pathology-p6.\nversion: 1.0.0\n---\n\n# skill-alpha\n\nSynthetic fixture skill derived from seed. No real credentials.\n\n## Notes\n- rzsybaow item 1\n- nreilpar item 2\n- hxrlurtd item 3\n",
+      "path": "profiles/pathology-p6/claude-home/skills/skill-alpha/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p6/claude-home/skills/skill-alpha/references",
+      "type": "dir"
+    },
+    {
+      "content": "# skill-alpha reference\n\nDeterministic reference content.\n",
+      "path": "profiles/pathology-p6/claude-home/skills/skill-alpha/references/detail.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p6/claude-home/skills/skill-beta",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: skill-beta\ndescription: Deterministic fixture skill for pathology-p6.\nversion: 1.0.0\n---\n\n# skill-beta\n\nSynthetic fixture skill derived from seed. No real credentials.\n\n## Notes\n- okzcowro item 1\n- yeumiqhd item 2\n- okdunpmk item 3\n",
+      "path": "profiles/pathology-p6/claude-home/skills/skill-beta/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p6/claude-home/skills/skill-beta/references",
+      "type": "dir"
+    },
+    {
+      "content": "# skill-beta reference\n\nDeterministic reference content.\n",
+      "path": "profiles/pathology-p6/claude-home/skills/skill-beta/references/detail.md",
+      "type": "file"
+    },
+    {
+      "broken": true,
+      "path": "profiles/pathology-p6/claude-home/skills/skill-broken-link",
+      "target": "profiles/pathology-p6/claude-home/skills/does-not-exist",
+      "type": "symlink"
+    },
+    {
+      "circular": true,
+      "path": "profiles/pathology-p6/claude-home/skills/skill-circular-link",
+      "target": "profiles/pathology-p6/claude-home/skills/skill-circular-link",
+      "type": "symlink"
+    },
+    {
+      "content": "{\n  \"createdAt\": \"2026-01-01T00:00:00.000Z\",\n  \"description\": \"Pathology P6 fixture profile.\",\n  \"launch\": {\n    \"claudeArgs\": [],\n    \"disableAutoMemory\": false,\n    \"mcpMode\": \"none\",\n    \"pluginDirs\": [],\n    \"skipPermissions\": true\n  },\n  \"name\": \"pathology-p6\",\n  \"template\": \"coding\",\n  \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n}\n",
+      "path": "profiles/pathology-p6/profile.json",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"skills\": {\n    \"skill-alpha\": {\n      \"contentHash\": \"3b0dff7c1f3640818ea59c76feeaca174a7c8d66b96bb6a876bd4fbef8b554eb\",\n      \"installedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"mode\": \"copy\",\n      \"source\": {\n        \"kind\": \"git-remote\",\n        \"ref\": \"main\",\n        \"url\": \"https://example.invalid/skills/skill-alpha.git\"\n      },\n      \"sourceCheckedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n    },\n    \"skill-beta\": {\n      \"contentHash\": \"bfe03abf99db11315add300548cc5db7c7b5002c814028118b810df0615ac7a8\",\n      \"installedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"mode\": \"copy\",\n      \"source\": {\n        \"kind\": \"git-remote\",\n        \"ref\": \"main\",\n        \"url\": \"https://example.invalid/skills/skill-beta.git\"\n      },\n      \"sourceCheckedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n    }\n  },\n  \"version\": 1\n}\n",
+      "path": "profiles/pathology-p6/skills-provenance.json",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p7",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p7/claude-home",
+      "type": "dir"
+    },
+    {
+      "content": "{\n  \"mcpServers\": {\n    \"fixture-server-pathology-p7\": {\n      \"args\": [\n        \"-y\",\n        \"@fixture/server\"\n      ],\n      \"command\": \"npx\",\n      \"env\": {\n        \"FIXTURE_MODE\": \"demo\"\n      },\n      \"type\": \"stdio\"\n    }\n  }\n}\n",
+      "path": "profiles/pathology-p7/claude-home/.claude.json",
+      "type": "file"
+    },
+    {
+      "content": "# pathology-p7 Profile\n\nPathology P7 fixture profile.\n\nThis is a synthetic ccps fixture profile. Content is deterministic and contains no real user data.\n",
+      "path": "profiles/pathology-p7/claude-home/CLAUDE.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p7/claude-home/agents",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: agent-01\ndescription: Deterministic fixture agent.\ntools: Read, Grep\n---\n\n# agent-01\n\nSynthetic fixture agent body.\n",
+      "path": "profiles/pathology-p7/claude-home/agents/agent-01.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p7/claude-home/memory",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p7/claude-home/memory/auto",
+      "type": "dir"
+    },
+    {
+      "content": "# pathology-p7 Auto Memory (fixture)\n\nSynthetic auto memory entry. No real user data.\n",
+      "path": "profiles/pathology-p7/claude-home/memory/auto/MEMORY.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p7/claude-home/plugins",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p7/claude-home/rules",
+      "type": "dir"
+    },
+    {
+      "content": "<!-- ccps-managed-profile-boundary:start:v2 -->\n# CCPS Profile Boundary\n\nFixture-managed boundary rule.\n<!-- ccps-managed-profile-boundary:end:v2 -->\n",
+      "path": "profiles/pathology-p7/claude-home/rules/ccps-profile.md",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"autoMemoryDirectory\": \"<apphome>/profiles/pathology-p7/claude-home/memory/auto\",\n  \"claudeMdExcludes\": [\n    \"<userhome>/.claude/CLAUDE.md\"\n  ],\n  \"env\": {\n    \"CLAUDE_CODE_ATTRIBUTION_HEADER\": \"0\"\n  }\n}\n",
+      "path": "profiles/pathology-p7/claude-home/settings.json",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p7/claude-home/skills",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p7/claude-home/skills/skill-alpha",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: skill-alpha\ndescription: Deterministic fixture skill for pathology-p7.\nversion: 1.0.0\n---\n\n# skill-alpha\n\nSynthetic fixture skill derived from seed. No real credentials.\n\n## Notes\n- larmnyad item 1\n- tlmctnnq item 2\n- eyspsfpf item 3\n",
+      "path": "profiles/pathology-p7/claude-home/skills/skill-alpha/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p7/claude-home/skills/skill-alpha/references",
+      "type": "dir"
+    },
+    {
+      "content": "# skill-alpha reference\n\nDeterministic reference content.\n",
+      "path": "profiles/pathology-p7/claude-home/skills/skill-alpha/references/detail.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p7/claude-home/skills/skill-beta",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: skill-beta\ndescription: Deterministic fixture skill for pathology-p7.\nversion: 1.0.0\n---\n\n# skill-beta\n\nSynthetic fixture skill derived from seed. No real credentials.\n\n## Notes\n- rontscem item 1\n- psnxjgwg item 2\n- ucdhphyq item 3\n",
+      "path": "profiles/pathology-p7/claude-home/skills/skill-beta/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p7/claude-home/skills/skill-beta/references",
+      "type": "dir"
+    },
+    {
+      "content": "# skill-beta reference\n\nDeterministic reference content.\n",
+      "path": "profiles/pathology-p7/claude-home/skills/skill-beta/references/detail.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p7/claude-home/skills/skill-missing-junction",
+      "target": "profiles/pathology-p7/claude-home/skills/missing-junction-target",
+      "type": "junction"
+    },
+    {
+      "content": "{\n  \"createdAt\": \"2026-01-01T00:00:00.000Z\",\n  \"description\": \"Pathology P7 fixture profile.\",\n  \"launch\": {\n    \"claudeArgs\": [],\n    \"disableAutoMemory\": false,\n    \"mcpMode\": \"none\",\n    \"pluginDirs\": [],\n    \"skipPermissions\": true\n  },\n  \"name\": \"pathology-p7\",\n  \"template\": \"coding\",\n  \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n}\n",
+      "path": "profiles/pathology-p7/profile.json",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"skills\": {\n    \"skill-alpha\": {\n      \"contentHash\": \"358d445a385fe6d5366213516e1c5d2e0b7cf35a71e9ce8c19128d98757aea83\",\n      \"installedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"mode\": \"copy\",\n      \"source\": {\n        \"kind\": \"git-remote\",\n        \"ref\": \"main\",\n        \"url\": \"https://example.invalid/skills/skill-alpha.git\"\n      },\n      \"sourceCheckedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n    },\n    \"skill-beta\": {\n      \"contentHash\": \"c95f8f684f8e44a82f6263525d268d9783907e9bd67336e7e8fb34e811fab0ba\",\n      \"installedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"mode\": \"copy\",\n      \"source\": {\n        \"kind\": \"git-remote\",\n        \"ref\": \"main\",\n        \"url\": \"https://example.invalid/skills/skill-beta.git\"\n      },\n      \"sourceCheckedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n    }\n  },\n  \"version\": 1\n}\n",
+      "path": "profiles/pathology-p7/skills-provenance.json",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p8",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p8/claude-home",
+      "type": "dir"
+    },
+    {
+      "content": "{\n  \"mcpServers\": {\n    \"fixture-server-pathology-p8\": {\n      \"args\": [\n        \"-y\",\n        \"@fixture/server\"\n      ],\n      \"command\": \"npx\",\n      \"env\": {\n        \"FIXTURE_MODE\": \"demo\"\n      },\n      \"type\": \"stdio\"\n    }\n  }\n}\n",
+      "path": "profiles/pathology-p8/claude-home/.claude.json",
+      "type": "file"
+    },
+    {
+      "content": "# pathology-p8 Profile\n\nPathology P8 fixture profile.\n\nThis is a synthetic ccps fixture profile. Content is deterministic and contains no real user data.\n",
+      "path": "profiles/pathology-p8/claude-home/CLAUDE.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p8/claude-home/agents",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: agent-01\ndescription: Deterministic fixture agent.\ntools: Read, Grep\n---\n\n# agent-01\n\nSynthetic fixture agent body.\n",
+      "path": "profiles/pathology-p8/claude-home/agents/agent-01.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p8/claude-home/memory",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p8/claude-home/memory/auto",
+      "type": "dir"
+    },
+    {
+      "content": "# pathology-p8 Auto Memory (fixture)\n\nSynthetic auto memory entry. No real user data.\n",
+      "path": "profiles/pathology-p8/claude-home/memory/auto/MEMORY.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p8/claude-home/plugins",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p8/claude-home/rules",
+      "type": "dir"
+    },
+    {
+      "content": "<!-- ccps-managed-profile-boundary:start:v2 -->\n# CCPS Profile Boundary\n\nFixture-managed boundary rule.\n<!-- ccps-managed-profile-boundary:end:v2 -->\n",
+      "path": "profiles/pathology-p8/claude-home/rules/ccps-profile.md",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"autoMemoryDirectory\": \"<apphome>/profiles/pathology-p8/claude-home/memory/auto\",\n  \"claudeMdExcludes\": [\n    \"<userhome>/.claude/CLAUDE.md\"\n  ],\n  \"env\": {\n    \"CLAUDE_CODE_ATTRIBUTION_HEADER\": \"0\"\n  }\n}\n",
+      "path": "profiles/pathology-p8/claude-home/settings.json",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p8/claude-home/skills",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p8/claude-home/skills/skill with spaces",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: skill with spaces\ndescription: Deterministic fixture skill for pathology-p8.\nversion: 1.0.0\n---\n\n# skill with spaces\n\nSynthetic fixture skill derived from seed. No real credentials.\n\n## Notes\n- hyvwfoon item 1\n- uczllmuy item 2\n- idrzxiqr item 3\n",
+      "path": "profiles/pathology-p8/claude-home/skills/skill with spaces/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p8/claude-home/skills/skill with spaces/references",
+      "type": "dir"
+    },
+    {
+      "content": "# skill with spaces reference\n\nDeterministic reference content.\n",
+      "path": "profiles/pathology-p8/claude-home/skills/skill with spaces/references/detail.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p8/claude-home/skills/skill-alpha",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: skill-alpha\ndescription: Deterministic fixture skill for pathology-p8.\nversion: 1.0.0\n---\n\n# skill-alpha\n\nSynthetic fixture skill derived from seed. No real credentials.\n\n## Notes\n- xnofhhrt item 1\n- gcrblrac item 2\n- jwrjkpaq item 3\n",
+      "path": "profiles/pathology-p8/claude-home/skills/skill-alpha/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p8/claude-home/skills/skill-alpha/references",
+      "type": "dir"
+    },
+    {
+      "content": "# skill-alpha reference\n\nDeterministic reference content.\n",
+      "path": "profiles/pathology-p8/claude-home/skills/skill-alpha/references/detail.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p8/claude-home/skills/skill-beta",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: skill-beta\ndescription: Deterministic fixture skill for pathology-p8.\nversion: 1.0.0\n---\n\n# skill-beta\n\nSynthetic fixture skill derived from seed. No real credentials.\n\n## Notes\n- dfwchpan item 1\n- zqdizjer item 2\n- svsvcxds item 3\n",
+      "path": "profiles/pathology-p8/claude-home/skills/skill-beta/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p8/claude-home/skills/skill-beta/references",
+      "type": "dir"
+    },
+    {
+      "content": "# skill-beta reference\n\nDeterministic reference content.\n",
+      "path": "profiles/pathology-p8/claude-home/skills/skill-beta/references/detail.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p8/claude-home/skills/✨-emoji-skill",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: ✨-emoji-skill\ndescription: Deterministic fixture skill for pathology-p8.\nversion: 1.0.0\n---\n\n# ✨-emoji-skill\n\nSynthetic fixture skill derived from seed. No real credentials.\n\n## Notes\n- vbjnqlyn item 1\n- pcwgwzgw item 2\n- xdrzajxx item 3\n",
+      "path": "profiles/pathology-p8/claude-home/skills/✨-emoji-skill/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p8/claude-home/skills/✨-emoji-skill/references",
+      "type": "dir"
+    },
+    {
+      "content": "# ✨-emoji-skill reference\n\nDeterministic reference content.\n",
+      "path": "profiles/pathology-p8/claude-home/skills/✨-emoji-skill/references/detail.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p8/claude-home/skills/スキル-機能",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: スキル-機能\ndescription: Deterministic fixture skill for pathology-p8.\nversion: 1.0.0\n---\n\n# スキル-機能\n\nSynthetic fixture skill derived from seed. No real credentials.\n\n## Notes\n- gqrctlcj item 1\n- xsqsxovl item 2\n- qhkkyghf item 3\n",
+      "path": "profiles/pathology-p8/claude-home/skills/スキル-機能/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p8/claude-home/skills/スキル-機能/references",
+      "type": "dir"
+    },
+    {
+      "content": "# スキル-機能 reference\n\nDeterministic reference content.\n",
+      "path": "profiles/pathology-p8/claude-home/skills/スキル-機能/references/detail.md",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"createdAt\": \"2026-01-01T00:00:00.000Z\",\n  \"description\": \"Pathology P8 fixture profile.\",\n  \"launch\": {\n    \"claudeArgs\": [],\n    \"disableAutoMemory\": false,\n    \"mcpMode\": \"none\",\n    \"pluginDirs\": [],\n    \"skipPermissions\": true\n  },\n  \"name\": \"pathology-p8\",\n  \"template\": \"coding\",\n  \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n}\n",
+      "path": "profiles/pathology-p8/profile.json",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"skills\": {\n    \"skill with spaces\": {\n      \"contentHash\": \"97d311b8fdd15eb16f7d4774ff738ae1e8810b0be132550bf386f162607f27b7\",\n      \"installedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"mode\": \"copy\",\n      \"source\": {\n        \"kind\": \"git-remote\",\n        \"ref\": \"main\",\n        \"url\": \"https://example.invalid/skills/skill with spaces.git\"\n      },\n      \"sourceCheckedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n    },\n    \"skill-alpha\": {\n      \"contentHash\": \"98b5b8f6c49ff955e82f3e97164fdd7e70673fe20f4c78b9cfb49f6ef8987bb8\",\n      \"installedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"mode\": \"copy\",\n      \"source\": {\n        \"kind\": \"git-remote\",\n        \"ref\": \"main\",\n        \"url\": \"https://example.invalid/skills/skill-alpha.git\"\n      },\n      \"sourceCheckedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n    },\n    \"skill-beta\": {\n      \"contentHash\": \"5b5730ee9d3d4f5d6deaffc780acbb533ce8c8803de0330913e3febec80cf770\",\n      \"installedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"mode\": \"copy\",\n      \"source\": {\n        \"kind\": \"git-remote\",\n        \"ref\": \"main\",\n        \"url\": \"https://example.invalid/skills/skill-beta.git\"\n      },\n      \"sourceCheckedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n    },\n    \"✨-emoji-skill\": {\n      \"contentHash\": \"4a8e1b6d19f634b2dd2bc8e54e5871bf7dbbc58f4f64b32a5bb35ad550fed0cc\",\n      \"installedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"mode\": \"copy\",\n      \"source\": {\n        \"kind\": \"git-remote\",\n        \"ref\": \"main\",\n        \"url\": \"https://example.invalid/skills/✨-emoji-skill.git\"\n      },\n      \"sourceCheckedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n    },\n    \"スキル-機能\": {\n      \"contentHash\": \"090f60f2bd02b5da30d1e66927e82e9b72d833e9422cd4e57fea32a82b318e97\",\n      \"installedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"mode\": \"copy\",\n      \"source\": {\n        \"kind\": \"git-remote\",\n        \"ref\": \"main\",\n        \"url\": \"https://example.invalid/skills/スキル-機能.git\"\n      },\n      \"sourceCheckedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n    }\n  },\n  \"version\": 1\n}\n",
+      "path": "profiles/pathology-p8/skills-provenance.json",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p9",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p9/claude-home",
+      "type": "dir"
+    },
+    {
+      "content": "{\n  \"mcpServers\": {\n    \"fixture-server-pathology-p9\": {\n      \"args\": [\n        \"-y\",\n        \"@fixture/server\"\n      ],\n      \"command\": \"npx\",\n      \"env\": {\n        \"FIXTURE_MODE\": \"demo\"\n      },\n      \"type\": \"stdio\"\n    }\n  }\n}\n",
+      "path": "profiles/pathology-p9/claude-home/.claude.json",
+      "type": "file"
+    },
+    {
+      "content": "# pathology-p9 Profile\n\nPathology P9 fixture profile.\n\nThis is a synthetic ccps fixture profile. Content is deterministic and contains no real user data.\n",
+      "path": "profiles/pathology-p9/claude-home/CLAUDE.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p9/claude-home/agents",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: agent-01\ndescription: Deterministic fixture agent.\ntools: Read, Grep\n---\n\n# agent-01\n\nSynthetic fixture agent body.\n",
+      "path": "profiles/pathology-p9/claude-home/agents/agent-01.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p9/claude-home/memory",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p9/claude-home/memory/auto",
+      "type": "dir"
+    },
+    {
+      "content": "# pathology-p9 Auto Memory (fixture)\n\nSynthetic auto memory entry. No real user data.\n",
+      "path": "profiles/pathology-p9/claude-home/memory/auto/MEMORY.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p9/claude-home/plugins",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p9/claude-home/rules",
+      "type": "dir"
+    },
+    {
+      "content": "<!-- ccps-managed-profile-boundary:start:v2 -->\n# CCPS Profile Boundary\n\nFixture-managed boundary rule.\n<!-- ccps-managed-profile-boundary:end:v2 -->\n",
+      "path": "profiles/pathology-p9/claude-home/rules/ccps-profile.md",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"autoMemoryDirectory\": \"<apphome>/profiles/pathology-p9/claude-home/memory/auto\",\n  \"claudeMdExcludes\": [\n    \"<userhome>/.claude/CLAUDE.md\"\n  ],\n  \"env\": {\n    \"CLAUDE_CODE_ATTRIBUTION_HEADER\": \"0\"\n  }\n}\n",
+      "path": "profiles/pathology-p9/claude-home/settings.json",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p9/claude-home/skills",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/pathology-p9/claude-home/skills/overlong-skill/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "type": "dir"
+    },
+    {
+      "content": "# overlong\n\nDeeply nested fixture skill.\n",
+      "path": "profiles/pathology-p9/claude-home/skills/overlong-skill/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p9/claude-home/skills/skill-alpha",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: skill-alpha\ndescription: Deterministic fixture skill for pathology-p9.\nversion: 1.0.0\n---\n\n# skill-alpha\n\nSynthetic fixture skill derived from seed. No real credentials.\n\n## Notes\n- xfpdfpzu item 1\n- elbwlgtx item 2\n- wcztmzse item 3\n",
+      "path": "profiles/pathology-p9/claude-home/skills/skill-alpha/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p9/claude-home/skills/skill-alpha/references",
+      "type": "dir"
+    },
+    {
+      "content": "# skill-alpha reference\n\nDeterministic reference content.\n",
+      "path": "profiles/pathology-p9/claude-home/skills/skill-alpha/references/detail.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p9/claude-home/skills/skill-beta",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: skill-beta\ndescription: Deterministic fixture skill for pathology-p9.\nversion: 1.0.0\n---\n\n# skill-beta\n\nSynthetic fixture skill derived from seed. No real credentials.\n\n## Notes\n- jsqtfhcj item 1\n- emeowqsb item 2\n- gyvrfrsv item 3\n",
+      "path": "profiles/pathology-p9/claude-home/skills/skill-beta/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/pathology-p9/claude-home/skills/skill-beta/references",
+      "type": "dir"
+    },
+    {
+      "content": "# skill-beta reference\n\nDeterministic reference content.\n",
+      "path": "profiles/pathology-p9/claude-home/skills/skill-beta/references/detail.md",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"createdAt\": \"2026-01-01T00:00:00.000Z\",\n  \"description\": \"Pathology P9 fixture profile.\",\n  \"launch\": {\n    \"claudeArgs\": [],\n    \"disableAutoMemory\": false,\n    \"mcpMode\": \"none\",\n    \"pluginDirs\": [],\n    \"skipPermissions\": true\n  },\n  \"name\": \"pathology-p9\",\n  \"template\": \"coding\",\n  \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n}\n",
+      "path": "profiles/pathology-p9/profile.json",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"skills\": {\n    \"overlong-skill\": {\n      \"contentHash\": \"2a3e161ffbd3f244007c03b65be730a0bacf65a18b52ead4d5e4aad16141e97f\",\n      \"installedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"mode\": \"copy\",\n      \"source\": {\n        \"kind\": \"git-remote\",\n        \"ref\": \"main\",\n        \"url\": \"https://example.invalid/skills/overlong-skill.git\"\n      },\n      \"sourceCheckedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n    },\n    \"skill-alpha\": {\n      \"contentHash\": \"2b214845274212ad13946d0d449a7d4e905604e03937c1806bc39d6b7e818a33\",\n      \"installedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"mode\": \"copy\",\n      \"source\": {\n        \"kind\": \"git-remote\",\n        \"ref\": \"main\",\n        \"url\": \"https://example.invalid/skills/skill-alpha.git\"\n      },\n      \"sourceCheckedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n    },\n    \"skill-beta\": {\n      \"contentHash\": \"5abd735604894bed5ea21bca0a65a09f0a96efb1d89e6e2cee83b84b995f6277\",\n      \"installedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"mode\": \"copy\",\n      \"source\": {\n        \"kind\": \"git-remote\",\n        \"ref\": \"main\",\n        \"url\": \"https://example.invalid/skills/skill-beta.git\"\n      },\n      \"sourceCheckedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n    }\n  },\n  \"version\": 1\n}\n",
+      "path": "profiles/pathology-p9/skills-provenance.json",
+      "type": "file"
+    },
+    {
+      "path": "profiles/profile-001",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/profile-001/claude-home",
+      "type": "dir"
+    },
+    {
+      "content": "{\n  \"mcpServers\": {\n    \"fixture-server-profile-001\": {\n      \"args\": [\n        \"-y\",\n        \"@fixture/server\"\n      ],\n      \"command\": \"npx\",\n      \"env\": {\n        \"FIXTURE_MODE\": \"demo\"\n      },\n      \"type\": \"stdio\"\n    }\n  }\n}\n",
+      "path": "profiles/profile-001/claude-home/.claude.json",
+      "type": "file"
+    },
+    {
+      "content": "# profile-001 Profile\n\nCoding profile fixture 1.\n\nThis is a synthetic ccps fixture profile. Content is deterministic and contains no real user data.\n",
+      "path": "profiles/profile-001/claude-home/CLAUDE.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/profile-001/claude-home/agents",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: agent-01\ndescription: Deterministic fixture agent.\ntools: Read, Grep\n---\n\n# agent-01\n\nSynthetic fixture agent body.\n",
+      "path": "profiles/profile-001/claude-home/agents/agent-01.md",
+      "type": "file"
+    },
+    {
+      "content": "---\nname: agent-02\ndescription: Deterministic fixture agent.\ntools: Read, Grep\n---\n\n# agent-02\n\nSynthetic fixture agent body.\n",
+      "path": "profiles/profile-001/claude-home/agents/agent-02.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/profile-001/claude-home/memory",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/profile-001/claude-home/memory/auto",
+      "type": "dir"
+    },
+    {
+      "content": "# profile-001 Auto Memory (fixture)\n\nSynthetic auto memory entry. No real user data.\n",
+      "path": "profiles/profile-001/claude-home/memory/auto/MEMORY.md",
+      "type": "file"
+    },
+    {
+      "content": "# profile-001 Auto Memory (fixture)\n\nSynthetic auto memory entry. No real user data.\n",
+      "path": "profiles/profile-001/claude-home/memory/auto/topic-01.md",
+      "type": "file"
+    },
+    {
+      "content": "# profile-001 Auto Memory (fixture)\n\nSynthetic auto memory entry. No real user data.\n",
+      "path": "profiles/profile-001/claude-home/memory/auto/topic-02.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/profile-001/claude-home/plugins",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/profile-001/claude-home/rules",
+      "type": "dir"
+    },
+    {
+      "content": "<!-- ccps-managed-profile-boundary:start:v2 -->\n# CCPS Profile Boundary\n\nFixture-managed boundary rule.\n<!-- ccps-managed-profile-boundary:end:v2 -->\n",
+      "path": "profiles/profile-001/claude-home/rules/ccps-profile.md",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"autoMemoryDirectory\": \"<apphome>/profiles/profile-001/claude-home/memory/auto\",\n  \"claudeMdExcludes\": [\n    \"<userhome>/.claude/CLAUDE.md\"\n  ],\n  \"env\": {\n    \"CLAUDE_CODE_ATTRIBUTION_HEADER\": \"0\"\n  }\n}\n",
+      "path": "profiles/profile-001/claude-home/settings.json",
+      "type": "file"
+    },
+    {
+      "path": "profiles/profile-001/claude-home/skills",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/profile-001/claude-home/skills/skill-001",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: skill-001\ndescription: Deterministic fixture skill for profile-001.\nversion: 1.0.0\n---\n\n# skill-001\n\nSynthetic fixture skill derived from seed. No real credentials.\n\n## Notes\n- gkyvpiuh item 1\n- odkaalzo item 2\n- ydjmadqr item 3\n",
+      "path": "profiles/profile-001/claude-home/skills/skill-001/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/profile-001/claude-home/skills/skill-001/references",
+      "type": "dir"
+    },
+    {
+      "content": "# skill-001 reference\n\nDeterministic reference content.\n",
+      "path": "profiles/profile-001/claude-home/skills/skill-001/references/detail.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/profile-001/claude-home/skills/skill-002",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: skill-002\ndescription: Deterministic fixture skill for profile-001.\nversion: 1.0.0\n---\n\n# skill-002\n\nSynthetic fixture skill derived from seed. No real credentials.\n\n## Notes\n- bwnxltfk item 1\n- nojcmtel item 2\n- oxznsctg item 3\n",
+      "path": "profiles/profile-001/claude-home/skills/skill-002/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/profile-001/claude-home/skills/skill-002/references",
+      "type": "dir"
+    },
+    {
+      "content": "# skill-002 reference\n\nDeterministic reference content.\n",
+      "path": "profiles/profile-001/claude-home/skills/skill-002/references/detail.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/profile-001/claude-home/skills/skill-003",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: skill-003\ndescription: Deterministic fixture skill for profile-001.\nversion: 1.0.0\n---\n\n# skill-003\n\nSynthetic fixture skill derived from seed. No real credentials.\n\n## Notes\n- itvmmldz item 1\n- qcouflps item 2\n- gutcwulm item 3\n",
+      "path": "profiles/profile-001/claude-home/skills/skill-003/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/profile-001/claude-home/skills/skill-003/references",
+      "type": "dir"
+    },
+    {
+      "content": "# skill-003 reference\n\nDeterministic reference content.\n",
+      "path": "profiles/profile-001/claude-home/skills/skill-003/references/detail.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/profile-001/claude-home/skills/skill-004",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: skill-004\ndescription: Deterministic fixture skill for profile-001.\nversion: 1.0.0\n---\n\n# skill-004\n\nSynthetic fixture skill derived from seed. No real credentials.\n\n## Notes\n- cakbhkjs item 1\n- eygkgkrz item 2\n- jbsfpzue item 3\n",
+      "path": "profiles/profile-001/claude-home/skills/skill-004/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/profile-001/claude-home/skills/skill-004/references",
+      "type": "dir"
+    },
+    {
+      "content": "# skill-004 reference\n\nDeterministic reference content.\n",
+      "path": "profiles/profile-001/claude-home/skills/skill-004/references/detail.md",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"createdAt\": \"2026-01-01T00:00:00.000Z\",\n  \"description\": \"Coding profile fixture 1.\",\n  \"launch\": {\n    \"claudeArgs\": [],\n    \"disableAutoMemory\": false,\n    \"mcpMode\": \"none\",\n    \"pluginDirs\": [],\n    \"skipPermissions\": true\n  },\n  \"name\": \"profile-001\",\n  \"template\": \"coding\",\n  \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n}\n",
+      "path": "profiles/profile-001/profile.json",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"skills\": {\n    \"skill-001\": {\n      \"contentHash\": \"5d49e288057a200c56582ba1ef3afdfb77c8f4f1aeafa470011b06732d08d33f\",\n      \"installedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"mode\": \"copy\",\n      \"source\": {\n        \"kind\": \"git-remote\",\n        \"ref\": \"main\",\n        \"url\": \"https://example.invalid/skills/skill-001.git\"\n      },\n      \"sourceCheckedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n    },\n    \"skill-002\": {\n      \"contentHash\": \"5eace74620003f4f5124db62f506b788337799cf8376b2b75df1729cdd7421c7\",\n      \"installedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"mode\": \"copy\",\n      \"source\": {\n        \"kind\": \"git-remote\",\n        \"ref\": \"main\",\n        \"url\": \"https://example.invalid/skills/skill-002.git\"\n      },\n      \"sourceCheckedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n    },\n    \"skill-003\": {\n      \"contentHash\": \"27a02932364733f7662090ee6bafd75f66b796f0af05ee69feb1a69ff665031f\",\n      \"installedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"mode\": \"copy\",\n      \"source\": {\n        \"kind\": \"git-remote\",\n        \"ref\": \"main\",\n        \"url\": \"https://example.invalid/skills/skill-003.git\"\n      },\n      \"sourceCheckedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n    },\n    \"skill-004\": {\n      \"contentHash\": \"77c3a54c499eb4458d037116169a25525ba2a125c601994a17b1d3aa81e8135b\",\n      \"installedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"mode\": \"copy\",\n      \"source\": {\n        \"kind\": \"git-remote\",\n        \"ref\": \"main\",\n        \"url\": \"https://example.invalid/skills/skill-004.git\"\n      },\n      \"sourceCheckedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n    }\n  },\n  \"version\": 1\n}\n",
+      "path": "profiles/profile-001/skills-provenance.json",
+      "type": "file"
+    },
+    {
+      "path": "profiles/profile-002",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/profile-002/claude-home",
+      "type": "dir"
+    },
+    {
+      "content": "{\n  \"mcpServers\": {\n    \"fixture-server-profile-002\": {\n      \"args\": [\n        \"-y\",\n        \"@fixture/server\"\n      ],\n      \"command\": \"npx\",\n      \"env\": {\n        \"FIXTURE_MODE\": \"demo\"\n      },\n      \"type\": \"stdio\"\n    }\n  }\n}\n",
+      "path": "profiles/profile-002/claude-home/.claude.json",
+      "type": "file"
+    },
+    {
+      "content": "# profile-002 Profile\n\nStudy profile fixture 2.\n\nThis is a synthetic ccps fixture profile. Content is deterministic and contains no real user data.\n",
+      "path": "profiles/profile-002/claude-home/CLAUDE.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/profile-002/claude-home/agents",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: agent-01\ndescription: Deterministic fixture agent.\ntools: Read, Grep\n---\n\n# agent-01\n\nSynthetic fixture agent body.\n",
+      "path": "profiles/profile-002/claude-home/agents/agent-01.md",
+      "type": "file"
+    },
+    {
+      "content": "---\nname: agent-02\ndescription: Deterministic fixture agent.\ntools: Read, Grep\n---\n\n# agent-02\n\nSynthetic fixture agent body.\n",
+      "path": "profiles/profile-002/claude-home/agents/agent-02.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/profile-002/claude-home/memory",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/profile-002/claude-home/memory/auto",
+      "type": "dir"
+    },
+    {
+      "content": "# profile-002 Auto Memory (fixture)\n\nSynthetic auto memory entry. No real user data.\n",
+      "path": "profiles/profile-002/claude-home/memory/auto/MEMORY.md",
+      "type": "file"
+    },
+    {
+      "content": "# profile-002 Auto Memory (fixture)\n\nSynthetic auto memory entry. No real user data.\n",
+      "path": "profiles/profile-002/claude-home/memory/auto/topic-01.md",
+      "type": "file"
+    },
+    {
+      "content": "# profile-002 Auto Memory (fixture)\n\nSynthetic auto memory entry. No real user data.\n",
+      "path": "profiles/profile-002/claude-home/memory/auto/topic-02.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/profile-002/claude-home/plugins",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/profile-002/claude-home/rules",
+      "type": "dir"
+    },
+    {
+      "content": "<!-- ccps-managed-profile-boundary:start:v2 -->\n# CCPS Profile Boundary\n\nFixture-managed boundary rule.\n<!-- ccps-managed-profile-boundary:end:v2 -->\n",
+      "path": "profiles/profile-002/claude-home/rules/ccps-profile.md",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"autoMemoryDirectory\": \"<apphome>/profiles/profile-002/claude-home/memory/auto\",\n  \"claudeMdExcludes\": [\n    \"<userhome>/.claude/CLAUDE.md\"\n  ],\n  \"env\": {\n    \"CLAUDE_CODE_ATTRIBUTION_HEADER\": \"0\"\n  }\n}\n",
+      "path": "profiles/profile-002/claude-home/settings.json",
+      "type": "file"
+    },
+    {
+      "path": "profiles/profile-002/claude-home/skills",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/profile-002/claude-home/skills/skill-001",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: skill-001\ndescription: Deterministic fixture skill for profile-002.\nversion: 1.0.0\n---\n\n# skill-001\n\nSynthetic fixture skill derived from seed. No real credentials.\n\n## Notes\n- akowyytx item 1\n- otkpmapp item 2\n- apowwrov item 3\n",
+      "path": "profiles/profile-002/claude-home/skills/skill-001/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/profile-002/claude-home/skills/skill-001/references",
+      "type": "dir"
+    },
+    {
+      "content": "# skill-001 reference\n\nDeterministic reference content.\n",
+      "path": "profiles/profile-002/claude-home/skills/skill-001/references/detail.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/profile-002/claude-home/skills/skill-002",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: skill-002\ndescription: Deterministic fixture skill for profile-002.\nversion: 1.0.0\n---\n\n# skill-002\n\nSynthetic fixture skill derived from seed. No real credentials.\n\n## Notes\n- idrodkcv item 1\n- gwvxnibq item 2\n- cyisbjlo item 3\n",
+      "path": "profiles/profile-002/claude-home/skills/skill-002/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/profile-002/claude-home/skills/skill-002/references",
+      "type": "dir"
+    },
+    {
+      "content": "# skill-002 reference\n\nDeterministic reference content.\n",
+      "path": "profiles/profile-002/claude-home/skills/skill-002/references/detail.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/profile-002/claude-home/skills/skill-003",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: skill-003\ndescription: Deterministic fixture skill for profile-002.\nversion: 1.0.0\n---\n\n# skill-003\n\nSynthetic fixture skill derived from seed. No real credentials.\n\n## Notes\n- dalxsrjs item 1\n- fxdnypcz item 2\n- kwalupqc item 3\n",
+      "path": "profiles/profile-002/claude-home/skills/skill-003/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/profile-002/claude-home/skills/skill-003/references",
+      "type": "dir"
+    },
+    {
+      "content": "# skill-003 reference\n\nDeterministic reference content.\n",
+      "path": "profiles/profile-002/claude-home/skills/skill-003/references/detail.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/profile-002/claude-home/skills/skill-004",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: skill-004\ndescription: Deterministic fixture skill for profile-002.\nversion: 1.0.0\n---\n\n# skill-004\n\nSynthetic fixture skill derived from seed. No real credentials.\n\n## Notes\n- gwxxpqya item 1\n- aiylsgzi item 2\n- nstnwaxk item 3\n",
+      "path": "profiles/profile-002/claude-home/skills/skill-004/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/profile-002/claude-home/skills/skill-004/references",
+      "type": "dir"
+    },
+    {
+      "content": "# skill-004 reference\n\nDeterministic reference content.\n",
+      "path": "profiles/profile-002/claude-home/skills/skill-004/references/detail.md",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"createdAt\": \"2026-01-01T00:00:00.000Z\",\n  \"description\": \"Study profile fixture 2.\",\n  \"launch\": {\n    \"claudeArgs\": [],\n    \"disableAutoMemory\": false,\n    \"mcpMode\": \"none\",\n    \"pluginDirs\": [],\n    \"skipPermissions\": true\n  },\n  \"name\": \"profile-002\",\n  \"template\": \"study\",\n  \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n}\n",
+      "path": "profiles/profile-002/profile.json",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"skills\": {\n    \"skill-001\": {\n      \"contentHash\": \"de5884fe9840c839e0212eb9f66918c0bd6502e3ada55a6c063d33c968b67dd1\",\n      \"installedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"mode\": \"copy\",\n      \"source\": {\n        \"kind\": \"git-remote\",\n        \"ref\": \"main\",\n        \"url\": \"https://example.invalid/skills/skill-001.git\"\n      },\n      \"sourceCheckedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n    },\n    \"skill-002\": {\n      \"contentHash\": \"df0402f8787b2e952c1f3e0eef915418f76a67251ca4955e1af48c2d72d27258\",\n      \"installedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"mode\": \"copy\",\n      \"source\": {\n        \"kind\": \"git-remote\",\n        \"ref\": \"main\",\n        \"url\": \"https://example.invalid/skills/skill-002.git\"\n      },\n      \"sourceCheckedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n    },\n    \"skill-003\": {\n      \"contentHash\": \"a4f773bb20d4735cedbb3f7ccda1d4dcf48cf8c567889b4614da66e33ed6f9f1\",\n      \"installedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"mode\": \"copy\",\n      \"source\": {\n        \"kind\": \"git-remote\",\n        \"ref\": \"main\",\n        \"url\": \"https://example.invalid/skills/skill-003.git\"\n      },\n      \"sourceCheckedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n    },\n    \"skill-004\": {\n      \"contentHash\": \"4e61aa58f752d2779afec12ad405e4386db7f8872a68a60c85a5a23a855ad9a3\",\n      \"installedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"mode\": \"copy\",\n      \"source\": {\n        \"kind\": \"git-remote\",\n        \"ref\": \"main\",\n        \"url\": \"https://example.invalid/skills/skill-004.git\"\n      },\n      \"sourceCheckedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n    }\n  },\n  \"version\": 1\n}\n",
+      "path": "profiles/profile-002/skills-provenance.json",
+      "type": "file"
+    },
+    {
+      "path": "profiles/profile-003",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/profile-003/claude-home",
+      "type": "dir"
+    },
+    {
+      "content": "{\n  \"mcpServers\": {\n    \"fixture-server-profile-003\": {\n      \"args\": [\n        \"-y\",\n        \"@fixture/server\"\n      ],\n      \"command\": \"npx\",\n      \"env\": {\n        \"FIXTURE_MODE\": \"demo\"\n      },\n      \"type\": \"stdio\"\n    }\n  }\n}\n",
+      "path": "profiles/profile-003/claude-home/.claude.json",
+      "type": "file"
+    },
+    {
+      "content": "# profile-003 Profile\n\nWork profile fixture 3.\n\nThis is a synthetic ccps fixture profile. Content is deterministic and contains no real user data.\n",
+      "path": "profiles/profile-003/claude-home/CLAUDE.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/profile-003/claude-home/agents",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: agent-01\ndescription: Deterministic fixture agent.\ntools: Read, Grep\n---\n\n# agent-01\n\nSynthetic fixture agent body.\n",
+      "path": "profiles/profile-003/claude-home/agents/agent-01.md",
+      "type": "file"
+    },
+    {
+      "content": "---\nname: agent-02\ndescription: Deterministic fixture agent.\ntools: Read, Grep\n---\n\n# agent-02\n\nSynthetic fixture agent body.\n",
+      "path": "profiles/profile-003/claude-home/agents/agent-02.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/profile-003/claude-home/memory",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/profile-003/claude-home/memory/auto",
+      "type": "dir"
+    },
+    {
+      "content": "# profile-003 Auto Memory (fixture)\n\nSynthetic auto memory entry. No real user data.\n",
+      "path": "profiles/profile-003/claude-home/memory/auto/MEMORY.md",
+      "type": "file"
+    },
+    {
+      "content": "# profile-003 Auto Memory (fixture)\n\nSynthetic auto memory entry. No real user data.\n",
+      "path": "profiles/profile-003/claude-home/memory/auto/topic-01.md",
+      "type": "file"
+    },
+    {
+      "content": "# profile-003 Auto Memory (fixture)\n\nSynthetic auto memory entry. No real user data.\n",
+      "path": "profiles/profile-003/claude-home/memory/auto/topic-02.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/profile-003/claude-home/plugins",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/profile-003/claude-home/rules",
+      "type": "dir"
+    },
+    {
+      "content": "<!-- ccps-managed-profile-boundary:start:v2 -->\n# CCPS Profile Boundary\n\nFixture-managed boundary rule.\n<!-- ccps-managed-profile-boundary:end:v2 -->\n",
+      "path": "profiles/profile-003/claude-home/rules/ccps-profile.md",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"autoMemoryDirectory\": \"<apphome>/profiles/profile-003/claude-home/memory/auto\",\n  \"claudeMdExcludes\": [\n    \"<userhome>/.claude/CLAUDE.md\"\n  ],\n  \"env\": {\n    \"CLAUDE_CODE_ATTRIBUTION_HEADER\": \"0\"\n  }\n}\n",
+      "path": "profiles/profile-003/claude-home/settings.json",
+      "type": "file"
+    },
+    {
+      "path": "profiles/profile-003/claude-home/skills",
+      "type": "dir"
+    },
+    {
+      "path": "profiles/profile-003/claude-home/skills/skill-001",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: skill-001\ndescription: Deterministic fixture skill for profile-003.\nversion: 1.0.0\n---\n\n# skill-001\n\nSynthetic fixture skill derived from seed. No real credentials.\n\n## Notes\n- dobhxxio item 1\n- ifnlwnlu item 2\n- jriippfh item 3\n",
+      "path": "profiles/profile-003/claude-home/skills/skill-001/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/profile-003/claude-home/skills/skill-001/references",
+      "type": "dir"
+    },
+    {
+      "content": "# skill-001 reference\n\nDeterministic reference content.\n",
+      "path": "profiles/profile-003/claude-home/skills/skill-001/references/detail.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/profile-003/claude-home/skills/skill-002",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: skill-002\ndescription: Deterministic fixture skill for profile-003.\nversion: 1.0.0\n---\n\n# skill-002\n\nSynthetic fixture skill derived from seed. No real credentials.\n\n## Notes\n- gpfuiqpc item 1\n- btwylfev item 2\n- caloqgav item 3\n",
+      "path": "profiles/profile-003/claude-home/skills/skill-002/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/profile-003/claude-home/skills/skill-002/references",
+      "type": "dir"
+    },
+    {
+      "content": "# skill-002 reference\n\nDeterministic reference content.\n",
+      "path": "profiles/profile-003/claude-home/skills/skill-002/references/detail.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/profile-003/claude-home/skills/skill-003",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: skill-003\ndescription: Deterministic fixture skill for profile-003.\nversion: 1.0.0\n---\n\n# skill-003\n\nSynthetic fixture skill derived from seed. No real credentials.\n\n## Notes\n- jivfzmpp item 1\n- yiguzxyj item 2\n- jumrfrbc item 3\n",
+      "path": "profiles/profile-003/claude-home/skills/skill-003/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/profile-003/claude-home/skills/skill-003/references",
+      "type": "dir"
+    },
+    {
+      "content": "# skill-003 reference\n\nDeterministic reference content.\n",
+      "path": "profiles/profile-003/claude-home/skills/skill-003/references/detail.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/profile-003/claude-home/skills/skill-004",
+      "type": "dir"
+    },
+    {
+      "content": "---\nname: skill-004\ndescription: Deterministic fixture skill for profile-003.\nversion: 1.0.0\n---\n\n# skill-004\n\nSynthetic fixture skill derived from seed. No real credentials.\n\n## Notes\n- pssnecge item 1\n- oxcokgws item 2\n- qgsocxgz item 3\n",
+      "path": "profiles/profile-003/claude-home/skills/skill-004/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "profiles/profile-003/claude-home/skills/skill-004/references",
+      "type": "dir"
+    },
+    {
+      "content": "# skill-004 reference\n\nDeterministic reference content.\n",
+      "path": "profiles/profile-003/claude-home/skills/skill-004/references/detail.md",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"createdAt\": \"2026-01-01T00:00:00.000Z\",\n  \"description\": \"Work profile fixture 3.\",\n  \"launch\": {\n    \"claudeArgs\": [],\n    \"disableAutoMemory\": false,\n    \"mcpMode\": \"none\",\n    \"pluginDirs\": [],\n    \"skipPermissions\": true\n  },\n  \"name\": \"profile-003\",\n  \"template\": \"work\",\n  \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n}\n",
+      "path": "profiles/profile-003/profile.json",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"skills\": {\n    \"skill-001\": {\n      \"contentHash\": \"e637ec60779125f234316345f0c74208e32b26aec65f103a1d7cedf405d4c843\",\n      \"installedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"mode\": \"copy\",\n      \"source\": {\n        \"kind\": \"git-remote\",\n        \"ref\": \"main\",\n        \"url\": \"https://example.invalid/skills/skill-001.git\"\n      },\n      \"sourceCheckedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n    },\n    \"skill-002\": {\n      \"contentHash\": \"113e376709fd4d69fcdcec85a9a6ce92e32f717a217e640ec81da99129f11bea\",\n      \"installedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"mode\": \"copy\",\n      \"source\": {\n        \"kind\": \"git-remote\",\n        \"ref\": \"main\",\n        \"url\": \"https://example.invalid/skills/skill-002.git\"\n      },\n      \"sourceCheckedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n    },\n    \"skill-003\": {\n      \"contentHash\": \"9c9656a876327f5dede349743783bffd02de97d41d493f5d25866035a002f0d5\",\n      \"installedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"mode\": \"copy\",\n      \"source\": {\n        \"kind\": \"git-remote\",\n        \"ref\": \"main\",\n        \"url\": \"https://example.invalid/skills/skill-003.git\"\n      },\n      \"sourceCheckedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n    },\n    \"skill-004\": {\n      \"contentHash\": \"8dc0c7126eda71cd8c0e79c097cf314143985d458ee6baef6e9080fe3bf87a20\",\n      \"installedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"mode\": \"copy\",\n      \"source\": {\n        \"kind\": \"git-remote\",\n        \"ref\": \"main\",\n        \"url\": \"https://example.invalid/skills/skill-004.git\"\n      },\n      \"sourceCheckedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2026-01-01T00:00:00.000Z\"\n    }\n  },\n  \"version\": 1\n}\n",
+      "path": "profiles/profile-003/skills-provenance.json",
+      "type": "file"
+    },
+    {
+      "path": "recovery-bin",
+      "type": "dir"
+    },
+    {
+      "path": "recovery-bin/20200101T000000-pathology-p10-skill",
+      "type": "dir"
+    },
+    {
+      "content": "{\n  \"coordinates\": {\n    \"targetRelativePath\": \"claude-home/skills/skill-expired-removal\"\n  },\n  \"id\": \"20200101T000000-pathology-p10-skill\",\n  \"kind\": \"skill\",\n  \"origin\": \"remove\",\n  \"profile\": \"pathology-p10\",\n  \"removedAt\": \"2020-01-01T00:00:00.000Z\",\n  \"secretBearing\": false,\n  \"shape\": \"file-tree\",\n  \"sizeBytes\": 0,\n  \"version\": 1\n}\n",
+      "path": "recovery-bin/20200101T000000-pathology-p10-skill/item.json",
+      "type": "file"
+    },
+    {
+      "path": "recovery-bin/20200101T000000-pathology-p10-skill/payload",
+      "type": "dir"
+    },
+    {
+      "content": "# expired recovery payload\n\nSynthetic payload for an expired Recovery Item.\n",
+      "path": "recovery-bin/20200101T000000-pathology-p10-skill/payload/SKILL.md",
+      "type": "file"
+    },
+    {
+      "path": "recovery-bin/20200102T000000-pathology-p10-agent",
+      "type": "dir"
+    },
+    {
+      "content": "{\n  \"coordinates\": {\n    \"targetRelativePath\": \"claude-home/agents/agent-01.md\"\n  },\n  \"id\": \"20200102T000000-pathology-p10-agent\",\n  \"kind\": \"agent\",\n  \"origin\": \"remove\",\n  \"profile\": \"pathology-p10\",\n  \"removedAt\": \"2020-01-01T00:00:00.000Z\",\n  \"secretBearing\": false,\n  \"shape\": \"file-tree\",\n  \"sizeBytes\": 0,\n  \"version\": 1\n}\n",
+      "path": "recovery-bin/20200102T000000-pathology-p10-agent/item.json",
+      "type": "file"
+    },
+    {
+      "path": "recovery-bin/20200102T000000-pathology-p10-agent/payload",
+      "type": "dir"
+    },
+    {
+      "content": "# expired recovery payload\n\nSynthetic payload for an expired Recovery Item.\n",
+      "path": "recovery-bin/20200102T000000-pathology-p10-agent/payload/SKILL.md",
+      "type": "file"
+    },
+    {
+      "content": "{\n  \"recentProjectDirs\": [\n    {\n      \"lastUsedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"path\": \"<userhome>/fixture/project-a\"\n    },\n    {\n      \"lastUsedAt\": \"2026-01-01T00:00:00.000Z\",\n      \"path\": \"<userhome>/fixture/project-b\"\n    }\n  ],\n  \"version\": 1\n}\n",
+      "path": "state.json",
+      "type": "file"
+    }
+  ],
+  "generatorVersion": 1,
+  "notes": "Deterministic ccps Profile fixture. All content is synthetic and derived from the seed. No real credentials or user data. Path-absolute fields use canonical placeholder tokens.",
+  "pathologies": [
+    "P1",
+    "P2",
+    "P3",
+    "P4",
+    "P5",
+    "P6",
+    "P7",
+    "P8",
+    "P9",
+    "P10",
+    "P11",
+    "P12",
+    "P13"
+  ],
+  "profiles": [
+    {
+      "agentCount": 2,
+      "autoMemoryCount": 3,
+      "description": "Coding profile fixture 1.",
+      "name": "profile-001",
+      "pathologyTags": [],
+      "profileJsonMalformed": false,
+      "skills": [
+        {
+          "kind": "copy",
+          "name": "skill-001"
+        },
+        {
+          "kind": "copy",
+          "name": "skill-002"
+        },
+        {
+          "kind": "copy",
+          "name": "skill-003"
+        },
+        {
+          "kind": "copy",
+          "name": "skill-004"
+        }
+      ]
+    },
+    {
+      "agentCount": 2,
+      "autoMemoryCount": 3,
+      "description": "Study profile fixture 2.",
+      "name": "profile-002",
+      "pathologyTags": [],
+      "profileJsonMalformed": false,
+      "skills": [
+        {
+          "kind": "copy",
+          "name": "skill-001"
+        },
+        {
+          "kind": "copy",
+          "name": "skill-002"
+        },
+        {
+          "kind": "copy",
+          "name": "skill-003"
+        },
+        {
+          "kind": "copy",
+          "name": "skill-004"
+        }
+      ]
+    },
+    {
+      "agentCount": 2,
+      "autoMemoryCount": 3,
+      "description": "Work profile fixture 3.",
+      "name": "profile-003",
+      "pathologyTags": [],
+      "profileJsonMalformed": false,
+      "skills": [
+        {
+          "kind": "copy",
+          "name": "skill-001"
+        },
+        {
+          "kind": "copy",
+          "name": "skill-002"
+        },
+        {
+          "kind": "copy",
+          "name": "skill-003"
+        },
+        {
+          "kind": "copy",
+          "name": "skill-004"
+        }
+      ]
+    },
+    {
+      "agentCount": 1,
+      "autoMemoryCount": 1,
+      "description": "Pathology P1 fixture profile.",
+      "name": "pathology-p1",
+      "pathologyTags": [
+        "P1"
+      ],
+      "profileJsonMalformed": true,
+      "skills": [
+        {
+          "kind": "copy",
+          "name": "skill-alpha"
+        },
+        {
+          "kind": "copy",
+          "name": "skill-beta"
+        }
+      ]
+    },
+    {
+      "agentCount": 1,
+      "autoMemoryCount": 1,
+      "description": "Pathology P2 fixture profile.",
+      "name": "pathology-p2",
+      "pathologyTags": [
+        "P2"
+      ],
+      "profileJsonMalformed": false,
+      "skills": [
+        {
+          "kind": "copy",
+          "name": "skill-alpha"
+        },
+        {
+          "kind": "copy",
+          "name": "skill-beta"
+        }
+      ]
+    },
+    {
+      "agentCount": 1,
+      "autoMemoryCount": 1,
+      "description": "Pathology P3 fixture profile.",
+      "name": "pathology-p3",
+      "pathologyTags": [
+        "P3"
+      ],
+      "profileJsonMalformed": false,
+      "skills": [
+        {
+          "kind": "copy",
+          "name": "skill-alpha"
+        },
+        {
+          "kind": "copy",
+          "name": "skill-beta"
+        }
+      ]
+    },
+    {
+      "agentCount": 1,
+      "autoMemoryCount": 1,
+      "description": "Pathology P4 fixture profile.",
+      "name": "pathology-p4",
+      "pathologyTags": [
+        "P4"
+      ],
+      "profileJsonMalformed": false,
+      "skills": [
+        {
+          "kind": "copy",
+          "name": "skill-alpha"
+        },
+        {
+          "kind": "copy",
+          "name": "skill-beta"
+        }
+      ]
+    },
+    {
+      "agentCount": 1,
+      "autoMemoryCount": 1,
+      "description": "Pathology P5 fixture profile.",
+      "name": "pathology-p5",
+      "pathologyTags": [
+        "P5"
+      ],
+      "profileJsonMalformed": false,
+      "skills": [
+        {
+          "kind": "copy",
+          "name": "skill-alpha"
+        },
+        {
+          "kind": "copy",
+          "name": "skill-beta"
+        },
+        {
+          "kind": "copy",
+          "name": "skill-premanifest"
+        }
+      ]
+    },
+    {
+      "agentCount": 1,
+      "autoMemoryCount": 1,
+      "description": "Pathology P6 fixture profile.",
+      "name": "pathology-p6",
+      "pathologyTags": [
+        "P6"
+      ],
+      "profileJsonMalformed": false,
+      "skills": [
+        {
+          "kind": "copy",
+          "name": "skill-alpha"
+        },
+        {
+          "kind": "copy",
+          "name": "skill-beta"
+        },
+        {
+          "kind": "broken-symlink",
+          "name": "skill-broken-link"
+        },
+        {
+          "kind": "circular-symlink",
+          "name": "skill-circular-link"
+        }
+      ]
+    },
+    {
+      "agentCount": 1,
+      "autoMemoryCount": 1,
+      "description": "Pathology P7 fixture profile.",
+      "name": "pathology-p7",
+      "pathologyTags": [
+        "P7"
+      ],
+      "profileJsonMalformed": false,
+      "skills": [
+        {
+          "kind": "copy",
+          "name": "skill-alpha"
+        },
+        {
+          "kind": "copy",
+          "name": "skill-beta"
+        },
+        {
+          "kind": "junction-missing",
+          "name": "skill-missing-junction"
+        }
+      ]
+    },
+    {
+      "agentCount": 1,
+      "autoMemoryCount": 1,
+      "description": "病态 P8 测试配置 (CJK/emoji/spaces).",
+      "name": "pathology-p8",
+      "pathologyTags": [
+        "P8"
+      ],
+      "profileJsonMalformed": false,
+      "skills": [
+        {
+          "kind": "copy",
+          "name": "skill-alpha"
+        },
+        {
+          "kind": "copy",
+          "name": "skill-beta"
+        },
+        {
+          "kind": "copy",
+          "name": "スキル-機能"
+        },
+        {
+          "kind": "copy",
+          "name": "✨-emoji-skill"
+        },
+        {
+          "kind": "copy",
+          "name": "skill with spaces"
+        }
+      ]
+    },
+    {
+      "agentCount": 1,
+      "autoMemoryCount": 1,
+      "description": "Pathology P9 fixture profile.",
+      "name": "pathology-p9",
+      "pathologyTags": [
+        "P9"
+      ],
+      "profileJsonMalformed": false,
+      "skills": [
+        {
+          "kind": "copy",
+          "name": "skill-alpha"
+        },
+        {
+          "kind": "copy",
+          "name": "skill-beta"
+        },
+        {
+          "kind": "copy",
+          "name": "overlong-skill"
+        }
+      ]
+    },
+    {
+      "agentCount": 1,
+      "autoMemoryCount": 1,
+      "description": "Pathology P10 fixture profile.",
+      "name": "pathology-p10",
+      "pathologyTags": [
+        "P10"
+      ],
+      "profileJsonMalformed": false,
+      "skills": [
+        {
+          "kind": "copy",
+          "name": "skill-alpha"
+        },
+        {
+          "kind": "copy",
+          "name": "skill-beta"
+        },
+        {
+          "kind": "copy",
+          "name": "skill-expired-removal"
+        }
+      ]
+    },
+    {
+      "agentCount": 1,
+      "autoMemoryCount": 1,
+      "description": "Pathology P11 fixture profile.",
+      "name": "pathology-p11",
+      "pathologyTags": [
+        "P11"
+      ],
+      "profileJsonMalformed": false,
+      "skills": [
+        {
+          "kind": "copy",
+          "name": "skill-alpha"
+        },
+        {
+          "kind": "copy",
+          "name": "skill-beta"
+        }
+      ]
+    },
+    {
+      "agentCount": 1,
+      "autoMemoryCount": 1,
+      "description": "Pathology P12 fixture profile.",
+      "name": "pathology-p12",
+      "pathologyTags": [
+        "P12"
+      ],
+      "profileJsonMalformed": false,
+      "skills": [
+        {
+          "kind": "copy",
+          "name": "skill-alpha"
+        },
+        {
+          "kind": "copy",
+          "name": "skill-beta"
+        }
+      ]
+    },
+    {
+      "agentCount": 1,
+      "autoMemoryCount": 1,
+      "description": "Pathology P13 fixture profile.",
+      "name": "pathology-p13",
+      "pathologyTags": [
+        "P13"
+      ],
+      "profileJsonMalformed": false,
+      "skills": [
+        {
+          "kind": "copy",
+          "name": "skill-alpha"
+        },
+        {
+          "kind": "copy",
+          "name": "skill-beta"
+        },
+        {
+          "kind": "copy",
+          "name": "skill-crash-tmp"
+        },
+        {
+          "kind": "copy",
+          "name": "skill-crash-old-and-final"
+        },
+        {
+          "kind": "copy",
+          "name": "skill-crash-old-no-final"
+        }
+      ]
+    }
+  ],
+  "recoveryBin": [
+    {
+      "expired": true,
+      "id": "20200101T000000-pathology-p10-skill",
+      "origin": "remove"
+    },
+    {
+      "expired": true,
+      "id": "20200102T000000-pathology-p10-agent",
+      "origin": "remove"
+    }
+  ],
+  "seed": 117951607,
+  "summary": {
+    "entryCount": 465,
+    "healthyProfileCount": 3,
+    "pathologyProfileCount": 13,
+    "pathologyTags": [
+      "P1",
+      "P2",
+      "P3",
+      "P4",
+      "P5",
+      "P6",
+      "P7",
+      "P8",
+      "P9",
+      "P10",
+      "P11",
+      "P12",
+      "P13"
+    ],
+    "profileCount": 16,
+    "skillCount": 47
+  },
+  "tier": {
+    "name": "mini",
+    "profiles": 3,
+    "skillsPerProfile": 4
+  },
+  "version": 1
+}

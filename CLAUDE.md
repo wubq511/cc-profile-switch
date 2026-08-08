@@ -13,7 +13,7 @@ ccps launch coding
 
 Launch sets `CLAUDE_CONFIG_DIR=<profile>/claude-home`, keeps `cwd` unchanged, and never copies or overwrites the real user Claude directory.
 
-Tech stack: TypeScript, Node.js LTS, Commander, Zod, Vitest, tsup, fs-extra, picocolors.
+Tech stack: TypeScript, Node.js LTS, Commander, Zod, Vitest, tsup, fs-extra, tar, picocolors.
 
 ## Commands
 
@@ -146,4 +146,4 @@ Do not commit, push, merge, release, or publish unless the user requested that a
 
 ## Scope
 
-Current CLI includes init, list, create, show, validate, backup, copy, rename, remove, default, launch, create-profile, edit, and TUI. GUI, cloud sync, multi-account/OAuth migration, plugin marketplace, and runtime project isolation remain out of scope.
+Current CLI includes init, list, create, show, validate, backup, export, import, copy, rename, remove, default, launch, create-profile, edit, plugin, bin, and TUI. GUI, cloud sync, multi-account/OAuth migration, plugin marketplace, and runtime project isolation remain out of scope.

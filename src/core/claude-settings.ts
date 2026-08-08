@@ -2,6 +2,7 @@ import fs from 'fs-extra';
 
 import { resolveFilesystemPath, resolveUserHome } from '../platform/path';
 import { apiSettingsSchema } from '../schemas/api-settings';
+import { isNodeError, isRecord } from '../utils/type-guards';
 import { getAppHomePaths, writeJsonFile } from './app-config';
 
 export type ImportClaudeApiSettingsOptions = {
@@ -139,12 +140,4 @@ function skippedImport(sourcePath: string, targetPath: string): ImportClaudeApiS
 
 function sortedKeys(value: Record<string, string>): string[] {
   return Object.keys(value).sort((left, right) => left.localeCompare(right));
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error;
 }

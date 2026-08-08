@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import fs from 'fs-extra';
 import path from 'node:path';
 
+import { isNodeError } from '../utils/type-guards';
 import { resolveFilesystemPath } from './path';
 
 export type ProcessSpawnOptions = {
@@ -260,8 +261,4 @@ function fileExtension(value: string): string {
   const dotIndex = basename.lastIndexOf('.');
 
   return dotIndex === -1 ? '' : basename.slice(dotIndex).toLowerCase();
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error;
 }
