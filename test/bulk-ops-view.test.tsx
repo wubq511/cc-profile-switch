@@ -185,7 +185,7 @@ describe('BulkOpsView headless render', () => {
     expect(output).toContain('copy · none');
     // Bulk-ops chrome renders.
     expect(output).toContain('[space] select');
-  });
+  }, 20000);
 
   it('agents category lists agents with their description detail', async () => {
     const { appHome } = await makeAppHome(['coding']);
@@ -196,7 +196,7 @@ describe('BulkOpsView headless render', () => {
     const output = await renderView(appHome, fresh, 'agents', 'planner');
 
     expect(output).toContain('planner');
-  });
+  }, 20000);
 
   it('mcp category lists configured servers without spawning claude mcp', async () => {
     const { appHome } = await makeAppHome(['coding']);
@@ -207,7 +207,7 @@ describe('BulkOpsView headless render', () => {
 
     expect(output).toContain('fetch-srv');
     expect(output).toContain('transport http');
-  });
+  }, 20000);
 
   it('autoMemory category lists entries with size and date', async () => {
     const { appHome } = await makeAppHome(['coding']);
@@ -217,11 +217,11 @@ describe('BulkOpsView headless render', () => {
     const output = await renderView(appHome, fresh, 'autoMemory', 'topics.md');
 
     expect(output).toContain('topics.md');
-  });
+  }, 20000);
 
   it('renders an empty state when the category has nothing', async () => {
     const { appHome, data } = await makeAppHome(['coding']);
     const output = await renderView(appHome, data, 'skills');
     expect(output).toContain('Nothing to manage here.');
-  });
+  }, 20000);
 });

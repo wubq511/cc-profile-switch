@@ -408,16 +408,28 @@ describe('Workbench input dispatch ownership (issue #90)', () => {
       await pressKey(stdin, stdout, '\r');
       await waitForOutput(stdout, 'Description updated', 5000);
 
-      const lengthAfterSecondFlash = stdout.output.length;
+      // submitDescriptionEdit flashes, then awaits refreshData(); the reload's
+      // re-render lands right after and keeps the flash visible. Inside the
+      // flash's own window any landed frame is therefore a re-render, not a
+      // clear — except a leaked clear from the first flash's timer, which drops
+      // the message (issue #90). Check content rather than byte-stability so a
+      // slow platform (Windows CI) landing the reload frame mid-window cannot
+      // false-fail.
+      const lengthAfterFlash = stdout.output.length;
       await sleep(1500);
-      expect(stdout.output.length).toBe(lengthAfterSecondFlash);
+      if (stdout.output.length > lengthAfterFlash) {
+        const framesSoFar = flatten(stripAnsi(stdout.output.slice(lengthAfterFlash)));
+        expect(framesSoFar).toContain('Description updated');
+      }
 
-      // Past the second flash's own deadline the message does clear: a frame
-      // lands and the frames written since the flash no longer show it.
+      // The reload frame has landed by now, so reset the baseline and wait past
+      // the flash's own 2.5s deadline: the clear lands as a frame that no
+      // longer shows the message.
+      stdout.snapshot();
       await sleep(1800);
-      expect(stdout.output.length).toBeGreaterThan(lengthAfterSecondFlash);
-      const framesSinceFlash = flatten(stripAnsi(stdout.output.slice(lengthAfterSecondFlash)));
-      expect(framesSinceFlash).not.toContain('Description updated');
+      expect(stdout.output.length).toBeGreaterThan(0);
+      const clearFrames = flatten(stripAnsi(stdout.output));
+      expect(clearFrames).not.toContain('Description updated');
     } finally {
       instance.unmount();
       await instance.waitUntilExit();
