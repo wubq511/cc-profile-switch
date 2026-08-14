@@ -43,7 +43,7 @@ export function ResizeGuard({ width, height, children }: ResizeGuardProps): Reac
         `${t('resize.minimum')}: ${MIN_WIDTH}×${MIN_HEIGHT}`,
       ),
       React.createElement(Box, { marginTop: 1 },
-        React.createElement(Text, { dimColor: true }, t('resize.hint')),
+        React.createElement(Text, { color: 'gray' }, t('resize.hint')),
       ),
     ),
   );

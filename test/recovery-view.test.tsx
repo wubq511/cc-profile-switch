@@ -105,13 +105,14 @@ describe('RecoveryView render (issue #94)', () => {
     appHome: string,
     /** Poll until the async reload settles on this substring. */
     until?: string,
+    width = 80,
   ): Promise<string> {
     const stdout = new FakeTtyStdout();
     const instance = render(
       React.createElement(RecoveryView, {
         appHomePath: appHome,
         profileNames: ['coding'],
-        width: 80,
+        width,
         height: 24,
         onBack: () => {},
         headless: true,
@@ -177,6 +178,19 @@ describe('RecoveryView render (issue #94)', () => {
     const output = await renderView(appHome, 'The Recovery Bin is empty.');
     expect(output).toContain('The Recovery Bin is empty.');
     expect(output).toContain('No backups yet.');
+  }, 20000);
+
+  it('truncates the pane title to the inner width instead of wrapping mid-token (issue #98, V16)', async () => {
+    const appHome = await makeAppHome();
+    const output = await renderView(appHome, 'Recovery Bin', 54);
+    const rows = output.split('\n');
+    const titleRow = rows.find((r) => r.includes('Recovery Bin'));
+    expect(titleRow).toBeDefined();
+    // The subtitle truncates with … on the SAME row…
+    expect(titleRow).toContain('…');
+    // …instead of wrapping its tail onto the next row mid-token.
+    const titleIdx = rows.indexOf(titleRow!);
+    expect(rows[titleIdx + 1] ?? '').not.toMatch(/^\s*(Bin|durable)\b/);
   }, 20000);
 
   it('shows the header, subtitle, and action hint', async () => {

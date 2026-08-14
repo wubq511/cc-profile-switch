@@ -243,14 +243,14 @@ export function DiscoverView({
     <Box flexDirection="column" width={width} height={height} paddingX={1}>
       <Box marginBottom={1}>
         <Text bold>{t('discover.breadcrumb')}</Text>
-        <Text dimColor> · {profileName}</Text>
+        <Text color="gray"> · {profileName}</Text>
         {experimentalEnabled && (
           <Text color="magenta" bold>
             {' '}
             [{t('discover.experimental.badge')}]
           </Text>
         )}
-        {!experimentalEnabled && <Text dimColor> ({t('discover.experimental.off')})</Text>}
+        {!experimentalEnabled && <Text color="gray"> ({t('discover.experimental.off')})</Text>}
       </Box>
 
       {/* Search / source line */}
@@ -258,16 +258,16 @@ export function DiscoverView({
         <Box flexDirection="column" marginBottom={1}>
           <Text bold>{t('discover.source.prompt')}</Text>
           <Text color="cyan">{sourceInput}█</Text>
-          <Text dimColor>{t('discover.source.hint')}</Text>
+          <Text color="gray">{t('discover.source.hint')}</Text>
         </Box>
       ) : searchFocused ? (
         <Box flexDirection="column" marginBottom={1}>
           <Text color="cyan">/ {query}█</Text>
-          <Text dimColor>{t('discover.search.hint')}</Text>
+          <Text color="gray">{t('discover.search.hint')}</Text>
         </Box>
       ) : (
         <Box flexDirection="column" marginBottom={1}>
-          <Text dimColor>
+          <Text color="gray">
             {query.trim().length > 0
               ? `${t('discover.search.active')}: ${query}`
               : t('discover.search.placeholder')}
@@ -290,7 +290,7 @@ export function DiscoverView({
             {formatLayerNote(catalog!.layers, 'discover.unavailable', t)}
           </Text>
         ) : (
-          <Text dimColor>{t('discover.empty')}</Text>
+          <Text color="gray">{t('discover.empty')}</Text>
         )}
       </Box>
 
@@ -298,7 +298,7 @@ export function DiscoverView({
       <Box flexDirection="column" marginTop={1}>
         <StatusLine catalog={catalog} t={t} />
         {status && <Text color="yellow">{status}</Text>}
-        {mode !== 'source' && !searchFocused && <Text dimColor>{t('discover.actions')}</Text>}
+        {mode !== 'source' && !searchFocused && <Text color="gray">{t('discover.actions')}</Text>}
       </Box>
     </Box>
   );
@@ -341,11 +341,11 @@ function renderWindow(
         <Text bold={isSel} color={isSel ? 'cyan' : undefined} inverse={isSel}>
           {nameLine}
         </Text>
-        <Text dimColor wrap="truncate">
+        <Text color="gray" wrap="truncate">
           {meta}
         </Text>
         {detailLine && (
-          <Text dimColor wrap="truncate">
+          <Text color="gray" wrap="truncate">
             {detailLine}
           </Text>
         )}
@@ -388,7 +388,7 @@ function StatusLine({
   if (stale.length > 0) {
     const fetchedAt = stale[0]!.fetchedAt;
     return (
-      <Text dimColor wrap="wrap">
+      <Text color="gray" wrap="wrap">
         {t('discover.cachedStale', { time: fetchedAt ? formatTime(fetchedAt) : '' })}
       </Text>
     );

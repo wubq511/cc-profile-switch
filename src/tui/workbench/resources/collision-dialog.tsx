@@ -113,17 +113,17 @@ export function CollisionDialog({
             <Text color="cyan">{state.nameInput}█</Text>
           </Text>
           {state.error && <Text color="yellow">{state.error}</Text>}
-          <Text dimColor>{t('collision.rename.hint')}</Text>
+          <Text color="gray">{t('collision.rename.hint')}</Text>
         </Box>
       ) : state.phase === 'confirm-delete' ? (
         <Box flexDirection="column">
           <Text>{t('collision.delete.confirm', { resource: resourceName })}</Text>
-          <Text dimColor>{t('collision.delete.detail')}</Text>
-          <Text dimColor>{t('collision.delete.hint')}</Text>
+          <Text color="gray">{t('collision.delete.detail')}</Text>
+          <Text color="gray">{t('collision.delete.hint')}</Text>
         </Box>
       ) : (
         <Box flexDirection="column">
-          <Text dimColor>"{resourceName}"</Text>
+          <Text color="gray">"{resourceName}"</Text>
           <Box marginTop={1} flexDirection="column">
             {/* Numbered-explanation panel (issue #94): each option is a numbered
                 row whose explanation makes the consequence of the choice (and of
@@ -134,7 +134,7 @@ export function CollisionDialog({
             <Text wrap="wrap">
               2. {t('collision.deleteAndRestore')} — {t('collision.explain.delete')}
             </Text>
-            <Text dimColor wrap="wrap">
+            <Text color="gray" wrap="wrap">
               3. {t('collision.refuse')} — {t('collision.explain.refuse')}
             </Text>
           </Box>

@@ -29,6 +29,15 @@ const CATEGORY_LABEL_KEYS: Record<CategoryKey, LocaleKey> = Object.fromEntries(
 /** Debounce for the cross-profile content search behind the sidebar box. */
 const CONTENT_SEARCH_DEBOUNCE_MS = 200;
 
+/** Validation findings render one per row, capped, with a `+N more` overflow
+ *  line (issue #98, V9). */
+const MAX_FINDING_ROWS = 3;
+/** Rows reserved for the wrapping lifecycle hint line (issue #98, V8/V17).
+ *  The reservation and the clamp box below must agree: a wrapped Text whose
+ *  painted line count exceeds its yoga-computed height paints over its
+ *  siblings (the audit's fused `Dir…te` / `Add skillx] Remove` rows). */
+const LIFECYCLE_HINT_ROWS = 2;
+
 type TemplateOption = { name: string; source: 'built-in' | 'custom' };
 
 type SidebarProps = {
@@ -206,7 +215,6 @@ export function Sidebar({
     }
   };
 
-  const listHeight = Math.max(1, height - 4);
   const canUseInput = !headless && inkStdin.isTTY;
   const launchActive = lifecycle.launch.phase !== 'idle';
   const searchActive = searchQuery.trim().length > 0;
@@ -292,6 +300,25 @@ export function Sidebar({
       }
     }
 
+    // The success flash is a notification, not a mode (issue #98, F2): a
+    // printable sidebar action key dismisses it immediately and is then
+    // handled as if idle, so the flash no longer swallows keys during its
+    // 1.5 s lifetime. Esc/Enter/Space above stay dismiss-only, and arrow
+    // keys (input === '') keep moving the cursor without touching the flash.
+    let sidebarPhase = lifecycle.phase;
+    if (
+      lifecycle.phase === 'success' &&
+      !key.ctrl &&
+      !key.meta &&
+      input.length === 1 &&
+      (LIFECYCLE_ACTIONS.some((a) => a.key === input) ||
+        LAUNCH_ACTIONS.some((a) => a.key === input) ||
+        input === 'a')
+    ) {
+      onLifecycleAction({ type: 'DISMISS' });
+      sidebarPhase = 'idle';
+    }
+
     // Search box input (§4.2): Esc clears; ↓/Enter returns to the filtered list.
     if (searchFocused) {
       if (key.escape) {
@@ -317,7 +344,7 @@ export function Sidebar({
     }
 
     // Launch flow keys (only when idle and not in launch flow)
-    if (lifecycle.phase === 'idle' && !launchActive && !resourceNavActive) {
+    if (sidebarPhase === 'idle' && !launchActive && !resourceNavActive) {
       if (cursorProfile) {
         if (input === 'l') {
           markUsed('l');
@@ -340,7 +367,7 @@ export function Sidebar({
     }
 
     // Lifecycle action keys (only when idle)
-    if (lifecycle.phase === 'idle' && !launchActive && !resourceNavActive) {
+    if (sidebarPhase === 'idle' && !launchActive && !resourceNavActive) {
       for (const act of LIFECYCLE_ACTIONS) {
         if (input === act.key) {
           // Create works even with zero Profiles (the zero-Profile recipe
@@ -475,6 +502,49 @@ export function Sidebar({
   const skillsLive = liveKeys(['a']);
   const allHintsRetired = lifecycleLive.length === 0 && launchLive.length === 0;
 
+  // Fixed-height layout accounting (issue #98, V3/V8/V9): the sidebar box has
+  // an explicit height, so every auxiliary block below the tree reserves its
+  // rows up front and the tree window gets exactly what remains. Unbudgeted
+  // blocks used to squeeze the tree into the hint/picker rows — fusing text,
+  // dropping picker rows, and overwriting the border.
+  const searchTipRows = searchFocused && searchQuery === '' && searchTipVisible ? 2 : 0;
+  const hintBlockRows =
+    lifecycle.phase === 'idle' && !launchActive
+      ? allHintsRetired && skillsLive.length === 0
+        ? 2 // "know the ropes" line (wraps at compact widths)
+        : (lifecycleLive.length > 0 ? LIFECYCLE_HINT_ROWS : 0) +
+          (launchLive.length > 0 ? 1 : 0) +
+          (skillsLive.length > 0 ? 1 : 0)
+      : 0;
+  const builtInCount = getTemplateList().length;
+  const pickerRows =
+    lifecycle.phase === 'prompting' && lifecycle.kind === 'create' && lifecycle.step === 1
+      ? 1 + // prompt title
+        1 + // "Built-in" section header
+        builtInCount +
+        (customTemplates.length > 0 ? 1 + customTemplates.length : 0) +
+        (templateOptions[safeTemplateIndex]?.source === 'custom' ? 1 : 0) // remove hint
+      : 0;
+  const promptRows =
+    lifecycle.phase === 'prompting' ? (pickerRows > 0 ? pickerRows : 1) : 0;
+  const executingRows = lifecycle.phase === 'executing' ? 1 : 0;
+  const findingRows = lifecycle.findings?.length
+    ? Math.min(lifecycle.findings.length, MAX_FINDING_ROWS) +
+      (lifecycle.findings.length > MAX_FINDING_ROWS ? 1 : 0)
+    : 0;
+  const listHeight = Math.max(
+    1,
+    height -
+      2 - // top/bottom border
+      1 - // title row
+      1 - // search row
+      searchTipRows -
+      hintBlockRows -
+      promptRows -
+      executingRows -
+      findingRows,
+  );
+
   // Follow-the-cursor scroll window over the visible rows.
   const windowStart = Math.max(0, Math.min(rowCursor - listHeight + 1, rows.length - listHeight));
   const visibleRows = rows.slice(windowStart, windowStart + listHeight);
@@ -531,9 +601,8 @@ export function Sidebar({
         React.createElement(
           Text,
           {
-            color: isCursor ? 'cyan' : undefined,
+            color: isCursor ? 'cyan' : 'gray',
             inverse: isCursor,
-            dimColor: !isCursor,
             wrap: 'truncate',
           },
           `    ${row.itemName}`,
@@ -557,8 +626,10 @@ export function Sidebar({
   };
 
   return React.createElement(
+    // overflow hidden: nothing inside the sidebar may ever paint over its
+    // border or into the main pane (issue #98, V3/V8).
     Box,
-    { flexDirection: 'column', width, borderStyle: 'single', borderRight: true },
+    { flexDirection: 'column', width, borderStyle: 'single', borderRight: true, overflow: 'hidden' },
     React.createElement(
       Box,
       { paddingX: 1 },
@@ -571,13 +642,13 @@ export function Sidebar({
         ? React.createElement(Text, { color: 'cyan' }, `/${searchQuery}█`)
         : searchActive
           ? React.createElement(Text, { color: 'cyan' }, `/${searchQuery}`)
-          : React.createElement(Text, { dimColor: true }, t('sidebar.search.placeholder')),
+          : React.createElement(Text, { color: 'gray' }, t('sidebar.search.placeholder')),
       searchFocused && searchQuery === '' && searchTipVisible &&
-        React.createElement(Text, { dimColor: true, wrap: 'wrap' }, t('search.tip')),
+        React.createElement(Text, { color: 'gray', wrap: 'wrap' }, t('search.tip')),
     ),
     React.createElement(
       Box,
-      { flexDirection: 'column', flexGrow: 1 },
+      { flexDirection: 'column', flexGrow: 1, overflow: 'hidden' },
       rows.length === 0
         ? searchActive
           ? React.createElement(
@@ -595,43 +666,58 @@ export function Sidebar({
           ),
     ),
     // Lifecycle UI sections
+    // Hint block (issue #98, V8): a fixed-height, clipped column sized by the
+    // accounting above — wrapped hints can never occupy a border cell again.
     lifecycle.phase === 'idle' && !launchActive && React.createElement(
       Box,
-      { paddingX: 1, flexDirection: 'column' },
+      { paddingX: 1, flexDirection: 'column', flexShrink: 0, height: hintBlockRows, overflow: 'hidden' },
       allHintsRetired && skillsLive.length === 0
-        ? React.createElement(Text, { dimColor: true, wrap: 'wrap' }, t('guidance.hints.knowRopes'))
+        ? React.createElement(Text, { color: 'gray', wrap: 'wrap' }, t('guidance.hints.knowRopes'))
         : React.createElement(
             Box,
             { flexDirection: 'column' },
             lifecycleLive.length > 0 &&
               React.createElement(
-                Text,
-                { dimColor: true, wrap: 'wrap' },
-                LIFECYCLE_ACTIONS.filter((a) => lifecycleLive.includes(a.key)).map((a) => `[${a.key}] ${t(a.labelKey)}`).join('  '),
+                // Clamp box (issue #98, V17): the hint string wraps to more
+                // rows than LIFECYCLE_HINT_ROWS at wider sidebars, and a
+                // wrapped Text paints every wrapped line even when yoga
+                // shrinks its computed height — fusing the spill into the
+                // launch/skills rows below. A fixed-height, unshrinkable,
+                // clipped box keeps siblings at deterministic offsets.
+                Box,
+                { height: LIFECYCLE_HINT_ROWS, flexShrink: 0, overflow: 'hidden' },
+                React.createElement(
+                  Text,
+                  { color: 'gray', wrap: 'wrap' },
+                  LIFECYCLE_ACTIONS.filter((a) => lifecycleLive.includes(a.key)).map((a) => `[${a.key}] ${t(a.labelKey)}`).join('  '),
+                ),
               ),
             launchLive.length > 0 &&
               React.createElement(
                 Text,
-                { dimColor: true, wrap: 'wrap' },
+                { color: 'gray', wrap: 'truncate' },
                 LAUNCH_ACTIONS.filter((a) => launchLive.includes(a.key)).map((a) => `[${a.key}] ${t(a.labelKey)}`).join('  '),
               ),
             skillsLive.length > 0 &&
               React.createElement(
                 Text,
-                { dimColor: true, wrap: 'wrap' },
+                { color: 'gray', wrap: 'truncate' },
                 `[a] ${t('skill.add')}`,
               ),
           ),
     ),
+    // Create-flow picker (issue #98, V3): every row is capped at one terminal
+    // row (long template names right-truncate with `…`) and the block never
+    // squeezes the tree — its height is reserved in the accounting above.
     lifecycle.phase === 'prompting' && React.createElement(
       Box,
-      { paddingX: 1, flexDirection: 'column' },
+      { paddingX: 1, flexDirection: 'column', flexShrink: 0 },
       lifecycle.kind === 'create' && lifecycle.step === 1
         ? React.createElement(
             Box,
             { flexDirection: 'column' },
-            React.createElement(Text, { bold: true }, t('lifecycle.prompt.createTemplate')),
-            React.createElement(Text, { dimColor: true }, t('template.section.builtin')),
+            React.createElement(Text, { bold: true, wrap: 'truncate' }, t('lifecycle.prompt.createTemplate')),
+            React.createElement(Text, { color: 'gray', wrap: 'truncate' }, t('template.section.builtin')),
             ...getTemplateList().map((tmpl, i) =>
               React.createElement(
                 Text,
@@ -639,6 +725,8 @@ export function Sidebar({
                   key: tmpl,
                   color: i === safeTemplateIndex ? 'cyan' : undefined,
                   bold: i === safeTemplateIndex,
+                  inverse: i === safeTemplateIndex,
+                  wrap: 'truncate',
                 },
                 `${i === safeTemplateIndex ? '▸ ' : '  '}${tmpl}`,
               ),
@@ -647,7 +735,7 @@ export function Sidebar({
               ? [
                   React.createElement(
                     Text,
-                    { key: 'custom-header', dimColor: true },
+                    { key: 'custom-header', color: 'gray', wrap: 'truncate' },
                     t('template.section.custom'),
                   ),
                   ...customTemplates.map((custom, j) => {
@@ -658,6 +746,8 @@ export function Sidebar({
                         key: custom.name,
                         color: i === safeTemplateIndex ? 'cyan' : undefined,
                         bold: i === safeTemplateIndex,
+                        inverse: i === safeTemplateIndex,
+                        wrap: 'truncate',
                       },
                       `${i === safeTemplateIndex ? '▸ ' : '  '}${custom.name} (${t('template.source.custom')})`,
                     );
@@ -665,7 +755,7 @@ export function Sidebar({
                 ]
               : []),
             templateOptions[safeTemplateIndex]?.source === 'custom' &&
-              React.createElement(Text, { dimColor: true }, t('template.removeHint')),
+              React.createElement(Text, { color: 'gray', wrap: 'truncate' }, t('template.removeHint')),
           )
         : React.createElement(
             Box,
@@ -676,19 +766,28 @@ export function Sidebar({
     ),
     lifecycle.phase === 'executing' && React.createElement(
       Box,
-      { paddingX: 1 },
+      { paddingX: 1, flexShrink: 0 },
       React.createElement(Text, { color: 'yellow' }, t('lifecycle.executing')),
     ),
+    // Validation findings (issue #98, V9): one finding per row with a severity
+    // glyph, truncated to the pane width, `+N more` overflow — wrapped
+    // fragments used to paint over each other and the border.
     lifecycle.findings !== null && lifecycle.findings.length > 0 && React.createElement(
       Box,
-      { paddingX: 1, flexDirection: 'column' },
-      ...lifecycle.findings.map((f, i) =>
+      { paddingX: 1, flexDirection: 'column', flexShrink: 0 },
+      ...lifecycle.findings.slice(0, MAX_FINDING_ROWS).map((f, i) =>
         React.createElement(
           Text,
-          { key: i, color: f.severity === 'error' ? 'red' : 'yellow', wrap: 'wrap' },
-          `[${t(f.severity === 'error' ? 'finding.severity.error' : 'finding.severity.warning')}] ${f.code}: ${f.message}`,
+          { key: i, color: f.severity === 'error' ? 'red' : 'yellow', wrap: 'truncate' },
+          `${f.severity === 'error' ? '✗' : '!'} [${t(f.severity === 'error' ? 'finding.severity.error' : 'finding.severity.warning')}] ${f.code}: ${f.message}`,
         ),
       ),
+      lifecycle.findings.length > MAX_FINDING_ROWS &&
+        React.createElement(
+          Text,
+          { color: 'gray' },
+          t('sidebar.findings.more', { count: String(lifecycle.findings.length - MAX_FINDING_ROWS) }),
+        ),
     ),
   );
 }

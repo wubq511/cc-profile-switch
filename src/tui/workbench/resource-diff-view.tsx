@@ -60,7 +60,7 @@ export function ResourceDiffView({
       React.createElement(
         Box,
         { marginTop: 1 },
-        React.createElement(Text, { dimColor: true }, t('resource.diff.selectProfile')),
+        React.createElement(Text, { color: 'gray' }, t('resource.diff.selectProfile')),
       ),
       React.createElement(
         Box,
@@ -85,13 +85,13 @@ export function ResourceDiffView({
       { bold: true, wrap: 'truncate' },
       `${profile.name} → ${counterpartName}`,
     ),
-    summary && React.createElement(Text, { dimColor: true, wrap: 'truncate' }, summary),
+    summary && React.createElement(Text, { color: 'gray', wrap: 'truncate' }, summary),
     React.createElement(
       Box,
       { marginTop: 1, flexDirection: 'column' },
       ...windowed,
       rows.length === 0 &&
-        React.createElement(Text, { dimColor: true }, t('resource.diff.noChange')),
+        React.createElement(Text, { color: 'gray' }, t('resource.diff.noChange')),
     ),
   );
 
@@ -174,7 +174,7 @@ export function ResourceDiffView({
             `${marker} ${file.name} (${label})`,
           ),
           file.verdict === 'changed' &&
-            React.createElement(Text, { dimColor: true }, t('resource.diff.drillIn')),
+            React.createElement(Text, { color: 'gray' }, t('resource.diff.drillIn')),
         ),
       );
       if (drilledAgent === file.name && file.lines) {
@@ -385,7 +385,7 @@ function skillTreeRows(
     rows.push(
       React.createElement(
         Text,
-        { key: `${keyPrefix}:missing`, dimColor: true, wrap: 'truncate' },
+        { key: `${keyPrefix}:missing`, color: 'gray', wrap: 'truncate' },
         `  ${profileName}: ${t('resource.diff.sourceMissing')}`,
       ),
     );
@@ -394,7 +394,7 @@ function skillTreeRows(
   rows.push(
     React.createElement(
       Text,
-      { key: `${keyPrefix}:head`, dimColor: true, wrap: 'truncate' },
+      { key: `${keyPrefix}:head`, color: 'gray', wrap: 'truncate' },
       `  ${t('resource.diff.skillsSection', { profile: profileName, source: vsSource.sourceDescription })}`,
     ),
   );
@@ -433,7 +433,7 @@ function disabledNote(
         : t('resource.diff.diffUnavailable');
   return React.createElement(
     Text,
-    { key, dimColor: true, wrap: 'truncate' },
+    { key, color: 'gray', wrap: 'truncate' },
     `  ${profileName}: ${label}`,
   );
 }

@@ -367,6 +367,24 @@ describe('empty states', () => {
     await instance.waitUntilExit();
   });
 
+  it('zero-Profile state is padded off the pane border with a blank row above (issue #98, V18)', async () => {
+    const { instance, stdout } = renderWithLocale(
+      React.createElement(ZeroProfilesEmptyState, null),
+    );
+    await instance.waitUntilRenderFlush();
+    const lines = stripAnsi(stdout.output).split('\n');
+    const titleIndex = lines.findIndex((l) => l.includes('No Profiles yet.'));
+    expect(titleIndex).toBeGreaterThan(0);
+    // One blank row above the title, and every content row indented ≥1 cell.
+    expect(lines[titleIndex - 1].trim()).toBe('');
+    for (const line of lines) {
+      if (line.trim() === '') continue;
+      expect(line.startsWith(' ')).toBe(true);
+    }
+    instance.unmount();
+    await instance.waitUntilExit();
+  });
+
   it('guidance copy wraps at ~26 columns without truncation', async () => {
     const { instance, stdout } = renderWithLocale(
       React.createElement(
@@ -390,6 +408,8 @@ describe('empty states', () => {
       ...codingProfile,
       resourceCounts: { userMemory: 1, autoMemory: 1, skills: 0, agents: 2, mcp: 1, settings: 1, launchConfig: 1 },
     };
+    // Wide render on purpose: compact cells (issue #98, V1) drop descriptor
+    // rows — including this offer — before touching the category name.
     const { instance, stdout } = renderWithLocale(
       React.createElement(
         HintsProvider,
@@ -399,8 +419,8 @@ describe('empty states', () => {
           profiles: [profile],
           nav: initialResourceNavState(),
           mcpFailed: [],
-          width: 60,
-          height: 20,
+          width: 100,
+          height: 40,
           sessionFor: () => undefined,
           editFallback: { systemEditor: () => {}, retry: () => {}, dismiss: () => {} },
           content: null,

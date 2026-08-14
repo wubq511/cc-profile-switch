@@ -49,15 +49,21 @@ export function ResourcePreview({
     Box,
     { flexDirection: 'column', width, height, paddingX: 1 },
     React.createElement(Text, { bold: true, wrap: 'truncate' }, headerText),
-    session && React.createElement(
-      Box,
-      { marginTop: 1 },
-      React.createElement(WatchingBadge, {
-        phase: session.phase,
-        changeCount: session.changeCount,
-        lastUpdated: session.lastUpdated,
-      }),
-    ),
+    session &&
+      // The 'missing' badge row is suppressed here: the MissingOverlay below
+      // carries the same title (plus hint and last-known content), and
+      // rendering both put the identical warning line on screen twice
+      // (issue #98, V15). Other badge contexts have no overlay and keep it.
+      session.phase !== 'missing' &&
+      React.createElement(
+        Box,
+        { marginTop: 1 },
+        React.createElement(WatchingBadge, {
+          phase: session.phase,
+          changeCount: session.changeCount,
+          lastUpdated: session.lastUpdated,
+        }),
+      ),
     // §8 VS Code unavailable: surface the failure with its fallback actions.
     session?.openFailedReason && React.createElement(
       Box,
@@ -74,7 +80,7 @@ export function ResourcePreview({
       session && session.phase === 'missing'
         ? React.createElement(MissingOverlay, { lastContent: session.lastContent })
         : content === null
-          ? React.createElement(Text, { dimColor: true }, t('resource.userMemory.missing'))
+          ? React.createElement(Text, { color: 'gray' }, t('resource.userMemory.missing'))
           : visibleLines.map((line, i) =>
               React.createElement(
                 Text,
@@ -88,7 +94,7 @@ export function ResourcePreview({
     React.createElement(Box, { flexGrow: 1 }),
     React.createElement(
       Text,
-      { dimColor: true },
+      { color: 'gray' },
       `${t('resource.preview.title')} · ${t('resource.preview.back')}`,
     ),
   );

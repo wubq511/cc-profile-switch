@@ -1882,27 +1882,25 @@ function WorkbenchInner({
           const result = await exportProfile({ appHomePath, name: profileName, outputPath: input });
           const strippedKeys = result.strippedKeys;
           const strippedCount = countStrippedKeys(strippedKeys);
-          const parts = [
-            t('lifecycle.success.exported', {
-              name: result.profileName,
-              path: result.bundlePath,
-            }),
-          ];
+          const exported = t('lifecycle.success.exported', { name: result.profileName });
+          let message = exported;
           if (strippedCount > 0) {
             // S98: list the key names, not just a count — the audit trail is
-            // the only visible trace of what the bundle redacted.
+            // the only visible trace of what the bundle redacted. The names
+            // lead and the path trails (issue #98, V12): the success flash is
+            // one truncated footer row, so the security-critical segment must
+            // survive the cut; the user just typed the path themselves.
             const keyNames = [
               ...new Set(strippedKeys.flatMap((entry) => entry.keys)),
             ].sort((a, b) => a.localeCompare(b));
-            parts.push(
-              t('lifecycle.export.stripped', {
-                count: String(strippedCount),
-                keys: keyNames.join(', '),
-              }),
-            );
+            message += ` · ${t('lifecycle.export.stripped', {
+              count: String(strippedCount),
+              keys: keyNames.join(', '),
+            })}`;
           }
+          message += ` → ${result.bundlePath}`;
           setLifecycle((prev) =>
-            lifecycleReducer(prev, { type: 'EXECUTE_SUCCESS', message: parts.join(' · ') }),
+            lifecycleReducer(prev, { type: 'EXECUTE_SUCCESS', message }),
           );
         } else if (kind === 'import') {
           const result = await importProfile({
@@ -2344,18 +2342,40 @@ function WorkbenchInner({
 
   const mcpFailed = selectedProfile ? (mcpFailedByProfile[selectedProfile.name] ?? []) : [];
 
+  // Reserved bottom-band rows for the active guidance dialog (issue #98,
+  // V6/V7/V12): the panes shrink by exactly this many rows so a dialog never
+  // overlaps pane content. The success flash lives in the footer row instead,
+  // so it reserves nothing. Constants are worst-case panel heights at the
+  // 80-col floor (the band itself clips overflow, so a miscount can never
+  // tear the layout).
+  const guidanceRows =
+    lifecycle.phase === 'confirm'
+      ? lifecycle.kind === 'import'
+        ? 12
+        : lifecycle.kind === 'save-template'
+          ? 7
+          : 8
+      : lifecycle.phase === 'error'
+        ? 10
+        : 0;
+  const paneHeight = Math.max(4, height - 1 - guidanceRows);
+
   // Render launch overlays
   const launchOverlay = renderLaunchOverlay(lifecycle.launch, width, height);
 
   // The install wizard overlay takes priority over the launch overlay and the
-  // main workbench surface.
+  // main workbench surface. It receives height-1: the footer row below stays
+  // visible, and the wizard's internal budget must exactly fit its own
+  // fixed-height root — an overflowing column there makes yoga hand
+  // freshly-mounted source rows a zero-height layout (rows paint blank or
+  // vanish; issue #98 follow-up).
   const wizardOverlay =
     wizardOpen && wizardProfileName
       ? React.createElement(InstallWizard, {
           profileName: wizardProfileName,
           callbacks: wizardCallbacks,
           width,
-          height,
+          height: height - 1,
           headless,
           initialRemote: wizardInitialRemote ?? undefined,
         })
@@ -2403,7 +2423,7 @@ function WorkbenchInner({
                         selectedIndex,
                         onSelect: setSelectedIndex,
                         width: sidebarWidth,
-                        height: height - 1,
+                        height: paneHeight,
                         capture: capture || mainPaneFocus,
                         headless,
                         lifecycle,
@@ -2426,7 +2446,7 @@ function WorkbenchInner({
                             appHomePath: getAppHomePaths().appHomePath,
                             profileNames: workbenchData.profiles.map((p) => p.name),
                             width: mainWidth,
-                            height: height - 1,
+                            height: paneHeight,
                             onBack: handleExitDrillDown,
                             onDataChanged: () => {
                               void refreshData();
@@ -2448,7 +2468,7 @@ function WorkbenchInner({
                               appHomePath: getAppHomePaths().appHomePath,
                               profileNames: workbenchData.profiles.map((p) => p.name),
                               width: mainWidth,
-                              height: height - 1,
+                              height: paneHeight,
                               editSessionManager,
                               onBack: handleExitDrillDown,
                             })
@@ -2463,7 +2483,7 @@ function WorkbenchInner({
                                 profileNames: workbenchData.profiles.map((p) => p.name),
                                 category: drillDown.category,
                                 width: mainWidth,
-                                height: height - 1,
+                                height: paneHeight,
                                 onBack: handleExitDrillDown,
                                 onDataChanged: () => {
                                   void refreshData();
@@ -2483,7 +2503,7 @@ function WorkbenchInner({
                                   ? pluginInventoryByProfile[selectedProfile.name]
                                   : undefined,
                                 width: mainWidth,
-                                height: height - 1,
+                                height: paneHeight,
                                 focused: mainPaneFocus,
                                 selectedCategoryIndex,
                                 editSession: topLevelEditSession,
@@ -2508,24 +2528,57 @@ function WorkbenchInner({
                                 hintLine: resourceHintLine,
                               }),
                     ),
-                    renderGuidanceDialogs(),
+                    // The dialog band is capped at its reserved height so a
+                    // panel can never grow into the panes above it (#98 V6).
+                    React.createElement(
+                      Box,
+                      { flexShrink: 0, height: guidanceRows, overflow: 'hidden' },
+                      renderGuidanceDialogs(),
+                    ),
                   ),
       React.createElement(
+        // Footer (issue #98, V7/V12): one row with fixed, non-overlapping
+        // slots — the locale/help/quit strip truncates before ever touching
+        // the right slot. While the lifecycle success flash is live it owns
+        // the whole row (the flash is a notification with its own slot, never
+        // appended onto the hints); the strip and badge return afterwards.
         Box,
         { width, justifyContent: 'space-between' },
-        React.createElement(
-          Text,
-          { dimColor: true },
-          ` ${locale === 'zh' ? 'zh' : 'en'} │ ? ${t('keymap.help')} │ q ${t('app.quit')}` +
-            (mainPaneFocus
-              ? ` │ ${t('main.backToList')}`
-              : drillDown.kind === 'none' && workbenchData.profiles.length > 0
-                ? ` │ ${t('main.focusHint')}`
-                : ''),
-        ),
-        flashMessage
-          ? React.createElement(Text, { color: 'green', wrap: 'truncate' }, flashMessage)
-          : React.createElement(Text, { dimColor: true }, `${width}×${height} `),
+        lifecycle.phase === 'success'
+          ? (() => {
+              // V9: a validate summary that reports errors is not a success —
+              // the count line gets the error glyph, not a green ✓.
+              const hasErrorFindings =
+                lifecycle.findings?.some((f) => f.severity === 'error') ?? false;
+              return React.createElement(
+                Text,
+                { color: hasErrorFindings ? 'red' : 'green', wrap: 'truncate' },
+                ` ${hasErrorFindings ? '✗' : '✓'} ${lifecycle.message}`,
+              );
+            })()
+          : [
+              React.createElement(
+                Text,
+                { key: 'strip', color: 'gray', wrap: 'truncate', flexShrink: 1 },
+                ` ${locale === 'zh' ? 'zh' : 'en'} │ ? ${t('keymap.help')} │ q ${t('app.quit')}` +
+                  (mainPaneFocus
+                    ? ` │ ${t('main.backToList')}`
+                    : drillDown.kind === 'none' && workbenchData.profiles.length > 0
+                      ? ` │ ${t('main.focusHint')}`
+                      : ''),
+              ),
+              flashMessage
+                ? React.createElement(
+                    Text,
+                    { key: 'badge', color: 'green', wrap: 'truncate', flexShrink: 0 },
+                    flashMessage,
+                  )
+                : React.createElement(
+                    Text,
+                    { key: 'badge', color: 'gray', flexShrink: 0 },
+                    `${width}×${height} `,
+                  ),
+            ],
       ),
     ),
   );
@@ -2558,13 +2611,6 @@ function WorkbenchInner({
         code: lifecycle.errorCode,
         guidance: lifecycle.guidance,
       });
-    }
-    if (lifecycle.phase === 'success') {
-      return React.createElement(
-        Box,
-        { flexShrink: 0, paddingX: 1 },
-        React.createElement(Text, { color: 'green' }, `✓ ${lifecycle.message}`),
-      );
     }
     return null;
   }
@@ -2612,7 +2658,7 @@ function WorkbenchInner({
         React.createElement(
           Box,
           { marginTop: 1 },
-          React.createElement(Text, { dimColor: true }, t('keymap.esc')),
+          React.createElement(Text, { color: 'gray' }, t('keymap.esc')),
         ),
       );
     }
@@ -2647,7 +2693,7 @@ function WelcomeCard({ width, height }: { width: number; height: number }): Reac
       React.createElement(
         Box,
         { marginTop: 1 },
-        React.createElement(Text, { dimColor: true }, t('welcome.dismiss')),
+        React.createElement(Text, { color: 'gray' }, t('welcome.dismiss')),
       ),
     ),
   );

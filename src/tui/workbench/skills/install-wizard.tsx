@@ -444,7 +444,7 @@ export function InstallWizard({
         `${t('skill.install.breadcrumb')} · ${profileName}`,
       ),
     ),
-    renderStep(state, width, t),
+    renderStep(state, width, height, t),
   );
 }
 
@@ -467,6 +467,7 @@ function formatWizardError(error: unknown): string {
 function renderStep(
   state: InstallWizardState,
   width: number,
+  height: number,
   t: (key: LocaleKey, params?: I18nParams) => string,
 ): React.ReactElement {
   const innerWidth = Math.max(40, width - 4);
@@ -476,7 +477,7 @@ function renderStep(
       return renderKind(state, innerWidth, t);
 
     case 'source-list':
-      return renderSourceList(state, innerWidth, t);
+      return renderSourceList(state, innerWidth, height, t);
 
     case 'source':
     case 'validating':
@@ -494,7 +495,7 @@ function renderStep(
           : null,
         state.phase === 'validating'
           ? React.createElement(Text, { color: 'yellow' }, t('skill.install.source.validating'))
-          : React.createElement(Text, { dimColor: true }, t('skill.install.source.hint')),
+          : React.createElement(Text, { color: 'gray' }, t('skill.install.source.hint')),
       );
 
     case 'source-remote':
@@ -511,7 +512,7 @@ function renderStep(
         state.remoteSourceError.length > 0 ? renderErrorPanel(state.remoteSourceError) : null,
         state.phase === 'staging'
           ? React.createElement(Text, { color: 'yellow' }, t('skill.install.remote.staging'))
-          : React.createElement(Text, { dimColor: true }, t('skill.install.remote.source.hint')),
+          : React.createElement(Text, { color: 'gray' }, t('skill.install.remote.source.hint')),
       );
 
     case 'mode':
@@ -540,7 +541,7 @@ function renderStep(
         React.createElement(
           Box,
           { marginTop: 1 },
-          React.createElement(Text, { dimColor: true }, t('skill.install.mode.hint')),
+          React.createElement(Text, { color: 'gray' }, t('skill.install.mode.hint')),
         ),
       );
 
@@ -575,11 +576,11 @@ function renderStep(
         state.collisionError.length > 0
           ? React.createElement(Text, { color: 'red' }, `✗ ${state.collisionError}`)
           : null,
-        React.createElement(Text, { dimColor: true }, t('skill.install.collision.replace')),
+        React.createElement(Text, { color: 'gray' }, t('skill.install.collision.replace')),
         React.createElement(
           Box,
           { marginTop: 1 },
-          React.createElement(Text, { dimColor: true }, t('skill.install.collision.hint')),
+          React.createElement(Text, { color: 'gray' }, t('skill.install.collision.hint')),
         ),
       );
 
@@ -596,7 +597,7 @@ function renderStep(
         { flexDirection: 'column', width: innerWidth },
         React.createElement(Text, { color: 'green', bold: true }, `${t('skill.install.success')}`),
         React.createElement(Text, null, state.message),
-        React.createElement(Text, { dimColor: true }, t('keymap.esc')),
+        React.createElement(Text, { color: 'gray' }, t('keymap.esc')),
       );
 
     case 'error':
@@ -605,7 +606,7 @@ function renderStep(
         { flexDirection: 'column', width: innerWidth },
         React.createElement(Text, { color: 'red', bold: true }, t('skill.install.error')),
         renderErrorPanel(state.message),
-        React.createElement(Text, { dimColor: true }, t('keymap.esc')),
+        React.createElement(Text, { color: 'gray' }, t('keymap.esc')),
       );
 
     default:
@@ -615,64 +616,128 @@ function renderStep(
 
 // The §7.2 step-1 pick list: discovered local sources plus the manual-entry
 // fallback row. Invalid sources (unreadable / no SKILL.md) are marked in place.
+//
+// The list is virtualized (issue #98, F3): real installations can discover
+// hundreds of cross-profile sources, so only a follow-cursor window renders,
+// with an `N/M` position indicator in the title row. The manual-entry row is
+// pinned below the window so it is always one keypress away no matter how
+// many sources exist. Every row is a single terminal line — the cursor row
+// keeps the standard `▸` + inverse treatment and long names/paths are
+// right-truncated so the distinguishing prefix stays visible (issue #98, V4).
 function renderSourceList(
   state: InstallWizardState,
   innerWidth: number,
+  height: number,
   t: (key: LocaleKey) => string,
 ): React.ReactElement {
-  const rows: React.ReactElement[] = state.localSources.map((source, i) => {
-    const selected = i === state.sourceListIndex;
+  const total = state.localSources.length;
+  const totalRows = total + 1; // + the pinned manual-entry row
+  const cursor = state.sourceListIndex;
+
+  // Follow-cursor window over the source rows (sidebar.tsx uses the same
+  // formula). Budget: breadcrumb row + marginBottom (2) + title (1) +
+  // list-column marginTop (1) + hint marginTop+row (2) = 6 above/below the
+  // list, and the list itself holds window rows + the pinned manual row —
+  // so window = height - 7 keeps total content at exactly `height`. An
+  // overflowing column under the fixed-height root makes yoga hand out
+  // zero-height layouts to freshly-mounted rows (they paint blank or
+  // overlap a neighbor — issue #98 follow-up, proven by repro).
+  const windowSize = Math.max(1, height - 7);
+  const cursorInSources = Math.min(cursor, Math.max(0, total - 1));
+  const windowStart = Math.max(
+    0,
+    Math.min(cursorInSources - windowSize + 1, total - windowSize),
+  );
+  const windowSources = state.localSources.slice(windowStart, windowStart + windowSize);
+
+  const rows: React.ReactElement[] = windowSources.map((source, wi) => {
+    const i = windowStart + wi;
+    const selected = i === cursor;
     const tag = !source.readable
       ? t('skill.install.source.list.tag.unreadable')
       : !source.skillMdPresent
         ? t('skill.install.source.list.tag.noSkillMd')
         : null;
+    // Cap the name segment in JS so a pathological name can never eat the
+    // whole row and hide the path (single flat Text = one truncate point at
+    // the viewport edge; see the row-shape comment below).
+    const name = source.suggestedName.length > 28
+      ? `${source.suggestedName.slice(0, 27)}…`
+      : source.suggestedName;
     return React.createElement(
+      // Single flat Text per row (sidebar.tsx row shape): nested or
+      // multi-sibling Text rows measured unreliably while the async source
+      // list swaps in — some rows settled zero-height and painted blank or
+      // overwrote their neighbor (issue #98 follow-up, proven by repro).
       Box,
       { key: `src-${i}` },
       React.createElement(
         Text,
-        { bold: selected, color: selected ? 'cyan' : undefined },
-        `${selected ? '▸ ' : '  '}${source.suggestedName}`,
+        {
+          bold: selected,
+          color: selected ? 'cyan' : undefined,
+          inverse: selected,
+          wrap: 'truncate',
+        },
+        `${selected ? '▸ ' : '  '}${name}  ${source.sourcePath}${tag ? `  ⚠ ${tag}` : ''}`,
       ),
-      React.createElement(Text, { dimColor: true }, `  ${source.sourcePath}`),
-      tag ? React.createElement(Text, { color: 'yellow' }, `  ⚠ ${tag}`) : null,
     );
   });
 
-  // Manual-entry fallback row (arbitrary local paths must remain possible).
-  const manualIndex = state.localSources.length;
-  const manualSelected = state.sourceListIndex === manualIndex;
-  rows.push(
+  // Manual-entry fallback row (arbitrary local paths must remain possible) —
+  // pinned below the window, never scrolled out of reach.
+  const manualIndex = total;
+  const manualSelected = cursor === manualIndex;
+  const manualRow = React.createElement(
+    Box,
+    { key: 'manual' },
     React.createElement(
-      Box,
-      { key: 'manual' },
-      React.createElement(
-        Text,
-        { bold: manualSelected, color: manualSelected ? 'cyan' : undefined },
-        `${manualSelected ? '▸ ' : '  '}${t('skill.install.source.list.manual')}`,
-      ),
+      Text,
+      {
+        bold: manualSelected,
+        color: manualSelected ? 'cyan' : undefined,
+        inverse: manualSelected,
+        wrap: 'truncate',
+      },
+      `${manualSelected ? '▸ ' : '  '}${t('skill.install.source.list.manual')}`,
     ),
   );
 
   return React.createElement(
     Box,
     { flexDirection: 'column', width: innerWidth },
-    React.createElement(Text, { bold: true }, t('skill.install.source.list.title')),
+    React.createElement(
+      Box,
+      null,
+      React.createElement(Text, { bold: true }, t('skill.install.source.list.title')),
+      React.createElement(
+        Text,
+        { color: 'gray' },
+        ` ${cursor + 1}/${totalRows}`,
+      ),
+    ),
     React.createElement(
       Box,
       { flexDirection: 'column', marginTop: 1 },
-      !state.sourcesLoaded
-        ? React.createElement(Text, { color: 'yellow' }, t('skill.install.source.list.loading'))
-        : state.localSources.length === 0
-          ? React.createElement(Text, { dimColor: true }, t('skill.install.source.list.empty'))
-          : null,
+      // The loading/empty note stays mounted (empty string once loaded) so
+      // the column's children never churn structurally during the async
+      // load transition — content only, no node removal.
+      React.createElement(
+        Text,
+        { color: state.sourcesLoaded ? 'gray' : 'yellow' },
+        !state.sourcesLoaded
+          ? t('skill.install.source.list.loading')
+          : total === 0
+            ? t('skill.install.source.list.empty')
+            : '',
+      ),
       ...rows,
+      manualRow,
     ),
     React.createElement(
       Box,
       { marginTop: 1 },
-      React.createElement(Text, { dimColor: true }, t('skill.install.source.list.hint')),
+      React.createElement(Text, { color: 'gray' }, t('skill.install.source.list.hint')),
     ),
   );
 }
@@ -707,7 +772,7 @@ function renderKind(
     React.createElement(
       Box,
       { marginTop: 1 },
-      React.createElement(Text, { dimColor: true }, t('skill.install.kind.hint')),
+      React.createElement(Text, { color: 'gray' }, t('skill.install.kind.hint')),
     ),
   );
 }
@@ -732,7 +797,7 @@ function renderModeCard(
       { bold: true, color: selected ? 'cyan' : undefined },
       `${selected ? '▸ ' : '  '}${title}`,
     ),
-    React.createElement(Box, { marginTop: 1 }, React.createElement(Text, { dimColor: true }, desc)),
+    React.createElement(Box, { marginTop: 1 }, React.createElement(Text, { color: 'gray' }, desc)),
   );
 }
 
@@ -756,7 +821,7 @@ function renderConfirm(
     React.createElement(
       Box,
       { flexDirection: 'column', marginTop: 1 },
-      React.createElement(Text, { dimColor: true, bold: true }, t('skill.install.confirm.preview')),
+      React.createElement(Text, { color: 'gray', bold: true }, t('skill.install.confirm.preview')),
       ...preview.previewLines.map((line, i) =>
         React.createElement(Text, { key: `pv-${i}` }, `  ${line}`),
       ),
@@ -764,7 +829,7 @@ function renderConfirm(
     React.createElement(
       Box,
       { flexDirection: 'column', marginTop: 1 },
-      React.createElement(Text, { dimColor: true, bold: true }, t('skill.install.confirm.checks')),
+      React.createElement(Text, { color: 'gray', bold: true }, t('skill.install.confirm.checks')),
       ...preview.checks.map((check, i) =>
         React.createElement(
           Text,
@@ -820,7 +885,7 @@ function renderRemoteConfirm(
     React.createElement(
       Box,
       { flexDirection: 'column', marginTop: 1 },
-      React.createElement(Text, { dimColor: true, bold: true }, t('skill.install.confirm.preview')),
+      React.createElement(Text, { color: 'gray', bold: true }, t('skill.install.confirm.preview')),
       ...preview.previewLines.map((line, i) =>
         React.createElement(Text, { key: `pv-${i}` }, `  ${line}`),
       ),
@@ -830,7 +895,7 @@ function renderRemoteConfirm(
       { flexDirection: 'column', marginTop: 1 },
       React.createElement(
         Text,
-        { dimColor: true, bold: true },
+        { color: 'gray', bold: true },
         t('skill.install.remote.confirm.identity'),
       ),
       React.createElement(Text, null, `  ${t('skill.install.remote.field.name')} ${preview.identity.name}`),
@@ -845,7 +910,7 @@ function renderRemoteConfirm(
       { flexDirection: 'column', marginTop: 1 },
       React.createElement(
         Text,
-        { dimColor: true, bold: true },
+        { color: 'gray', bold: true },
         t('skill.install.remote.confirm.provenance'),
       ),
       React.createElement(

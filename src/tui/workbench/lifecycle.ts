@@ -403,7 +403,12 @@ export function lifecycleReducer(state: LifecycleState, action: LifecycleAction)
     }
 
     case 'LAUNCH_DISMISS': {
-      if (state.launch.phase === 'exited') {
+      // Esc from the pre-launch bar cancels the launch flow — including the
+      // blocked-with-errors state, where Enter is dead and the bar was
+      // otherwise inescapable short of quitting the app (issue #98, F1).
+      // Dry-run Esc returns to the bar through the app's own path and a
+      // running Claude ignores dismiss, so only bar/exited reset here.
+      if (state.launch.phase === 'exited' || state.launch.phase === 'bar') {
         return {
           ...state,
           launch: initialLaunchState(),

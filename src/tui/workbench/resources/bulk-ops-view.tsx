@@ -460,69 +460,88 @@ export function BulkOpsView({
       Box,
       { marginBottom: 1 },
       React.createElement(Text, { bold: true }, t('bulk.title')),
-      React.createElement(Text, { dimColor: true }, ` · ${profile.name} · ${t(labelKey)}`),
+      React.createElement(Text, { color: 'gray' }, ` · ${profile.name} · ${t(labelKey)}`),
     ),
     phase === 'targets' ? renderTargets() : renderList(),
   );
 
+  // The status block keeps the full (already 8-capped) history — a fan-out
+  // batch lands one line per item×target in a single frame, so truncating the
+  // block would swallow results. Its height is accounted exactly into the
+  // list window below, so growth shrinks the window instead of pushing the
+  // block off-screen (issue #98, V11).
+  function renderStatusBlock(count: number): React.ReactElement {
+    return React.createElement(
+      Box,
+      { flexDirection: 'column', marginTop: 1, flexShrink: 0 },
+      React.createElement(
+        Text,
+        { color: 'gray' },
+        t('bulk.selected', { count: String(count) }),
+      ),
+      ...statusLines.map((line, i) =>
+        React.createElement(Text, { key: i, color: 'yellow', wrap: 'truncate' }, line),
+      ),
+    );
+  }
+
   function renderList(): React.ReactElement {
+    // Accounted-chrome layout (issue #98, V10/V11): the list renders through a
+    // clipped follow-cursor window between the title and the bottom rows, so
+    // a long list can never squeeze the cursor row, the selection count, the
+    // status history, or the hint off the screen.
+    const statusRows = statusLines.length + 2; // block margin + count + history
+    const windowSize = Math.max(1, height - 4 - statusRows); // title+gap (2) · hint (1) · status
+    const start = Math.max(0, selectedIndex - Math.floor(windowSize / 2));
+    const visibleItems = items.slice(start, start + windowSize);
     return React.createElement(
       Box,
       { flexDirection: 'column', flexGrow: 1 },
       items.length === 0
-        ? React.createElement(Text, { dimColor: true }, t('bulk.empty'))
+        ? React.createElement(Text, { color: 'gray' }, t('bulk.empty'))
         : React.createElement(
             Box,
-            { flexDirection: 'column' },
-            ...items.map((item, i) => {
-              const isCursor = i === selectedIndex;
+            { flexDirection: 'column', flexGrow: 1, overflow: 'hidden' },
+            ...visibleItems.map((item, vi) => {
+              const isCursor = start + vi === selectedIndex;
               const isSel = selected.has(item.name);
               return React.createElement(
-                Box,
-                { key: item.name },
-                React.createElement(
-                  Text,
-                  { bold: isCursor, color: isCursor ? 'cyan' : undefined, inverse: isCursor },
-                  `${isCursor ? '▸ ' : '  '}${isSel ? '[x]' : '[ ]'} ${item.name}`,
-                ),
-                React.createElement(Text, { dimColor: true, wrap: 'truncate' }, `  ${item.detail}`),
+                Text,
+                {
+                  key: item.name,
+                  bold: isCursor,
+                  color: isCursor ? 'cyan' : undefined,
+                  inverse: isCursor,
+                  wrap: 'truncate',
+                },
+                `${isCursor ? '▸ ' : '  '}${isSel ? '[x]' : '[ ]'} ${item.name}`,
+                React.createElement(Text, { color: 'gray' }, `  ${item.detail}`),
               );
             }),
           ),
-      React.createElement(
-        Box,
-        { marginTop: 1 },
-        React.createElement(
-          Text,
-          { dimColor: true },
-          t('bulk.selected', { count: String(selectedCount) }),
-        ),
-      ),
-      statusLines.length > 0 &&
-        React.createElement(
-          Box,
-          { flexDirection: 'column', marginTop: 1 },
-          ...statusLines.map((line, i) =>
-            React.createElement(Text, { key: i, color: 'yellow', wrap: 'wrap' }, line),
-          ),
-        ),
-      React.createElement(Box, { flexGrow: 1 }),
-      React.createElement(Text, { dimColor: true, wrap: 'truncate' }, t(hintKey)),
+      renderStatusBlock(selectedCount),
+      React.createElement(Text, { color: 'gray', wrap: 'truncate' }, t(hintKey)),
     );
   }
 
   function renderTargets(): React.ReactElement {
+    // Same accounted-chrome layout as renderList (issue #98, V10/V11):
+    // title+gap (2) · heading (1) · list gap (1) · hint (1) · status block.
+    const statusRows = statusLines.length + 2;
+    const windowSize = Math.max(1, height - 5 - statusRows);
+    const start = Math.max(0, targetCursor - Math.floor(windowSize / 2));
+    const visibleTargets = targetProfiles.slice(start, start + windowSize);
     return React.createElement(
       Box,
       { flexDirection: 'column', flexGrow: 1 },
-      React.createElement(Text, { bold: true }, t('bulk.copy.targets')),
+      React.createElement(Text, { bold: true, flexShrink: 0 }, t('bulk.copy.targets')),
       targetProfiles.length === 0
-        ? React.createElement(Text, { dimColor: true }, t('bulk.empty'))
+        ? React.createElement(Text, { color: 'gray' }, t('bulk.empty'))
         : React.createElement(
             Box,
-            { flexDirection: 'column', marginTop: 1 },
-            ...targetProfiles.map((name, i) => {
-              const isCursor = i === targetCursor;
+            { flexDirection: 'column', marginTop: 1, flexGrow: 1, overflow: 'hidden' },
+            ...visibleTargets.map((name, vi) => {
+              const isCursor = start + vi === targetCursor;
               const isSel = targetSelected.has(name);
               return React.createElement(
                 Text,
@@ -531,21 +550,18 @@ export function BulkOpsView({
                   bold: isCursor,
                   color: isCursor ? 'cyan' : undefined,
                   inverse: isCursor,
+                  wrap: 'truncate',
                 },
                 `${isCursor ? '▸ ' : '  '}${isSel ? '[x]' : '[ ]'} ${name}`,
               );
             }),
           ),
-      statusLines.length > 0 &&
-        React.createElement(
-          Box,
-          { flexDirection: 'column', marginTop: 1 },
-          ...statusLines.map((line, i) =>
-            React.createElement(Text, { key: i, color: 'yellow', wrap: 'wrap' }, line),
-          ),
-        ),
-      React.createElement(Box, { flexGrow: 1 }),
-      React.createElement(Text, { dimColor: true, wrap: 'truncate' }, t('bulk.copy.targets.hint')),
+      renderStatusBlock(targetSelected.size),
+      React.createElement(
+        Text,
+        { color: 'gray', wrap: 'truncate' },
+        t('bulk.copy.targets.hint'),
+      ),
     );
   }
 }

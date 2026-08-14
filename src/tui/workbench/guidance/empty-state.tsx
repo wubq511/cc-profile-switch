@@ -15,7 +15,9 @@ type RecipeEmptyStateProps = {
   titleWrap?: boolean;
 };
 
-/** title + recipe + one concrete next step. */
+/** title + recipe + one concrete next step. Padded off the pane border with
+ *  one blank row above (issue #98, V18) — flush-against-border copy read as
+ *  cramped in the audit. */
 function RecipeEmptyState({
   title,
   recipe,
@@ -24,9 +26,9 @@ function RecipeEmptyState({
 }: RecipeEmptyStateProps): React.ReactElement {
   return React.createElement(
     Box,
-    { flexDirection: 'column' },
+    { flexDirection: 'column', paddingX: 1, paddingTop: 1 },
     React.createElement(Text, { bold: true, wrap: titleWrap ? 'wrap' : undefined }, title),
-    React.createElement(Text, { dimColor: true, wrap: 'wrap' }, recipe),
+    React.createElement(Text, { color: 'gray', wrap: 'wrap' }, recipe),
     React.createElement(Text, { color: 'green' }, action),
   );
 }

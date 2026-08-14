@@ -336,6 +336,37 @@ describe('BulkOpsView interactive journeys (S95/S96/S97)', () => {
       await instance.waitUntilExit();
     });
   });
+
+  it('V10/V11: the window follows the cursor and the status row survives a 50-item list (issue #98)', async () => {
+    const { appHome, userHome } = await makeAppHome(['coding']);
+    for (let i = 1; i <= 50; i++) {
+      await installSkill(appHome, 'coding', `skill-${String(i).padStart(2, '0')}`);
+    }
+
+    await withHome(userHome, async () => {
+      const data = await loadWorkbenchData(appHome);
+      const { instance, stdout, stdin } = await renderView(appHome, data.profiles[0], 'skills');
+
+      // The cursor row starts visible, marker included, at 80x24.
+      await waitForOutputContaining(stdout, '▸ [ ] skill-01');
+      // Walk to the last row: the follow-cursor window keeps the cursor (and
+      // its ▸ marker) on screen instead of scrolling it out of the viewport.
+      for (let i = 0; i < 49; i++) {
+        stdin.press('\x1b[B');
+        await new Promise((resolve) => setTimeout(resolve, 15));
+      }
+      await waitForOutputContaining(stdout, '▸ [ ] skill-50');
+      // Select-all then remove: the selection count and the result status are
+      // reserved bottom rows, never pushed off-screen by the long list.
+      stdin.press('a');
+      await waitForOutputContaining(stdout, '50 selected');
+      stdin.press('x');
+      await waitForOutputContaining(stdout, 'Removed 50 to the Recovery Bin');
+
+      instance.unmount();
+      await instance.waitUntilExit();
+    });
+  });
 });
 
 // Mock the `git pull --ff-only` local-update path: clean repo, upstream set,

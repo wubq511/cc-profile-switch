@@ -56,7 +56,7 @@ export function ResourceList({
         { marginTop: 1, flexDirection: 'column' },
         React.createElement(
           Text,
-          { dimColor: true },
+          { color: 'gray' },
           isAgents ? t('resource.agents.empty') : t('resource.userMemory.missing'),
         ),
       ),
@@ -108,7 +108,7 @@ export function ResourceList({
                 lastUpdated: session.lastUpdated,
               }),
           ),
-          React.createElement(Text, { dimColor: true, wrap: 'truncate' }, `    ${row.detail}`),
+          React.createElement(Text, { color: 'gray', wrap: 'truncate' }, `    ${row.detail}`),
         );
       }),
     ),
@@ -127,6 +127,6 @@ export function ResourceList({
         }),
       ),
     React.createElement(Box, { flexGrow: 1 }),
-    React.createElement(Text, { dimColor: true, wrap: 'truncate' }, hintLine),
+    React.createElement(Text, { color: 'gray', wrap: 'truncate' }, hintLine),
   );
 }

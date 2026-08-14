@@ -38,7 +38,7 @@ export function RemoveProfilePanel({ profile }: RemoveProfilePanelProps): React.
     React.createElement(
       Box,
       null,
-      React.createElement(Text, { dimColor: true, wrap: 'wrap' }, consequence),
+      React.createElement(Text, { color: 'gray', wrap: 'wrap' }, consequence),
     ),
     React.createElement(
       Box,
@@ -53,7 +53,7 @@ export function RemoveProfilePanel({ profile }: RemoveProfilePanelProps): React.
     React.createElement(
       Box,
       null,
-      React.createElement(Text, { dimColor: true, wrap: 'wrap' }, t('destructive.cancel')),
+      React.createElement(Text, { color: 'gray', wrap: 'wrap' }, t('destructive.cancel')),
     ),
   );
 }
@@ -89,7 +89,7 @@ export function SaveTemplatePanel({
     React.createElement(
       Box,
       null,
-      React.createElement(Text, { dimColor: true, wrap: 'wrap' }, summary),
+      React.createElement(Text, { color: 'gray', wrap: 'wrap' }, summary),
     ),
     React.createElement(
       Box,
@@ -99,7 +99,7 @@ export function SaveTemplatePanel({
     React.createElement(
       Box,
       null,
-      React.createElement(Text, { dimColor: true, wrap: 'wrap' }, t('template.confirm.cancel')),
+      React.createElement(Text, { color: 'gray', wrap: 'wrap' }, t('template.confirm.cancel')),
     ),
   );
 }

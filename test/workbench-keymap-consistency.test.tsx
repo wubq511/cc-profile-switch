@@ -122,9 +122,14 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
     async renderApp(
       data: WorkbenchData,
       extraProps: Partial<React.ComponentProps<typeof WorkbenchApp>> = {},
+      size?: { columns: number; rows: number },
     ): Promise<void> {
       resetWelcomeSessionForTests();
       const stdout = new KeymapTtyStdout();
+      if (size) {
+        stdout.columns = size.columns;
+        stdout.rows = size.rows;
+      }
       const stdin = new FakeTtyStdin();
       const instance = render(
         React.createElement(WorkbenchApp, {
@@ -1086,6 +1091,28 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
       expect(h.text()).not.toContain('Keyboard Shortcuts');
       await h.unmount();
     }
+  });
+
+  scenario('help:scroll', async (h) => {
+    const { data } = await setupReal(['coding']);
+    // 100x40 keeps the scroll range short (each harness press waits for the
+    // frame to settle, so 40+ presses would eat the per-scenario timeout)
+    // while still clipping the Concepts tail until scrolled to (issue #98, V5).
+    await h.renderApp(data, {}, { columns: 100, rows: 40 });
+    await h.press('?');
+    await h.waitFor('Keyboard Shortcuts');
+    // The phrase is accumulation-safe: the workbench Plugins card behind the
+    // sheet words it differently ("change them through `claude plugin`").
+    expect(h.text()).not.toContain('change them through Claude Code');
+    // Press until the tail row appears; once clamped at the bottom a press is
+    // a no-op frame, and waiting out its settle timeout would blow the
+    // per-scenario budget — so stop as soon as the row is visible.
+    let revealed = false;
+    for (let i = 0; i < 30 && !revealed; i++) {
+      await h.press('\x1b[B');
+      revealed = h.text().includes('change them through Claude Code');
+    }
+    expect(revealed).toBe(true);
   });
 
   // ---------------------------------------------------------------- driver

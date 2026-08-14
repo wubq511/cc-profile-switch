@@ -403,8 +403,15 @@ export function RecoveryView({
   return (
     <Box flexDirection="column" width={width} height={height} paddingX={1}>
       <Box marginBottom={1}>
-        <Text bold>{t('recovery.title')}</Text>
-        <Text dimColor> · {t('recovery.subtitle')}</Text>
+        {/* The title keeps its slot; the subtitle truncates with … on the same
+            row instead of wrapping a mid-token tail onto the border (V16). */}
+        <Box flexShrink={0}>
+          <Text bold>{t('recovery.title')}</Text>
+        </Box>
+        <Text color="gray" wrap="truncate">
+          {' '}
+          · {t('recovery.subtitle')}
+        </Text>
       </Box>
 
       {phase === 'collision' && collisionItem ? (
@@ -422,8 +429,8 @@ export function RecoveryView({
               ? t('recovery.delete.confirm.item', { name: deleteTarget.name })
               : t('recovery.delete.confirm.backup', { id: deleteTarget.id })}
           </Text>
-          <Text dimColor>{t('recovery.delete.detail')}</Text>
-          <Text dimColor>{t('recovery.delete.hint')}</Text>
+          <Text color="gray">{t('recovery.delete.detail')}</Text>
+          <Text color="gray">{t('recovery.delete.hint')}</Text>
         </Box>
       ) : phase === 'confirm-empty' ? (
         <Box flexDirection="column" flexGrow={1}>
@@ -433,18 +440,18 @@ export function RecoveryView({
               size: formatBytes(binList.totalSizeBytes),
             })}
           </Text>
-          <Text dimColor>{t('recovery.empty.detail')}</Text>
-          <Text dimColor>{t('recovery.empty.hint')}</Text>
+          <Text color="gray">{t('recovery.empty.detail')}</Text>
+          <Text color="gray">{t('recovery.empty.hint')}</Text>
         </Box>
       ) : phase === 'retention' ? (
         <Box flexDirection="column" flexGrow={1}>
           <Text bold color="cyan" wrap="wrap">
             {t('recovery.retention.title')}
           </Text>
-          <Text dimColor wrap="wrap">
+          <Text color="gray" wrap="wrap">
             {t('recovery.retention.detail')}
           </Text>
-          <Text dimColor>
+          <Text color="gray">
             {t('recovery.retention.current', { label: retentionLabel(retentionDays) })}
           </Text>
           {RETENTION_OPTIONS.map((days, i) => (
@@ -452,19 +459,19 @@ export function RecoveryView({
               {i + 1}) {retentionLabel(days)}
             </Text>
           ))}
-          <Text dimColor>{t('recovery.retention.hint')}</Text>
+          <Text color="gray">{t('recovery.retention.hint')}</Text>
         </Box>
       ) : (
         <Box flexDirection="column" flexGrow={1}>
           {rows.length === 0 ? (
             <Box flexDirection="column">
-              <Text dimColor>{t('recovery.empty.bin')}</Text>
-              <Text dimColor>{t('recovery.empty.backups')}</Text>
+              <Text color="gray">{t('recovery.empty.bin')}</Text>
+              <Text color="gray">{t('recovery.empty.backups')}</Text>
             </Box>
           ) : (
             <Box flexDirection="column">
               {binList.entries.length > 0 && (
-                <Text bold dimColor wrap="truncate">
+                <Text bold color="gray" wrap="truncate">
                   {t('recovery.section.items')} ·{' '}
                   {t('recovery.itemCount', { count: String(binList.entries.length) })} ·{' '}
                   {t('recovery.total', { size: formatBytes(binList.totalSizeBytes) })}
@@ -473,7 +480,7 @@ export function RecoveryView({
               {renderRows()}
               {backupList.entries.length > 0 && (
                 <Box marginTop={1}>
-                  <Text bold dimColor wrap="truncate">
+                  <Text bold color="gray" wrap="truncate">
                     {t('recovery.section.backups')} ·{' '}
                     {t('recovery.backupCount', { count: String(backupList.entries.length) })} ·{' '}
                     {t('recovery.total', { size: formatBytes(backupList.totalSizeBytes) })}
@@ -492,7 +499,7 @@ export function RecoveryView({
             </Box>
           )}
           <Box flexGrow={1} />
-          <Text dimColor wrap="truncate">
+          <Text color="gray" wrap="truncate">
             {t('recovery.hint')}
           </Text>
         </Box>

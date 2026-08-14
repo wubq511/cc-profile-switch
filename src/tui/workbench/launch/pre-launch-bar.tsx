@@ -35,7 +35,7 @@ export function PreLaunchBar({
       null,
       React.createElement(Text, { bold: true }, t('launch.bar.title')),
       React.createElement(Text, null, ' '),
-      React.createElement(Text, { dimColor: true }, t('launch.bar.cwd')),
+      React.createElement(Text, { color: 'gray' }, t('launch.bar.cwd')),
       React.createElement(Text, null, ' '),
       React.createElement(Text, { color: 'cyan' }, launch.dir),
     ),
@@ -57,7 +57,8 @@ export function PreLaunchBar({
         React.createElement(Text, { color: 'yellow' }, `⚠ [${severityLabel(f.severity)}] ${f.code}: ${f.message}`),
       ),
     ),
-    // Action hint
+    // Action hint. Esc cancels in every bar state — in the blocked state it
+    // is the only way out, so it is documented there too (issue #98, F1).
     React.createElement(
       Box,
       null,
@@ -68,11 +69,17 @@ export function PreLaunchBar({
             React.createElement(Text, { color: 'red' }, t('launch.bar.blocked')),
             React.createElement(
               Text,
-              { dimColor: true },
+              { color: 'gray' },
               t('launch.bar.validateHint', { name: profileName }),
             ),
+            React.createElement(Text, { color: 'gray' }, t('launch.bar.cancel')),
           )
-        : React.createElement(Text, { color: 'green' }, t('launch.bar.enter')),
+        : React.createElement(
+            Box,
+            null,
+            React.createElement(Text, { color: 'green' }, t('launch.bar.enter')),
+            React.createElement(Text, { color: 'gray' }, ` · ${t('launch.bar.cancel')}`),
+          ),
     ),
   );
 }

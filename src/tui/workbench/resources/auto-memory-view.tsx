@@ -429,7 +429,7 @@ export function AutoMemoryView({
     <Box flexDirection="column" width={width} height={height} paddingX={1}>
       <Box marginBottom={1}>
         <Text bold>{t('autoMemory.title')}</Text>
-        <Text dimColor> · {profile.name}</Text>
+        <Text color="gray"> · {profile.name}</Text>
         {editActive && <Text color="green"> · ✎ {t('autoMemory.edit.banner')}</Text>}
       </Box>
 
@@ -449,7 +449,7 @@ export function AutoMemoryView({
             {t('autoMemory.copy.prompt')}
             <Text color="cyan">{copyInput}█</Text>
           </Text>
-          <Text dimColor>{t('keymap.esc')}</Text>
+          <Text color="gray">{t('keymap.esc')}</Text>
         </Box>
       ) : mode === 'restore-collision' && collisionItem ? (
         <CollisionDialog
@@ -463,7 +463,7 @@ export function AutoMemoryView({
         <Box flexDirection="column" flexGrow={1}>
           <Text bold>{t('autoMemory.restore.title')}</Text>
           {restoreItems.length === 0 ? (
-            <Text dimColor>{t('autoMemory.restore.empty')}</Text>
+            <Text color="gray">{t('autoMemory.restore.empty')}</Text>
           ) : (
             restoreItems.map((item, i) => (
               <Text
@@ -476,7 +476,7 @@ export function AutoMemoryView({
               </Text>
             ))
           )}
-          <Text dimColor>{t('keymap.esc')}</Text>
+          <Text color="gray">{t('keymap.esc')}</Text>
         </Box>
       ) : (
         <Box flexDirection="column" flexGrow={1}>
@@ -485,7 +485,7 @@ export function AutoMemoryView({
             {searchFocused ? (
               <Text color="cyan">/{searchQuery}█</Text>
             ) : (
-              <Text dimColor>{t('autoMemory.search.placeholder')}</Text>
+              <Text color="gray">{t('autoMemory.search.placeholder')}</Text>
             )}
           </Box>
 
@@ -493,10 +493,10 @@ export function AutoMemoryView({
           <Box flexDirection="column" height={listHeight}>
             {filtered.length === 0 ? (
               searchQuery ? (
-                <Text dimColor>{t('autoMemory.search.noMatch')}</Text>
+                <Text color="gray">{t('autoMemory.search.noMatch')}</Text>
               ) : (
                 <Box flexDirection="column">
-                  <Text dimColor>{t('autoMemory.empty')}</Text>
+                  <Text color="gray">{t('autoMemory.empty')}</Text>
                 </Box>
               )
             ) : (
@@ -506,14 +506,14 @@ export function AutoMemoryView({
 
           {/* Preview */}
           <Box flexDirection="column" marginTop={1} height={previewHeight}>
-            <Text bold dimColor>
+            <Text bold color="gray">
               {t('autoMemory.preview')}
               {selectedEntry ? ` · ${selectedEntry.name}` : ''}
             </Text>
             {selectedEntry ? (
               <Text>{truncatePreview(preview, previewHeight - 1, width - 2)}</Text>
             ) : (
-              <Text dimColor>{t('autoMemory.preview.empty')}</Text>
+              <Text color="gray">{t('autoMemory.preview.empty')}</Text>
             )}
           </Box>
         </Box>
@@ -521,9 +521,9 @@ export function AutoMemoryView({
 
       {/* Boundary note + status */}
       <Box marginTop={1} flexDirection="column">
-        <Text dimColor>{t('autoMemory.noCreate')}</Text>
-        <Text dimColor>{t('autoMemory.noDiff')}</Text>
-        <Text dimColor>{t('autoMemory.actions')}</Text>
+        <Text color="gray">{t('autoMemory.noCreate')}</Text>
+        <Text color="gray">{t('autoMemory.noDiff')}</Text>
+        <Text color="gray">{t('autoMemory.actions')}</Text>
         {status && <Text color="yellow">{status}</Text>}
       </Box>
     </Box>

@@ -1,5 +1,5 @@
-import React from 'react';
-import { Box, Text } from 'ink';
+import React, { useEffect, useRef, useState } from 'react';
+import { Box, measureElement, Text, useInput, useStdin } from 'ink';
 
 import { useI18n } from './i18n/react';
 import type { LocaleKey } from './i18n/en';
@@ -180,6 +180,7 @@ export const KEYMAP_GROUPS: readonly KeymapGroup[] = [
     titleKey: 'keymap.helpSheet',
     bindings: [
       { id: 'language', key: 'l', labelKey: 'keymap.language' },
+      { id: 'scroll', key: '↑/↓', labelKey: 'keymap.scroll' },
       { id: 'close', key: 'Esc/?', labelKey: 'keymap.close' },
     ],
   },
@@ -200,22 +201,54 @@ type KeymapOverlayProps = {
 
 export function KeymapOverlay({ visible }: KeymapOverlayProps): React.ReactElement | null {
   const { t } = useI18n();
+  // The sheet's content is taller than any compact viewport, and squeezing
+  // it tore group headings into neighboring chip rows and dropped zh
+  // characters (issue #98, V5). The content box therefore keeps its natural
+  // height (flexShrink 0) inside a clipped viewport; ↑/↓ scroll by shifting
+  // the content with a negative top margin. Title and footer stay pinned.
+  const viewportRef = useRef<React.ComponentRef<typeof Box>>(null);
+  const contentRef = useRef<React.ComponentRef<typeof Box>>(null);
+  const [scroll, setScroll] = useState(0);
+  const [maxScroll, setMaxScroll] = useState(0);
+  // Standalone harnesses render the sheet without a raw-mode-capable stdin;
+  // an active useInput there throws. The real app always has a TTY.
+  const { isRawModeSupported } = useStdin();
+
+  useInput(
+    (_input, key) => {
+      if (key.upArrow) setScroll((s) => Math.max(0, s - 1));
+      if (key.downArrow) setScroll((s) => Math.min(maxScroll, s + 1));
+    },
+    { isActive: visible && isRawModeSupported === true },
+  );
+
+  // No dependency array: re-measure after every render so a locale switch
+  // (which changes every row's width and the wrap) recomputes the range.
+  useEffect(() => {
+    const viewport = viewportRef.current ? measureElement(viewportRef.current).height : 0;
+    const content = contentRef.current ? measureElement(contentRef.current).height : 0;
+    const next = Math.max(0, content - viewport);
+    setMaxScroll((prev) => (prev === next ? prev : next));
+  });
 
   if (!visible) return null;
 
-  // One binding layout for every group: a wrapping row of `[key] label` chips.
-  // The sheet is the keymap reference, so each documented key stays a single
-  // inline chip no matter which context group it belongs to.
+  const clampedScroll = Math.min(scroll, maxScroll);
+
+  // One binding layout for every group: a wrapping row of `[key] label` chips
+  // with a 2-cell gutter. Chips keep their natural wrap inside the
+  // unsqueezed content box; clipping is the viewport's job, never yoga's
+  // shrink pass.
   const renderBindings = (bindings: readonly KeymapBinding[]): React.ReactElement =>
     React.createElement(
       Box,
-      { paddingX: 2, flexWrap: 'wrap' },
+      { paddingX: 2, flexWrap: 'wrap', flexShrink: 0 },
       ...bindings.map((b) =>
         React.createElement(
           Box,
           { key: b.id, marginRight: 2 },
           React.createElement(Text, { color: 'cyan' }, `[${b.key}]`),
-          React.createElement(Text, { dimColor: true }, ` ${t(b.labelKey)}`),
+          React.createElement(Text, { color: 'gray' }, ` ${t(b.labelKey)}`),
         ),
       ),
     );
@@ -232,37 +265,50 @@ export function KeymapOverlay({ visible }: KeymapOverlayProps): React.ReactEleme
       renderBindings(group.bindings),
     );
 
+  const footer =
+    maxScroll > 0
+      ? `[↑/↓] ${t('keymap.scroll')} · ${t('guidance.hints.fade')} · [esc] ${t('keymap.esc')}`
+      : `${t('guidance.hints.fade')} · [esc] ${t('keymap.esc')}`;
+
   return React.createElement(
     Box,
-    { flexDirection: 'column', flexGrow: 1, paddingX: 1 },
-    React.createElement(Text, { bold: true }, t('keymap.title')),
-    ...KEYMAP_GROUPS.map(renderGroup),
+    { flexDirection: 'column', flexGrow: 1, paddingX: 1, overflow: 'hidden' },
     React.createElement(
       Box,
-      { marginTop: 1 },
-      React.createElement(Text, { bold: true }, t('keymap.concepts')),
+      { flexShrink: 0 },
+      React.createElement(Text, { bold: true }, t('keymap.title')),
     ),
-    ...CONCEPTS.map((concept) =>
+    React.createElement(
+      Box,
+      { ref: viewportRef, flexDirection: 'column', flexGrow: 1, overflow: 'hidden' },
       React.createElement(
         Box,
-        { key: concept.term, paddingX: 2 },
+        { ref: contentRef, flexDirection: 'column', flexShrink: 0, marginTop: -clampedScroll },
+        ...KEYMAP_GROUPS.map(renderGroup),
         React.createElement(
-          Text,
-          { wrap: 'wrap' },
-          React.createElement(Text, { bold: true }, t(concept.term)),
-          React.createElement(Text, null, ' — '),
-          React.createElement(Text, null, t(concept.definition)),
+          Box,
+          { marginTop: 1 },
+          React.createElement(Text, { bold: true }, t('keymap.concepts')),
+        ),
+        ...CONCEPTS.map((concept) =>
+          React.createElement(
+            Box,
+            { key: concept.term, paddingX: 2 },
+            React.createElement(
+              Text,
+              { wrap: 'wrap' },
+              React.createElement(Text, { bold: true }, t(concept.term)),
+              React.createElement(Text, null, ' — '),
+              React.createElement(Text, null, t(concept.definition)),
+            ),
+          ),
         ),
       ),
     ),
     React.createElement(
       Box,
-      { marginTop: 1 },
-      React.createElement(
-        Text,
-        { dimColor: true, wrap: 'wrap' },
-        `${t('guidance.hints.fade')} · [esc] ${t('keymap.esc')}`,
-      ),
+      { marginTop: 1, flexShrink: 0 },
+      React.createElement(Text, { color: 'gray', wrap: 'wrap' }, footer),
     ),
   );
 }

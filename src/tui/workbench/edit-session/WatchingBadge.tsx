@@ -43,9 +43,11 @@ export function WatchingBadge({ phase, changeCount, lastUpdated }: WatchingBadge
         {pc.green('✎')} {t('editSession.watching')}
       </Text>
       {changeCount > 0 && (
-        <Text>{pc.dim(t('editSession.watching.changeCount', { count: String(changeCount) }))}</Text>
+        // gray (SGR 90), not dim (SGR 2): dim is unreadable on light
+        // terminal themes (issue #98, V19).
+        <Text>{pc.gray(t('editSession.watching.changeCount', { count: String(changeCount) }))}</Text>
       )}
-      {timeStr && <Text>{pc.dim(t('editSession.watching.updated', { time: timeStr }))}</Text>}
+      {timeStr && <Text>{pc.gray(t('editSession.watching.updated', { time: timeStr }))}</Text>}
     </Box>
   );
 }

@@ -148,14 +148,14 @@ describe('Workbench render', () => {
     // Read after unmount so the final frame is flushed to the fake stdout
     // (matches the other render tests in this file).
     const output = stripAnsi(stdout.output);
+    // The hint block is a fixed-height, clamped column (issue #98, V8/V17):
+    // the wrapping lifecycle line shows its first two rows — the leading
+    // actions — and the full key list lives on the `?` help sheet.
     expect(output).toContain('[n]');
     expect(output).toContain('[c]');
     expect(output).toContain('[r]');
     expect(output).toContain('[d]');
-    expect(output).toContain('[v]');
-    expect(output).toContain('[b]');
-    expect(output).toContain('[s]');
-    expect(output).toContain('[x]');
+    expect(output).toContain('[l]');
     // Skill install entry point (issue #64, spec §7.2)
     expect(output).toContain('[a]');
   });

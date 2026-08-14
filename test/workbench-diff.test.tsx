@@ -244,11 +244,16 @@ describe('grid-level cross-Profile diff entry (issue #71, spec §12)', () => {
     expect(switched).toContain('permissions.deny');
 
     // Esc returns to the category grid (idle), not to a resource list.
+    // 100×30 renders compact cells (issue #98, V1): descriptor rows like
+    // `d diff vs another Profile` drop first, so assert on the post-Esc frame
+    // delta instead — the grid-focus footer returns and the diff is gone.
     baseline = stdout.output;
+    const beforeEsc = baseline.length;
     stdin.press('\x1b');
     await waitForOutputSettled(stdout, baseline);
-    const back = flatten(stripAnsi(stdout.output));
-    expect(back).toContain('diff vs another Profile');
+    const back = flatten(stripAnsi(stdout.output.slice(beforeEsc)));
+    expect(back).toContain('Enter to drill in');
+    expect(back).not.toContain('coding → work');
 
     instance.unmount();
     await instance.waitUntilExit();

@@ -19,7 +19,7 @@ run() { # <session-script> <locale> <cols> <rows> <name> [extra capture args...]
   shift 5
   local theme="dark"
   [[ "$cols" -eq 80 ]] && theme="both"
-  ./scripts/visual-audit/reset-home.sh --locale "$locale" "${RESET_ARGS[@]:-}" >/dev/null
+  ./scripts/visual-audit/reset-home.sh --locale "$locale" ${RESET_ARGS[@]+"${RESET_ARGS[@]}"} >/dev/null
   rm -f .fixtures-out/out.tar.gz
   PATH="$STUB:$PATH" $PY scripts/visual-audit/capture.py \
     --cols "$cols" --rows "$rows" \

@@ -48,7 +48,7 @@ export function ErrorPanel({ message, code, guidance }: ErrorPanelProps): React.
     React.createElement(
       Box,
       { marginTop: 1 },
-      React.createElement(Text, { dimColor: true }, `[esc] ${t('keymap.esc')}`),
+      React.createElement(Text, { color: 'gray' }, `[esc] ${t('keymap.esc')}`),
     ),
   );
 }

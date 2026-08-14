@@ -112,7 +112,7 @@ export function AgentFrontmatterEditor({
         React.createElement(Text, { color: 'yellow' }, `⚠ ${t('resource.agent.frontmatter.blocked')}`),
       ),
       React.createElement(Box, { flexGrow: 1 }),
-      React.createElement(Text, { dimColor: true }, `${t('resource.preview.back')} · Esc`),
+      React.createElement(Text, { color: 'gray' }, `${t('resource.preview.back')} · Esc`),
     );
   }
 
@@ -149,7 +149,7 @@ export function AgentFrontmatterEditor({
     React.createElement(Box, { flexGrow: 1 }),
     React.createElement(
       Text,
-      { dimColor: true },
+      { color: 'gray' },
       editing
         ? `${t('keymap.enter')} ${t('resource.agent.frontmatter.saved')} · ${t('resource.agent.frontmatter.cancel')}`
         : `${t('keymap.enter')} ${t('resource.agent.frontmatter.edit')} · Esc ${t('resource.preview.back')}`,

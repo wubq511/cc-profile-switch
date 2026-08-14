@@ -96,7 +96,7 @@ export function MainPane({
     return React.createElement(
       Box,
       { flexDirection: 'column', justifyContent: 'center', alignItems: 'center', width, height },
-      React.createElement(Text, { dimColor: true }, t('main.selectProfile')),
+      React.createElement(Text, { color: 'gray' }, t('main.selectProfile')),
     );
   }
 
@@ -124,6 +124,18 @@ export function MainPane({
   const colWidth = Math.floor((width - 4) / 2);
   const cursor = selectedCategoryIndex ?? 0;
   const liveProfileHints = liveKeys(PROFILE_HINTS.map((h) => h.key));
+  // Compact cells (issue #98, V1/V2): the bordered multi-row card only fits
+  // when the pane is both wide enough for the two-column grid (~30 cells per
+  // column) and tall enough for seven 6-row cards plus the Plugins card and
+  // hint lines. Where it does not fit, yoga squeezed the fixed-height cards
+  // and content tore through the borders, destroying the category names (the
+  // cards' primary labels). Compact mode renders one terminal row per
+  // category — name + count + focus `▸`, right-truncated — so all seven
+  // names stay visible and intact at any size. Descriptor rows (drill/diff
+  // hints, empty offers) drop first, exactly as the approved fix list orders
+  // it; the pane itself clips at its own edge as a last resort, never tearing
+  // into the footer.
+  const compactCards = colWidth < 30 || height < 36;
   // Vertical budget for the Plugins card's inventory list: the header, grid,
   // and hint lines reserve a fixed share, and the card gets the remaining
   // lines (its title and the delegation line consume two). There is no hard
@@ -133,8 +145,10 @@ export function MainPane({
   const pluginsMaxRows = Math.max(1, height - 19);
 
   return React.createElement(
+    // overflow hidden: when the pane's content genuinely exceeds a small
+    // terminal, clip at the pane edge instead of tearing into the footer.
     Box,
-    { flexDirection: 'column', width, height, paddingX: 1 },
+    { flexDirection: 'column', width, height, paddingX: 1, overflow: 'hidden' },
     React.createElement(
       Box,
       { marginBottom: 1 },
@@ -154,7 +168,7 @@ export function MainPane({
           React.createElement(
             Box,
             { marginBottom: 1 },
-            React.createElement(Text, { dimColor: true }, profile.description),
+            React.createElement(Text, { color: 'gray' }, profile.description),
           ),
     // Just-in-time amber nudge: MCP servers that failed to connect (§5).
     (mcpFailed?.length ?? 0) > 0 &&
@@ -197,8 +211,8 @@ export function MainPane({
       ),
     React.createElement(
       Box,
-      { flexDirection: 'column', gap: 1, flexGrow: 1 },
-      ...renderCategoryGrid(profile.resourceCounts, colWidth, cursor, focused ?? false),
+      { flexDirection: 'column', gap: compactCards ? 0 : 1, flexGrow: 1 },
+      ...renderCategoryGrid(profile.resourceCounts, colWidth, cursor, focused ?? false, compactCards),
     ),
     // Read-only Plugins status card (§7.6 boundary row, issue #96): the
     // selected Profile's plugin inventory as pure status — names and enable
@@ -209,7 +223,7 @@ export function MainPane({
       React.createElement(
         Box,
         { marginTop: 1 },
-        React.createElement(Text, { dimColor: true }, t('main.drillIn')),
+        React.createElement(Text, { color: 'gray' }, t('main.drillIn')),
       ),
     React.createElement(
       Box,
@@ -228,7 +242,7 @@ export function MainPane({
           )
         : React.createElement(
             Text,
-            { dimColor: true, wrap: 'wrap' },
+            { color: 'gray', wrap: 'wrap' },
             t('guidance.hints.knowRopes'),
           ),
     ),
@@ -239,6 +253,7 @@ export function MainPane({
     colW: number,
     cursorIdx: number,
     isFocused: boolean,
+    compact: boolean,
   ): React.ReactElement[] {
     const rows: React.ReactElement[] = [];
     for (let i = 0; i < CATEGORIES.length; i += 2) {
@@ -247,15 +262,18 @@ export function MainPane({
 
       rows.push(
         React.createElement(
+          // flexShrink 0: a squeezed card row is what tore card content
+          // through the borders at compact heights (issue #98, V1).
           Box,
-          { key: left.key, gap: 1 },
-          renderCategoryCard(left, counts[left.key], colW, i === cursorIdx && isFocused),
+          { key: left.key, gap: 1, flexShrink: 0 },
+          renderCategoryCard(left, counts[left.key], colW, i === cursorIdx && isFocused, compact),
           right
             ? renderCategoryCard(
                 right,
                 counts[right.key as CategoryKey],
                 colW,
                 i + 1 === cursorIdx && isFocused,
+                compact,
               )
             : React.createElement(Box, { width: colW }),
         ),
@@ -269,6 +287,7 @@ export function MainPane({
     count: number,
     colW: number,
     highlighted: boolean,
+    compact: boolean,
   ): React.ReactElement {
     const drillHint = def.drillable
       ? def.key === 'userMemory'
@@ -286,6 +305,31 @@ export function MainPane({
         : null;
     const diffHint = diffCategoryFor(def.key) ? t('resource.diff.gridHint') : null;
 
+    // Compact cells (issue #98, V1/V2): at compact main-pane widths the
+    // bordered multi-row card cannot fit seven categories plus the Plugins
+    // card into a 24-row terminal — squeezing tore content through the card
+    // borders and destroyed the category names. The compact form keeps the
+    // primary information (name + count + focus `▸`) on one terminal row per
+    // category, right-truncated; descriptor rows (drill/diff hints, empty
+    // offers) drop first, exactly as the approved fix list orders it.
+    if (compact) {
+      return React.createElement(
+        Box,
+        { width: colW, flexShrink: 0 },
+        React.createElement(
+          Text,
+          {
+            bold: true,
+            inverse: highlighted,
+            color: highlighted ? 'cyan' : undefined,
+            wrap: 'truncate',
+          },
+          `${highlighted ? '▸ ' : ''}${t(def.labelKey)}`,
+        ),
+        React.createElement(Text, { color: 'gray' }, ` ${count}`),
+      );
+    }
+
     return React.createElement(
       Box,
       {
@@ -296,13 +340,13 @@ export function MainPane({
       },
       React.createElement(
         Text,
-        { bold: true, inverse: highlighted, color: highlighted ? 'cyan' : undefined, wrap: 'wrap' },
+        { bold: true, inverse: highlighted, color: highlighted ? 'cyan' : undefined, wrap: 'truncate' },
         `${highlighted ? '▸ ' : ''}${t(def.labelKey)}`,
       ),
       React.createElement(Text, null, `${count}`),
-      drillHint && React.createElement(Text, { dimColor: true, wrap: 'wrap' }, drillHint),
-      diffHint && React.createElement(Text, { dimColor: true, wrap: 'wrap' }, diffHint),
-      emptyLabel && React.createElement(Text, { dimColor: true, wrap: 'wrap' }, emptyLabel),
+      drillHint && React.createElement(Text, { color: 'gray', wrap: 'truncate' }, drillHint),
+      diffHint && React.createElement(Text, { color: 'gray', wrap: 'truncate' }, diffHint),
+      emptyLabel && React.createElement(Text, { color: 'gray', wrap: 'truncate' }, emptyLabel),
     );
   }
 
@@ -321,9 +365,9 @@ export function MainPane({
     // read never perturbs the pane with an intermediate '…' state.
     const body =
       inventory === undefined || inventory.status === 'unavailable'
-        ? React.createElement(Text, { dimColor: true, wrap: 'wrap' }, t('plugins.unavailable'))
+        ? React.createElement(Text, { color: 'gray', wrap: 'wrap' }, t('plugins.unavailable'))
         : inventory.plugins.length === 0
-          ? React.createElement(Text, { dimColor: true, wrap: 'wrap' }, t('plugins.empty'))
+          ? React.createElement(Text, { color: 'gray', wrap: 'wrap' }, t('plugins.empty'))
           : renderPluginRows(inventory.plugins, maxRows);
 
     return React.createElement(
@@ -331,7 +375,7 @@ export function MainPane({
       { flexDirection: 'column', marginTop: 1, flexShrink: 0 },
       React.createElement(Text, { bold: true }, t('main.category.plugins')),
       body,
-      React.createElement(Text, { dimColor: true, wrap: 'wrap' }, t('plugins.managed')),
+      React.createElement(Text, { color: 'gray', wrap: 'wrap' }, t('plugins.managed')),
     );
   }
 
@@ -351,7 +395,7 @@ export function MainPane({
           `${plugin.id} — `,
           React.createElement(
             Text,
-            plugin.enabled ? { color: 'green' } : { dimColor: true },
+            plugin.enabled ? { color: 'green' } : { color: 'gray' },
             plugin.enabled ? t('plugins.enabled') : t('plugins.disabled'),
           ),
         ),
@@ -359,7 +403,7 @@ export function MainPane({
       overflow > 0 &&
         React.createElement(
           Text,
-          { dimColor: true, wrap: 'wrap' },
+          { color: 'gray', wrap: 'wrap' },
           t('plugins.more', { count: String(overflow) }),
         ),
     );

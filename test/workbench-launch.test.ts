@@ -236,7 +236,7 @@ describe('launch lifecycle reducer', () => {
     expect(state.launch.phase).toBe('idle');
   });
 
-  it('LAUNCH_DISMISS is no-op when not in exited phase', () => {
+  it('LAUNCH_DISMISS resets launch state from the bar (Esc cancels, issue #98 F1)', () => {
     let state = lifecycleReducer(initialLifecycleState(), {
       type: 'LAUNCH_BAR',
       profileName: 'coding',
@@ -244,7 +244,44 @@ describe('launch lifecycle reducer', () => {
       recentDirs: [],
     });
     state = lifecycleReducer(state, { type: 'LAUNCH_DISMISS' });
-    expect(state.launch.phase).toBe('bar'); // unchanged
+    expect(state.launch.phase).toBe('idle');
+    expect(state.launch.dir).toBe(process.cwd());
+    expect(state.launch.validationFindings).toEqual([]);
+  });
+
+  it('LAUNCH_DISMISS escapes the blocked bar (validation errors, issue #98 F1)', () => {
+    let state = lifecycleReducer(initialLifecycleState(), {
+      type: 'LAUNCH_BAR',
+      profileName: 'broken',
+      cwd: '/project',
+      recentDirs: [],
+    });
+    state = lifecycleReducer(state, {
+      type: 'LAUNCH_SET_VALIDATION',
+      findings: [{ severity: 'error' as const, code: 'E_X', message: 'broken', path: '/foo' }],
+    });
+    // Enter stays dead…
+    const blocked = lifecycleReducer(state, { type: 'LAUNCH_CONFIRM' });
+    expect(blocked.launch.phase).toBe('bar');
+    // …but Esc cancels the flow.
+    state = lifecycleReducer(state, { type: 'LAUNCH_DISMISS' });
+    expect(state.launch.phase).toBe('idle');
+  });
+
+  it('LAUNCH_DISMISS is no-op outside bar/exited (dry-run Esc returns to bar via the app)', () => {
+    let state = lifecycleReducer(initialLifecycleState(), {
+      type: 'LAUNCH_BAR',
+      profileName: 'coding',
+      cwd: '/project',
+      recentDirs: [],
+    });
+    state = lifecycleReducer(state, {
+      type: 'LAUNCH_SHOW_DRYRUN',
+      plan: {} as unknown as LaunchPlan,
+    });
+    expect(state.launch.phase).toBe('dry-run');
+    state = lifecycleReducer(state, { type: 'LAUNCH_DISMISS' });
+    expect(state.launch.phase).toBe('dry-run'); // unchanged
   });
 
   it('LAUNCH_BAR resets other lifecycle state', () => {

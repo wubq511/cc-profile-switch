@@ -50,7 +50,7 @@ export function ImportPreviewPanel({
       { key: 'bundle' },
       React.createElement(
         Text,
-        { dimColor: true, wrap: 'wrap' },
+        { color: 'gray', wrap: 'wrap' },
         t('lifecycle.import.preview.bundle', {
           name: m.profileName,
           version: m.exporterVersion,
@@ -62,7 +62,7 @@ export function ImportPreviewPanel({
       { key: 'resources' },
       React.createElement(
         Text,
-        { dimColor: true, wrap: 'wrap' },
+        { color: 'gray', wrap: 'wrap' },
         t('lifecycle.import.preview.resources', {
           userMemory: String(r.userMemory),
           autoMemory: String(r.autoMemory),
@@ -83,7 +83,7 @@ export function ImportPreviewPanel({
         { key: 'mcp' },
         React.createElement(
           Text,
-          { dimColor: true, wrap: 'wrap' },
+          { color: 'gray', wrap: 'wrap' },
           t('lifecycle.import.preview.mcpServers', { names: m.mcpServerNames.join(', ') }),
         ),
       ),
@@ -112,7 +112,7 @@ export function ImportPreviewPanel({
         { key: 'name-hint' },
         React.createElement(
           Text,
-          { dimColor: true, wrap: 'wrap' },
+          { color: 'gray', wrap: 'wrap' },
           t('lifecycle.import.preview.newNameHint'),
         ),
       ),
@@ -151,7 +151,7 @@ export function ImportPreviewPanel({
         { key: 'confirm' },
         React.createElement(
           Text,
-          { dimColor: true, wrap: 'wrap' },
+          { color: 'gray', wrap: 'wrap' },
           t('lifecycle.import.preview.confirm'),
         ),
       ),

@@ -389,6 +389,47 @@ describe('Workbench input dispatch ownership (issue #90)', () => {
     }
   });
 
+  it('launch bar: Esc cancels the bar instead of stranding the user (issue #98 F1)', async () => {
+    await setupRealProfile();
+    const { instance, stdout, stdin } = await renderWorkbench(dataFor(profileWith(true)));
+
+    try {
+      await pressKey(stdin, stdout, 'l');
+      await waitForOutput(stdout, 'Enter to launch', 5000);
+      // The bar documents its own exit now.
+      expect(flatten(stripAnsi(stdout.output))).toContain('Esc to cancel');
+
+      stdout.snapshot();
+      await pressKey(stdin, stdout, '\x1b');
+      // Fresh frames repaint the home surface without the bar.
+      const output = flatten(stripAnsi(stdout.output));
+      expect(output).not.toContain('Enter to launch');
+      expect(output).toContain('coding');
+    } finally {
+      instance.unmount();
+      await instance.waitUntilExit();
+    }
+  });
+
+  it('success flash: a follow-up lifecycle key dismisses the flash and runs (issue #98 F2)', async () => {
+    await setupRealProfile();
+    const { instance, stdout, stdin } = await renderWorkbench(dataFor(profileWith(true)));
+
+    try {
+      await pressKey(stdin, stdout, 'b');
+      await waitForOutput(stdout, 'backed up', 5000);
+
+      // Inside the 1.5 s flash window the validate key must not be eaten:
+      // the flash dismisses immediately and the key executes normally.
+      await pressKey(stdin, stdout, 'v');
+      const output = await waitForOutput(stdout, 'Valid', 5000);
+      expect(output).toContain('Valid');
+    } finally {
+      instance.unmount();
+      await instance.waitUntilExit();
+    }
+  });
+
   it('a newer flash message is not cleared by the previous flash timer', async () => {
     await setupRealProfile();
     // No CLAUDE.md in the loaded data: [e] flashes the missing-memory message.

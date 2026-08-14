@@ -19,7 +19,7 @@ export function MissingOverlay({ lastContent, maxLines = 20 }: MissingOverlayPro
         <Text>{pc.yellow('⚠')} {t('editSession.missing.title')}</Text>
       </Box>
       <Box>
-        <Text dimColor>{t('editSession.missing.hint')}</Text>
+        <Text color="gray">{t('editSession.missing.hint')}</Text>
       </Box>
       <Box flexDirection="column" marginTop={1}>
         {lines.map((line, i) => (

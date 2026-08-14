@@ -156,13 +156,15 @@ describe('in-Workbench language switch (issue #54, spec §14.10)', () => {
       }),
     );
 
-    // The help sheet documents the switch.
+    // The help sheet opens (its `[l] Switch language` chip lives in the last
+    // group, which starts below the viewport now that the sheet scrolls —
+    // issue #98, V5; the toggle itself is asserted functionally below and in
+    // the keymap-consistency help:language scenario).
     let baseline = stdout.output;
     stdin.press('?');
     await waitForOutputSettled(stdout, baseline);
     let frame = stripAnsi(stdout.output);
     expect(frame).toContain('Keyboard Shortcuts');
-    expect(frame).toContain('Switch language');
 
     // [l] → zh: the sheet itself re-renders in Chinese immediately.
     baseline = stdout.output;
@@ -171,7 +173,6 @@ describe('in-Workbench language switch (issue #54, spec §14.10)', () => {
     expect(onLocaleChange).toHaveBeenCalledWith('zh');
     frame = stripAnsi(stdout.output);
     expect(frame).toContain('键盘快捷键');
-    expect(frame).toContain('切换语言');
 
     // [l] → en again.
     baseline = stdout.output;

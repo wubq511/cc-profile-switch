@@ -224,4 +224,22 @@ describe('BulkOpsView headless render', () => {
     const output = await renderView(appHome, data, 'skills');
     expect(output).toContain('Nothing to manage here.');
   }, 20000);
+
+  it('keeps the cursor row, selection count, and hint on screen with a 50-item list (issue #98, V10/V11)', async () => {
+    const { appHome, data } = await makeAppHome(['coding']);
+    for (let i = 1; i <= 50; i++) {
+      await installSkill(appHome, 'coding', `skill-${String(i).padStart(2, '0')}`);
+    }
+
+    const output = await renderView(appHome, data, 'skills', 'skill-01');
+
+    // The squeeze used to drop the first row (and the ▸ cursor marker with
+    // it): the follow-cursor window starts at the cursor.
+    expect(output).toContain('▸ [ ] skill-01');
+    // Rows past the window are clipped, not squeezed into the chrome.
+    expect(output).not.toContain('skill-50');
+    // The selection count and the shortcut hint are reserved bottom rows.
+    expect(output).toContain('0 selected');
+    expect(output).toContain('[space] select');
+  }, 30000);
 });
