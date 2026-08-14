@@ -1,0 +1,39 @@
+# Session 6: recovery bin view + confirms + retention + restore collision.
+send {SPACE}
+wait 400
+send B
+wait 900
+shot h01-recovery
+send x
+wait 400
+shot h02-recovery-delete-confirm
+send n
+wait 400
+send E
+wait 400
+shot h03-recovery-empty-confirm
+send {ESC}
+wait 300
+send r
+wait 400
+shot h04-recovery-retention
+send {ESC}
+wait 400
+send B
+wait 600
+until-hl "backup|备份" band=28:
+send {ENTER}
+wait 700
+shot h05-recovery-backup-status
+until-hl "topic-01" 30 up band=28:
+send {ENTER}
+wait 600
+shot h06-recovery-restore-collision
+send r
+wait 400
+shot h07-collision-rename
+send {ESC}
+wait 300
+send {ESC}
+wait 300
+send {ESC}

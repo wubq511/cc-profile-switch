@@ -1,0 +1,15 @@
+# Issue #97 zero-profile session (fixture: --zero-profiles).
+shot z01-welcome
+send {SPACE}
+wait 400
+shot z02-zero-state
+send n
+wait 500
+shot z03-zero-create-picker
+send {ENTER}
+wait 400
+shot z04-zero-name-prompt
+type first-profile
+send {ENTER}
+wait 1500
+shot z05-zero-created

@@ -1,0 +1,33 @@
+# Session 4: bulk ops + skills discover.
+send {SPACE}
+wait 400
+nav-grid "· Skills|· 技能"
+wait 400
+shot f01-bulk-skills
+# The list window starts at different skill numbers per width (follow-cursor
+# scrolling), so accept any selected row as proof the toggle landed.
+press-until "a" "[x] skill-" 8
+shot f02-bulk-selected
+send c
+wait 600
+shot f03-bulk-copy-targets
+send {ESC}
+wait 400
+send x
+wait 3000
+shot f04-bulk-remove-status
+send d
+wait 20000
+shot f05-discover
+send /
+wait 500
+shot f06-discover-search
+send {ESC}
+wait 500
+send s
+wait 500
+shot f07-discover-source
+send {ESC}
+wait 400
+send {ESC}
+wait 400

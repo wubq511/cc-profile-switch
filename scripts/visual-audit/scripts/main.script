@@ -1,0 +1,183 @@
+# Session 1: chrome + sidebar + lifecycle + validation findings + empty states.
+shot a01-welcome
+send {SPACE}
+shot a02-home
+send {RIGHT}
+shot a03-tree-expanded
+send {LEFT}
+send /
+shot a04-search-focus
+type profile-01
+wait 600
+shot a05-search-name-filter
+rep 10 send {BACKSPACE}
+type syntheti
+wait 800
+shot a06-search-content-hit
+send {ESC}
+wait 300
+send /
+type zzznomatch
+wait 600
+shot a07-search-nomatch
+send {ESC}
+wait 300
+# help sheet (full-pane overlay)
+send ?
+wait 700
+shot a08-help
+send {ESC}
+wait 300
+# lifecycle prompts + panels
+send v
+wait 500
+shot b01-validate-ok
+# The ✓ Valid flash holds lifecycle.phase='success' for 1.5s and every
+# lifecycle key (b/D/…) is gated on phase='idle' — dismiss it first or the
+# next key is silently swallowed.
+send {ESC}
+wait 400
+send b
+wait-until "backed up|已备份" 6000
+shot b02-backup-success-bar
+wait 1800
+send x
+wait 300
+shot b03-remove-confirm
+send {ESC}
+wait 300
+send s
+wait 300
+shot b04-save-template-prompt
+type audit-tpl-2
+shot b05-save-template-typing
+send {ENTER}
+wait 400
+shot b06-save-template-confirm
+send y
+wait 600
+shot b07-template-saved-flash
+# Dismiss the template-saved flash (success phase swallows the D key).
+send {ESC}
+wait 400
+send D
+wait 300
+shot b08-description-edit
+send {ESC}
+wait 300
+# copy / rename prompts (S6/S7) — cancel both without mutating
+send c
+wait 400
+shot b17-copy-prompt
+send {ESC}
+wait 300
+send r
+wait 400
+shot b18-rename-prompt
+send {ESC}
+wait 300
+send E
+wait 300
+shot b09-export-prompt
+send {ESC}
+wait 300
+send i
+wait 300
+type /nonexistent/bundle.tar.gz
+send {ENTER}
+wait 1200
+shot b10-import-error-panel
+send {ESC}
+wait 400
+send i
+wait 300
+type {PWD}/.fixtures-out/bundles/bundle-source.tar.gz
+send {ENTER}
+wait 1200
+shot b11-import-preview-clean
+send {ESC}
+wait 400
+send i
+wait 300
+type {PWD}/.fixtures-out/bundles/profile-001.tar.gz
+send {ENTER}
+wait 1200
+shot b12-import-collision
+send {ESC}
+wait 400
+# create picker + custom-template removal flash
+send n
+wait 400
+shot b13-create-picker
+until-marker "audit-template"
+shot b14-create-picker-custom-row
+send x
+wait 500
+shot b15-template-remove-flash
+send {ESC}
+wait 400
+send n
+wait 400
+send {ENTER}
+wait 400
+shot b16-create-name-prompt
+send {ESC}
+wait 300
+send {ESC}
+wait 400
+# validation findings on broken profile-018
+until-hl "profile-018"
+shot c01-broken-profile-selected
+send v
+wait 600
+shot c02-validation-findings
+send {ESC}
+wait 300
+# Plugins card empty state: sandbox's stubbed inventory is [] (populated
+# state shows on the profile-001 home frames, unavailable on profile-018).
+until-hl "sandbox"
+shot c03-plugins-empty
+until-hl "profile-018" 30 up
+wait 300
+# empty-state surfaces on a fresh coding-template profile. Picker rows are
+# torn away by the underlying sidebar text at 80 cols (study/general never
+# render), so pick the deterministic initial cursor row (coding) instead of
+# navigating to a specific template.
+until-hl "profile-001" 30 up
+send n
+wait 400
+send {ENTER}
+wait 500
+type audit-blank
+send {ENTER}
+wait 2000
+shot k01-blank-created
+press-until "{TAB}" "Enter to drill in|Enter 进入"
+wait 400
+shot k02-blank-grid
+send a
+wait 500
+shot k03-agents-empty
+send {ESC}
+wait 300
+nav-grid "· Auto Memory|· 自动记忆"
+wait 400
+shot k04-automem-empty
+send {ESC}
+wait 300
+nav-grid "· Agents|· 代理"
+wait 400
+shot k05-bulk-empty
+send {ESC}
+wait 300
+# empty Auto Memory drill: blank profile loses its MEMORY.md, then enter the
+# drill through the sidebar tree
+sh rm "$HOME/.cc-profile-switch/profiles/audit-blank/claude-home/memory/auto/MEMORY.md"
+send {ESC}
+wait 300
+press-until "{RIGHT}" "Auto Memory (1)|自动记忆 (1)"
+until-hl "Auto Memory (1)|自动记忆 (1)"
+send {ENTER}
+wait 700
+shot k06-automem-empty
+send {ESC}

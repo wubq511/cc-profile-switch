@@ -1,0 +1,10 @@
+{
+  "name": "visual-audit",
+  "version": "1.0.0",
+  "private": true,
+  "description": "PTY screenshot audit harness for the Profile Workbench (issue #97). Dev tooling, not shipped.",
+  "type": "commonjs",
+  "dependencies": {
+    "@xterm/headless": "^6.0.0"
+  }
+}

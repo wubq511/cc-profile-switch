@@ -1,0 +1,8 @@
+# Issue #97 NO_COLOR session — run with --no-color.
+shot n01-welcome-nocolor
+send {SPACE}
+wait 400
+shot n02-home-nocolor
+send ?
+wait 800
+shot n03-help-nocolor
