@@ -62,6 +62,25 @@ async function waitForOutputSettled(stdout: FakeTtyStdout, baseline: string, tim
   }
 }
 
+/** Poll the output written after `from` until `predicate` holds; returns the
+ *  final slice either way so callers can fail with full context. Prefer this
+ *  over waitForOutputSettled when asserting on post-keypress frames: Ink's
+ *  trailing render throttle can deliver a frame after a fixed settle window
+ *  on slow runners (Windows CI), which a settle-based snapshot would miss. */
+async function waitForSlice(
+  stdout: FakeTtyStdout,
+  from: number,
+  predicate: (slice: string) => boolean,
+  timeoutMs = 8000,
+): Promise<string> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const slice = stripAnsi(stdout.output.slice(from));
+    if (predicate(slice) || Date.now() > deadline) return slice;
+    await new Promise((resolve) => setTimeout(resolve, 15));
+  }
+}
+
 async function renderInteractive(
   element: React.ReactElement,
 ): Promise<{ instance: ReturnType<typeof render>; stdout: FakeTtyStdout; stdin: FakeTtyStdin }> {
@@ -182,12 +201,19 @@ describe('in-Workbench language switch (issue #54, spec §14.10)', () => {
     expect(stripAnsi(stdout.output)).toContain('Keyboard Shortcuts');
 
     // Esc still closes the sheet after the toggles. stdout accumulates every
-    // frame ever written, so assert only on the frames after the Esc press.
+    // frame ever written, so assert on the frames after the Esc press — and
+    // wait by content, not quiet: on slow runners (Windows CI) Ink's trailing
+    // render throttle can deliver the final help-sheet frame after a fixed
+    // settle window, which would otherwise leak into the asserted slice.
     const historyLength = stdout.output.length;
-    baseline = stdout.output;
     stdin.press('\x1b');
-    await waitForOutputSettled(stdout, baseline);
-    expect(stripAnsi(stdout.output.slice(historyLength))).not.toContain('Keyboard Shortcuts');
+    const postEsc = await waitForSlice(stdout, historyLength, (s) => s.includes('Type to search…'));
+    // The sheet title only exists while the sheet is open; the sidebar search
+    // placeholder only exists on the home view. Once the last home frame
+    // postdates the last sheet frame, the close has been observed.
+    const lastHomeFrame = postEsc.lastIndexOf('Type to search…');
+    expect(lastHomeFrame).toBeGreaterThanOrEqual(0);
+    expect(postEsc.lastIndexOf('Keyboard Shortcuts')).toBeLessThan(lastHomeFrame);
     instance.unmount();
     await instance.waitUntilExit();
   });
