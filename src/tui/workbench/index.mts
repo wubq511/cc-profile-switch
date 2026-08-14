@@ -19,6 +19,7 @@ import {
 import { loadAppStateSync, recordHintUseSync } from '../../core/app-state';
 import { getLastSweepResult, runStartupSweep } from '../../core/recovery-bin';
 import { CcpsError } from '../../utils/errors';
+import { applyNoColorPreference } from './no-color';
 
 const ALT_ON = '\x1b[?1049h';
 const ALT_OFF = '\x1b[?1049l';
@@ -44,6 +45,8 @@ process.on('SIGINT', halt);
 process.on('SIGTERM', halt);
 
 async function main(): Promise<void> {
+  // Must run before the first Ink render so chalk-based colors become no-ops.
+  applyNoColorPreference();
   let data = await loadWorkbenchData();
   const appHomePath = getAppHomePaths().appHomePath;
 
