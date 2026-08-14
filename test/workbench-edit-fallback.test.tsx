@@ -168,6 +168,35 @@ describe('editor unavailable fallback (§8, S35)', () => {
     return flatten(stripAnsi(stdout.output));
   }
 
+  /**
+   * Ink subscribes useInput handlers in a passive effect, so a freshly
+   * surfaced menu can be visible before its keys are live; on slow runners
+   * (Windows CI) a single press can fall into that gap and vanish. Press
+   * until the observable effect lands (bounded), like a user whose keypress
+   * did nothing. `effected` must become true near-synchronously once the key
+   * is processed, so a full quiet interval means the press was really lost.
+   */
+  async function pressUntil(
+    stdin: FakeTtyStdin,
+    key: string,
+    effected: () => boolean,
+    attempts = 6,
+    intervalMs = 1000,
+  ): Promise<boolean> {
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      // Check first: an earlier press may already have landed, and re-pressing
+      // a live key can double-trigger its action.
+      if (effected()) return true;
+      stdin.press(key);
+      const deadline = Date.now() + intervalMs;
+      while (Date.now() < deadline) {
+        if (effected()) return true;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+    }
+    return effected();
+  }
+
   async function renderInteractive(
     element: React.ReactElement,
   ): Promise<{ instance: ReturnType<typeof render>; stdout: FakeTtyStdout; stdin: FakeTtyStdin }> {
@@ -229,7 +258,7 @@ describe('editor unavailable fallback (§8, S35)', () => {
     stdin.press('e');
     await waitForOutput(stdout, 'VS Code unavailable');
 
-    stdin.press('2');
+    await pressUntil(stdin, '2', () => flatten(stripAnsi(stdout.output)).includes('CLAUDE.md'));
     const output = await waitForOutput(stdout, 'CLAUDE.md');
     expect(output).toContain(resolveInside(resolve(claudeMdPath)));
     // The menu stays up after revealing the path.
@@ -259,7 +288,10 @@ describe('editor unavailable fallback (§8, S35)', () => {
 
     const baseline = stdout.output; // uncleared — settle waits for a NEW frame
     setupSpawnSuccess();
-    stdin.press('3');
+    // spawn() runs synchronously once the key is processed, so the call count
+    // is the near-synchronous observable for pressUntil.
+    const retried = await pressUntil(stdin, '3', () => vi.mocked(spawn).mock.calls.length >= 2);
+    expect(retried).toBe(true);
     await waitForOutput(stdout, 'watching');
 
     expect(vi.mocked(spawn)).toHaveBeenCalledTimes(2);
@@ -292,14 +324,12 @@ describe('editor unavailable fallback (§8, S35)', () => {
 
     const baseline = stdout.output; // uncleared — settle waits for a NEW frame
     setupSpawnSuccess();
-    stdin.press('1');
-    // The handoff spawn is recorded the moment '1' is processed; on slow CI the
-    // key can lag waitForOutputSettled's deadline, so wait on the observable
-    // call count first, then settle for the dismiss frame.
-    const deadline = Date.now() + 5000;
-    while (Date.now() < deadline && vi.mocked(spawn).mock.calls.length < 2) {
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    }
+    // The handoff spawn is recorded the moment '1' is processed; press until
+    // the observable call count moves (a press landing before the menu's
+    // passive-effect input subscription is silently dropped), then settle for
+    // the dismiss frame.
+    const opened = await pressUntil(stdin, '1', () => vi.mocked(spawn).mock.calls.length >= 2);
+    expect(opened).toBe(true);
     await waitForOutputSettled(stdout, baseline);
 
     // Second spawn is the system-editor handoff: arg-array style, shell:false,
@@ -341,11 +371,22 @@ describe('editor unavailable fallback (§8, S35)', () => {
 
     const baseline = stdout.output; // uncleared — settle waits for a NEW frame
     stdin.press('\u001b'); // Esc
+    // Esc is idempotent (dismiss on an open menu, no-op once closed), so
+    // press-until-observed is safe. The sidebar search placeholder renders in
+    // every frame, so "last menu frame predates last sidebar frame" means the
+    // close render landed — immune to late frame chunks on slow runners.
+    const dismissed = await pressUntil(stdin, String.fromCodePoint(27), () => {
+      const tail = flatten(stripAnsi(stdout.output.slice(baseline.length)));
+      const lastSidebarFrame = tail.lastIndexOf('Type to search…');
+      return lastSidebarFrame !== -1 && tail.lastIndexOf('VS Code unavailable') < lastSidebarFrame;
+    });
+    expect(dismissed).toBe(true);
     await waitForOutputSettled(stdout, baseline);
 
     expect(vi.mocked(spawn)).toHaveBeenCalledTimes(1);
-    expect(flatten(stripAnsi(stdout.output.slice(baseline.length)))).not.toContain(
-      'VS Code unavailable',
+    const fresh = flatten(stripAnsi(stdout.output.slice(baseline.length)));
+    expect(fresh.lastIndexOf('VS Code unavailable')).toBeLessThan(
+      fresh.lastIndexOf('Type to search…'),
     );
 
     instance.unmount();
