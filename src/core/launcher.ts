@@ -129,6 +129,17 @@ export async function buildLaunchPlan(
   });
   const realClaudeEnv = await loadRealClaudeSettingsEnv();
   const warnings = validation.findings.filter((finding) => finding.severity === 'warning');
+  // The launch env layers (shell, real settings, ccps API settings) can each
+  // contribute one half of the ANTHROPIC auth pair; surface the deterministic
+  // resolution so a dry-run shows it before the real launch applies it.
+  const authResolution = resolveAuthEnvConflict([realClaudeEnv, apiSettings.env]);
+  if (authResolution !== null) {
+    warnings.push({
+      severity: 'warning',
+      code: 'LAUNCH_AUTH_ENV_CONFLICT',
+      message: `${authResolution.dropped} is ignored because ${authResolution.kept} is also set; the higher-precedence layer (ccps API settings over inherited/shell env) decides the auth mode.`,
+    });
+  }
 
   return {
     profileName: validation.profileName,
@@ -263,12 +274,16 @@ export async function launchProfile(options: LaunchProfileOptions): Promise<Laun
       cwd: plan.cwd,
       stdio: 'inherit',
       shell: false,
-      env: {
-        ...process.env,
-        ...plan.apiEnv,
-        ...plan.realClaudeEnv,
-        ...plan.envChanges,
-      },
+      // Precedence low → high: shell env, the real user Claude settings
+      // (inherited defaults), ccps API settings (explicit per-profile intent —
+      // the profile is the isolation unit, so it wins), then structural
+      // overrides. The ANTHROPIC auth pair is deduped by composeLaunchEnv.
+      env: composeLaunchEnv([
+        process.env,
+        plan.realClaudeEnv,
+        plan.apiEnv,
+        plan.envChanges,
+      ]).env,
     });
   } catch (error) {
     throw new CcpsError('CLAUDE_LAUNCH_FAILED', 'Failed to start Claude Code.', {
@@ -411,6 +426,54 @@ function invalidLaunchCwd(cwd: string, message: string): CcpsError {
 
 function sortedKeys(value: Record<string, string>): string[] {
   return Object.keys(value).sort((a, b) => a.localeCompare(b));
+}
+
+/**
+ * Claude Code cannot operate with BOTH ANTHROPIC_AUTH_TOKEN and
+ * ANTHROPIC_API_KEY set ("auth may not work as expected"). Each launch-env
+ * layer (shell env, real ~/.claude/settings.json, ccps API settings) can carry
+ * one half of the pair, so the final composition resolves the conflict
+ * deterministically: the highest-precedence layer that sets either variable
+ * decides the auth mode and the other variable is dropped. A single layer
+ * setting both is explicit user config and is left untouched (Claude's own
+ * warning then applies).
+ */
+export type AuthEnvResolution = {
+  dropped: 'ANTHROPIC_AUTH_TOKEN' | 'ANTHROPIC_API_KEY';
+  kept: 'ANTHROPIC_AUTH_TOKEN' | 'ANTHROPIC_API_KEY';
+};
+
+export function resolveAuthEnvConflict(
+  layers: Record<string, string | undefined>[],
+): AuthEnvResolution | null {
+  const merged: Record<string, string | undefined> = Object.assign({}, ...layers);
+  if (
+    typeof merged.ANTHROPIC_AUTH_TOKEN !== 'string' ||
+    typeof merged.ANTHROPIC_API_KEY !== 'string'
+  ) {
+    return null;
+  }
+  for (let i = layers.length - 1; i >= 0; i--) {
+    const layer = layers[i];
+    const token = typeof layer.ANTHROPIC_AUTH_TOKEN === 'string';
+    const key = typeof layer.ANTHROPIC_API_KEY === 'string';
+    if (token && key) return null;
+    if (token) return { dropped: 'ANTHROPIC_API_KEY', kept: 'ANTHROPIC_AUTH_TOKEN' };
+    if (key) return { dropped: 'ANTHROPIC_AUTH_TOKEN', kept: 'ANTHROPIC_API_KEY' };
+  }
+  return null;
+}
+
+/** Merge launch env layers (low → high precedence) with auth-pair dedupe. */
+export function composeLaunchEnv(
+  layers: Record<string, string | undefined>[],
+): { env: Record<string, string | undefined>; resolution: AuthEnvResolution | null } {
+  const env: Record<string, string | undefined> = Object.assign({}, ...layers);
+  const resolution = resolveAuthEnvConflict(layers);
+  if (resolution !== null) {
+    delete env[resolution.dropped];
+  }
+  return { env, resolution };
 }
 
 async function loadRealClaudeSettingsEnv(): Promise<Record<string, string>> {

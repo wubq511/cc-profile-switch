@@ -29,12 +29,16 @@ describe('editor integration', () => {
     expect(spawn).toHaveBeenCalledWith(expected.command, expected.args, expected.options);
   });
 
-  it('builds a macOS open command for a new VS Code window', () => {
+  it('builds a macOS open command targeting VS Code', () => {
+    // No -n: that flag means "new app INSTANCE" on macOS, and VS Code's
+    // single-instance handshake kills the second instance — the dock icon
+    // bounces and no window opens (real-machine acceptance finding, #87 E1).
+    // Plain `open -a` activates the running instance and opens the target.
     expect(
       buildEditorSpawnCommand('/Users/robert/.cc-profile-switch/profiles/coding', 'darwin'),
     ).toEqual({
       command: 'open',
-      args: ['-n', '-a', 'Visual Studio Code', '/Users/robert/.cc-profile-switch/profiles/coding'],
+      args: ['-a', 'Visual Studio Code', '/Users/robert/.cc-profile-switch/profiles/coding'],
       options: {
         stdio: 'ignore',
       },

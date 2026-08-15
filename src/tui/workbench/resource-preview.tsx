@@ -22,7 +22,19 @@ type ResourcePreviewProps = {
   editFallback: EditFallbackHandlers;
 };
 
-const CONTENT_AREA_HEIGHT = 12;
+/**
+ * The content window is derived from the actual pane height, not a fixed
+ * constant — a hardcoded 12-line window left the rest of a tall pane empty
+ * (issue #87 acceptance finding L3). Chrome rows around the content area:
+ * header (1), content marginTop (1), footer (1), plus the optional watching
+ * badge block (marginTop + 1 row) and the fallback menu (marginTop + title +
+ * marginBottom + 3 actions + optional revealed path = 7, counted
+ * pessimistically so the footer is never pushed off-screen).
+ */
+const CHROME_ROWS = 3;
+const BADGE_ROWS = 2;
+const FALLBACK_ROWS = 7;
+const MIN_CONTENT_ROWS = 3;
 
 export function ResourcePreview({
   profile,
@@ -42,8 +54,15 @@ export function ResourcePreview({
       ? `${profile.name} › ${t('resource.agents.title')} › ${resourceName}`
       : `${profile.name} › ${t('resource.userMemory.title')} › CLAUDE.md`;
 
+  const badgeRows = session && session.phase !== 'missing' ? BADGE_ROWS : 0;
+  const fallbackRows = session?.openFailedReason ? FALLBACK_ROWS : 0;
+  const contentHeight = Math.max(
+    MIN_CONTENT_ROWS,
+    height - CHROME_ROWS - badgeRows - fallbackRows,
+  );
+
   const lines = content === null ? [] : content.split('\n');
-  const visibleLines = lines.slice(scrollOffset, scrollOffset + CONTENT_AREA_HEIGHT);
+  const visibleLines = lines.slice(scrollOffset, scrollOffset + contentHeight);
 
   return React.createElement(
     Box,

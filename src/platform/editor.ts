@@ -61,9 +61,12 @@ export function buildEditorSpawnCommand(
   }
 
   if (platform === 'darwin') {
+    // `open -n` requests a new app *instance*; VS Code is single-instance, so
+    // the spawned instance is killed after the dock bounce and nothing opens
+    // (#87 acceptance E1). Plain `open -a` reuses/activates the running app.
     return {
       command: 'open',
-      args: ['-n', '-a', 'Visual Studio Code', targetPath],
+      args: ['-a', 'Visual Studio Code', targetPath],
       options: {
         stdio: 'ignore',
       },

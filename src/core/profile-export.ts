@@ -37,7 +37,12 @@ import { isNodeError, isRecord } from '../utils/type-guards';
  *   - Never reads or touches the real ~/.claude or ~/.claude.json.
  */
 
-const REDACTED = '<redacted>';
+/**
+ * Placeholder left in place of stripped secret values in exported bundles and
+ * imported profiles. It is a marker, never a real value — launch env
+ * composition (./api-settings) must filter it out rather than inject it.
+ */
+export const REDACTED = '<redacted>';
 const BUNDLE_PROFILE_DIR = 'profile';
 const BUNDLE_MANIFEST_FILE = 'manifest.json';
 const SETTINGS_REL = 'claude-home/settings.json';

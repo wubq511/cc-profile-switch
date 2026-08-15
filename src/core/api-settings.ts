@@ -4,6 +4,7 @@ import { apiSettingsSchema, profileSettingsApiSchema } from '../schemas/api-sett
 import { CcpsError } from '../utils/errors';
 import { isNodeError } from '../utils/type-guards';
 import { getAppHomePaths } from './app-config';
+import { REDACTED } from './profile-export';
 import { getProfileTemplatePaths } from './profile-template';
 
 export type ApiSettingsSource = {
@@ -69,11 +70,12 @@ async function loadApiSettingsFile(filePath: string): Promise<ApiSettingsLoadRes
     throw invalidApiSettings(filePath, parsed.error);
   }
 
+  const env = dropRedactedPlaceholders(parsed.data.env);
   return {
     path: filePath,
     present: true,
-    keys: sortedKeys(parsed.data.env),
-    env: parsed.data.env,
+    keys: sortedKeys(env),
+    env,
   };
 }
 
@@ -102,7 +104,7 @@ async function loadProfileSettingsEnv(filePath: string): Promise<ApiSettingsLoad
     throw invalidApiSettings(filePath, parsed.error);
   }
 
-  const env = parsed.data.env ?? {};
+  const env = dropRedactedPlaceholders(parsed.data.env ?? {});
 
   return {
     path: filePath,
@@ -110,6 +112,15 @@ async function loadProfileSettingsEnv(filePath: string): Promise<ApiSettingsLoad
     keys: sortedKeys(env),
     env,
   };
+}
+
+/**
+ * Imported profiles carry `<redacted>` placeholders for stripped secrets until
+ * the user re-enters them. Injecting the literal marker as a launch env value
+ * would hand Claude a garbage key — drop placeholders from the injectable env.
+ */
+function dropRedactedPlaceholders(env: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.entries(env).filter(([, value]) => value !== REDACTED));
 }
 
 function publicSource(source: ApiSettingsLoadResult): ApiSettingsSource {
