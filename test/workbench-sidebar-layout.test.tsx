@@ -80,10 +80,13 @@ async function waitForOutputSettled(stdout: FakeTtyStdout, baseline: string, tim
 
 /** Visible lines of the most recently painted frame. The interactive standard
  *  renderer prefixes each repaint with eraseLines(N); splitting there and
- *  taking the last segment isolates the newest full-screen payload. */
+ *  taking the last segment isolates the newest full-screen payload. On win32
+ *  Ink instead clears fullscreen frames with clearTerminal (ink #969), so the
+ *  boundary alternation includes that sequence — without it the whole
+ *  accumulated output reads as one frame on Windows. */
 function lastFrameLines(output: string): string[] {
   // eslint-disable-next-line no-control-regex
-  const segments = output.split(/(?:\x1b\[2K\x1b\[1A)*\x1b\[2K\x1b\[G/);
+  const segments = output.split(/(?:\x1b\[2K\x1b\[1A)*\x1b\[2K\x1b\[G|\x1b\[2J\x1b\[0f|\x1b\[2J\x1b\[3J\x1b\[H/);
   const last = segments[segments.length - 1];
   return last.split('\n').map((line) => stripAnsi(line));
 }

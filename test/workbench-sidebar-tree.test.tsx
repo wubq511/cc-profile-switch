@@ -245,10 +245,10 @@ describe('sidebar card-tree search (issue #83, spec §4.2)', () => {
 
     // Newest full-screen payload only — accumulated frames would keep showing
     // the item row after it collapsed (same trick as lastFrameLines in the
-    // layout tests).
+    // layout tests, including the win32 clearTerminal boundary — ink #969).
     const lastFrame = (): string => {
       // eslint-disable-next-line no-control-regex
-      const segments = stdout.output.split(/(?:\x1b\[2K\x1b\[1A)*\x1b\[2K\x1b\[G/);
+      const segments = stdout.output.split(/(?:\x1b\[2K\x1b\[1A)*\x1b\[2K\x1b\[G|\x1b\[2J\x1b\[0f|\x1b\[2J\x1b\[3J\x1b\[H/);
       return flatten(segments[segments.length - 1] ?? '');
     };
 
