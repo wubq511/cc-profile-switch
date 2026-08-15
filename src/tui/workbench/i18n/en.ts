@@ -210,6 +210,8 @@ export const en = {
   'launch.dryrun.more': '+{count} more lines',
   'launch.exited': 'Claude exited ({code})',
   'launch.exited.zero': 'Claude exited successfully',
+  // Null exit code: Claude was killed by a signal or the spawn itself failed.
+  'launch.exited.interrupted': 'Claude was interrupted (signal or launch failure)',
   'launch.finding.error': 'Error',
   'launch.finding.warning': 'Warning',
   // Skill install wizard (issue #64, spec §7.2)

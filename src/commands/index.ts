@@ -3,7 +3,7 @@ import fs from 'fs-extra';
 import { createInterface } from 'node:readline/promises';
 
 import { getAppHomePaths, loadAppConfig } from '../core/app-config';
-import { listBackups, restoreProfileFromBackup } from '../core/backup';
+import { listBackups, permanentlyDeleteBackup, restoreProfileFromBackup } from '../core/backup';
 import { buildLaunchPlan, formatLaunchDryRun, launchProfile } from '../core/launcher';
 import { backupProfile, createProfile, initProfiles, type Clock } from '../core/profile';
 import { ensureProfileCreator } from '../core/profile-creator';
@@ -287,6 +287,36 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
       }
       runtime.writeOut(`Backup kept: ${result.backupPath}\n`);
       runtime.writeOut(`Next: ccps launch ${result.restoredProfile} --dry-run\n`);
+    });
+
+  backup
+    .command('remove <backup-id>')
+    .description('Permanently delete one backup; this cannot be undone.')
+    .option('--yes', 'Skip the confirmation prompt.')
+    .action(async (backupId: string, cmdOptions: { yes?: boolean }) => {
+      const appHomePath = getAppHomePaths().appHomePath;
+      const { entries } = await listBackups(appHomePath);
+      const entry = entries.find((candidate) => candidate.id === backupId);
+      if (entry === undefined) {
+        throw new CcpsError('BACKUP_NOT_FOUND', 'Backup does not exist.', {
+          guidance: 'List backups with: ccps backup list',
+        });
+      }
+
+      // §9.5: the only action class with no safety net — the confirmation copy
+      // must state plainly that the deletion is permanent and unrecoverable.
+      if (!cmdOptions.yes) {
+        const answer = await runtime.readInput(
+          `Permanently delete backup "${entry.id}" (profile "${entry.profileName}")? This is permanent and unrecoverable. [y/N]: `,
+        );
+        if (!answer.trim().toLowerCase().startsWith('y')) {
+          runtime.writeOut('Aborted.\n');
+          return;
+        }
+      }
+
+      await permanentlyDeleteBackup(backupId, appHomePath);
+      runtime.writeOut(`Permanently deleted backup "${entry.id}".\n`);
     });
 
   program

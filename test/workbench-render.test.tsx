@@ -210,6 +210,58 @@ describe('launch resume (spec §10)', () => {
     expect(output).toContain('Claude exited successfully');
   });
 
+  it('shows dedicated copy instead of "(null)" when Claude exits via signal or spawn failure', async () => {
+    const stdout = new FakeTtyStdout();
+    const instance = render(
+      React.createElement(WorkbenchApp, {
+        data: sampleData,
+        initialLocale: 'en',
+        headless: true,
+        skipWelcome: true,
+        // Null exit code: terminated by a signal or the spawn itself failed
+        // (launcher never records launch metadata in this case).
+        resumeState: { selectedIndex: 0, profileName: 'coding', dir: '/project', exitCode: null },
+      }),
+      {
+        stdout: stdout as unknown as NodeJS.WriteStream,
+        stdin: dummyStdin() as unknown as NodeJS.ReadStream,
+        exitOnCtrlC: false,
+        patchConsole: false,
+      },
+    );
+    await instance.waitUntilRenderFlush();
+    instance.unmount();
+    await instance.waitUntilExit();
+    const output = stripAnsi(stdout.output);
+    expect(output).not.toContain('(null)');
+    expect(output).toContain('Claude was interrupted');
+  });
+
+  it('shows the dedicated null-exit copy in zh as well', async () => {
+    const stdout = new FakeTtyStdout();
+    const instance = render(
+      React.createElement(WorkbenchApp, {
+        data: sampleData,
+        initialLocale: 'zh',
+        headless: true,
+        skipWelcome: true,
+        resumeState: { selectedIndex: 0, profileName: 'coding', dir: '/project', exitCode: null },
+      }),
+      {
+        stdout: stdout as unknown as NodeJS.WriteStream,
+        stdin: dummyStdin() as unknown as NodeJS.ReadStream,
+        exitOnCtrlC: false,
+        patchConsole: false,
+      },
+    );
+    await instance.waitUntilRenderFlush();
+    instance.unmount();
+    await instance.waitUntilExit();
+    const output = stripAnsi(stdout.output);
+    expect(output).not.toContain('（null）');
+    expect(output).toContain('Claude 已被中断');
+  });
+
   it('clamps an out-of-range resumed selection to the profile list', async () => {
     const stdout = new FakeTtyStdout();
     const instance = render(

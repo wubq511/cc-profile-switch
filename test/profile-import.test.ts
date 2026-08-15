@@ -2,6 +2,7 @@ import fs from 'fs-extra';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path, { join } from 'node:path';
+import { gunzipSync, gzipSync } from 'node:zlib';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -790,6 +791,44 @@ describe('import command output', () => {
   });
 });
 
+describe('malicious traversal bundle (safety invariant)', () => {
+  it('writes nothing outside the staging/profile area when the bundle carries ../ entries', async () => {
+    const appHome = await makeAppHome();
+    await makeProfile(appHome, 'coding');
+    const bundlePath = await makeTraversalBundle(appHome, 'coding');
+
+    // The contract is sanitize-OR-reject: today's tar strips the entries and
+    // the import proceeds; a future tar that hard-fails on traversal entries
+    // surfaces IMPORT_BUNDLE_READ_FAILED instead. Both keep the invariant.
+    try {
+      const result = await importProfile({
+        appHomePath: appHome,
+        bundlePath,
+        targetName: 'imported',
+        confirm: proceedConfirm(),
+        captureProcess: mockClaudeAdd().capture,
+        clock: FIXED_CLOCK,
+      });
+      expect(result).not.toEqual({ aborted: true });
+    } catch (error) {
+      expect(error).toMatchObject({ code: 'IMPORT_BUNDLE_READ_FAILED' });
+    }
+
+    // stagingRoot is <appHome>/.ccps-import-*, so one '..' lands in appHome
+    // and two '..' land in the app home's parent if protection is regressed.
+    const appHomeParent = path.dirname(appHome);
+    expect(await fs.pathExists(path.join(appHome, 'escape-one-up.txt'))).toBe(false);
+    expect(await fs.pathExists(path.join(appHome, 'escape-via-profile.txt'))).toBe(false);
+    expect(await fs.pathExists(path.join(appHomeParent, 'escape-two-up.txt'))).toBe(false);
+
+    // No staging residue survives anywhere under app home.
+    const residue = (await fs.readdir(appHome)).filter((name) =>
+      name.startsWith('.ccps-import-'),
+    );
+    expect(residue).toEqual([]);
+  });
+});
+
 // --- helpers --------------------------------------------------------------------
 
 async function treeContains(dir: string, needle: string): Promise<boolean> {
@@ -823,4 +862,55 @@ async function rebuildBundleWithManifest(
 async function tarPack(outFile: string, cwd: string, entries: string[]): Promise<void> {
   const tar = await import('tar');
   await tar.c({ gzip: true, file: outFile, cwd, portable: true }, entries);
+}
+
+/**
+ * A real export bundle with traversal entries appended as raw tar bytes.
+ * tar.c cannot create these — it would normalize away the very '../' paths
+ * this invariant test needs on the wire.
+ */
+async function makeTraversalBundle(appHome: string, name: string): Promise<string> {
+  const realBundle = await exportBundle(appHome, name);
+  const tarBytes = gunzipSync(await fs.readFile(realBundle));
+  // Strip trailing zero blocks: a zero block marks end-of-archive to tar
+  // readers, so entries appended after one would never be read.
+  let end = tarBytes.length;
+  while (end >= 512 && tarBytes.subarray(end - 512, end).every((byte) => byte === 0)) {
+    end -= 512;
+  }
+  const malicious = Buffer.concat([
+    tarBytes.subarray(0, end),
+    rawTarEntry('../escape-one-up.txt', 'into app home if traversal works'),
+    rawTarEntry('../../escape-two-up.txt', 'next to app home if traversal works'),
+    rawTarEntry('profile/../../escape-via-profile.txt', 'via the profile dir'),
+    Buffer.alloc(1024, 0),
+  ]);
+  const dir = await mkdtemp(join(tmpdir(), 'ccps-import-traversal-'));
+  tempRoots.push(dir);
+  const out = path.join(dir, 'traversal.tar.gz');
+  await fs.writeFile(out, gzipSync(malicious));
+  return out;
+}
+
+/** One minimal ustar entry (regular file) as raw bytes. */
+function rawTarEntry(name: string, content: string): Buffer {
+  const body = Buffer.from(content, 'utf8');
+  const header = Buffer.alloc(512, 0);
+  header.write(name, 0, 'utf8'); // name [0,100)
+  header.write('0000644\0', 100, 'ascii'); // mode
+  header.write('0000000\0', 108, 'ascii'); // uid
+  header.write('0000000\0', 116, 'ascii'); // gid
+  header.write(body.length.toString(8).padStart(11, '0') + '\0', 124, 'ascii'); // size
+  header.write('14000000000\0', 136, 'ascii'); // mtime (octal)
+  header.write('        ', 148, 'ascii'); // checksum placeholder (spaces)
+  header.write('0', 156, 'ascii'); // typeflag: regular file
+  header.write('ustar\0', 257, 'ascii'); // magic
+  header.write('00', 263, 'ascii'); // version
+  let sum = 0;
+  for (const byte of header) sum += byte;
+  header.write(sum.toString(8).padStart(6, '0') + '\0 ', 148, 'ascii');
+  const bodyBytes = body.length === 0 ? 0 : Math.ceil(body.length / 512) * 512;
+  const paddedBody = Buffer.alloc(bodyBytes);
+  body.copy(paddedBody);
+  return Buffer.concat([header, paddedBody]);
 }

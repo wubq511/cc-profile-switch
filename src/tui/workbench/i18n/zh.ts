@@ -203,6 +203,8 @@ export const zh: Record<LocaleKey, string> = {
   'launch.dryrun.more': '还有 {count} 行',
   'launch.exited': 'Claude 已退出（{code}）',
   'launch.exited.zero': 'Claude 已成功退出',
+  // 退出码为 null：Claude 被信号终止或进程本身启动失败。
+  'launch.exited.interrupted': 'Claude 已被中断（信号终止或启动失败）',
   'launch.finding.error': '错误',
   'launch.finding.warning': '警告',
   // Skill install wizard (issue #64, spec §7.2)

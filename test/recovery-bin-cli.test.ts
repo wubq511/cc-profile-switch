@@ -429,4 +429,69 @@ describe('Recovery Bin and Backup CLI wiring', () => {
       ).rejects.toMatchObject({ code: 'BACKUP_NOT_FOUND' });
     });
   });
+
+  describe('backup remove (§9.5)', () => {
+    it('confirms with copy that states the deletion is permanent and unrecoverable', async () => {
+      const userHome = await makeUserHome();
+      await runCli(userHome, ['init']);
+      await runCli(userHome, ['backup', 'coding']);
+      const prompts: string[] = [];
+
+      const result = await runCli(userHome, ['backup', 'remove', 'coding-20260801-120000'], {
+        promptInputs: ['n'],
+        prompts,
+      });
+
+      expect(prompts).toHaveLength(1);
+      expect(prompts[0]).toContain('permanent and unrecoverable');
+      expect(result.output).toContain('Aborted.');
+      const { backupsPath } = getAppHomePaths(appHomeOf(userHome));
+      expect(await fs.pathExists(join(backupsPath, 'coding-20260801-120000'))).toBe(true);
+    });
+
+    it('deletes only the named backup after confirmation', async () => {
+      const userHome = await makeUserHome();
+      await runCli(userHome, ['init']);
+      await runCli(userHome, ['backup', 'coding']);
+      await runCli(userHome, ['backup', 'coding'], {
+        clock: () => new Date('2026-08-02T09:30:00Z'),
+      });
+
+      const result = await runCli(userHome, ['backup', 'remove', 'coding-20260801-120000'], {
+        promptInputs: ['y'],
+      });
+
+      expect(result.output).toContain('Permanently deleted backup "coding-20260801-120000".');
+      const { backupsPath } = getAppHomePaths(appHomeOf(userHome));
+      expect(await fs.pathExists(join(backupsPath, 'coding-20260801-120000'))).toBe(false);
+      expect(await fs.pathExists(join(backupsPath, 'coding-20260802-093000'))).toBe(true);
+    });
+
+    it('skips the confirmation prompt with --yes', async () => {
+      const userHome = await makeUserHome();
+      await runCli(userHome, ['init']);
+      await runCli(userHome, ['backup', 'coding']);
+      const prompts: string[] = [];
+
+      const result = await runCli(
+        userHome,
+        ['backup', 'remove', 'coding-20260801-120000', '--yes'],
+        { prompts },
+      );
+
+      expect(prompts).toHaveLength(0);
+      expect(result.output).toContain('Permanently deleted backup "coding-20260801-120000".');
+      const { backupsPath } = getAppHomePaths(appHomeOf(userHome));
+      expect(await fs.pathExists(join(backupsPath, 'coding-20260801-120000'))).toBe(false);
+    });
+
+    it('rejects an unknown backup id', async () => {
+      const userHome = await makeUserHome();
+      await runCli(userHome, ['init']);
+
+      await expect(
+        runCli(userHome, ['backup', 'remove', 'coding-20990101-000000', '--yes']),
+      ).rejects.toMatchObject({ code: 'BACKUP_NOT_FOUND' });
+    });
+  });
 });

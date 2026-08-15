@@ -2640,7 +2640,12 @@ function WorkbenchInner({
 
     if (launch.phase === 'exited') {
       const code = launch.exitCode;
-      const msg = code === 0 ? t('launch.exited.zero') : t('launch.exited', { code: String(code) });
+      const msg =
+        code === null
+          ? t('launch.exited.interrupted')
+          : code === 0
+            ? t('launch.exited.zero')
+            : t('launch.exited', { code: String(code) });
       return React.createElement(
         Box,
         {
