@@ -301,7 +301,11 @@ describe('sidebar card-tree search (issue #83, spec §4.2)', () => {
       { spaces: 2 },
     );
     const originalHome = process.env.HOME;
+    // Windows resolves the user home from USERPROFILE, not HOME
+    // (src/platform/path.ts) — set both or the drill reads the real home.
+    const originalUserProfile = process.env.USERPROFILE;
     process.env.HOME = root;
+    process.env.USERPROFILE = root;
     try {
       const { instance, stdout, stdin } = await renderInteractive(
         React.createElement(WorkbenchApp, {
@@ -330,6 +334,11 @@ describe('sidebar card-tree search (issue #83, spec §4.2)', () => {
       await instance.waitUntilExit();
     } finally {
       process.env.HOME = originalHome;
+      if (originalUserProfile === undefined) {
+        delete process.env.USERPROFILE;
+      } else {
+        process.env.USERPROFILE = originalUserProfile;
+      }
       await rm(root, { recursive: true, force: true });
     }
   }, 20000);
