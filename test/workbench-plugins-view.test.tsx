@@ -17,6 +17,12 @@ vi.mock('node:child_process', () => ({
   spawn: vi.fn(),
 }));
 
+// Workbench Plugins category + read-only drill view (issue #101 L4, §7.6).
+// Plugins used to render as a separate bottom strip (issue #96); they are now
+// a regular grid category whose drill view carries the full inventory. The
+// §7.6 boundary is unchanged: names + enable state only, every mutation goes
+// through `claude plugin`.
+
 // ---------------------------------------------------------------- harness
 
 // Wide terminal: the delegation guidance is a long single line, and the
@@ -27,7 +33,7 @@ class FlowTtyStdout extends FakeTtyStdout {
   public rows = 30;
 }
 
-// Minimum supported Workbench size; the 80x24 layout test runs here.
+// Minimum supported Workbench size; the overflow-budget test runs here.
 class MinTtyStdout extends FakeTtyStdout {
   public columns = 80;
   public rows = 24;
@@ -76,6 +82,21 @@ async function waitForOutput(
   return flatten(stripAnsi(stdout.output));
 }
 
+async function waitForOutputSettled(stdout: FakeTtyStdout, baseline: string, timeoutMs = 3000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline && stdout.output === baseline) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  let last = stdout.output;
+  for (;;) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const current = stdout.output;
+    if (current === last) return;
+    last = current;
+    if (Date.now() > deadline) return;
+  }
+}
+
 class Harness {
   public instance: ReturnType<typeof render> | null = null;
   public stdout: FakeTtyStdout | null = null;
@@ -96,7 +117,7 @@ class Harness {
         initialLocale: 'en',
         skipWelcome: true,
         // Hermetic: the default readers probe the real app home; inject no-op
-        // MCP probe so the card assertions see a quiet pane.
+        // MCP probe so the assertions see a quiet pane.
         mcpProbe: async () => [],
         ...extraProps,
       } as React.ComponentProps<typeof WorkbenchApp>),
@@ -113,6 +134,21 @@ class Harness {
     this.instance = instance;
     this.stdout = stdout;
     this.stdin = stdin;
+  }
+
+  async press(ch: string): Promise<void> {
+    if (!this.stdout || !this.stdin) throw new Error('Harness not rendered');
+    const baseline = this.stdout.output;
+    this.stdin.press(ch);
+    await waitForOutputSettled(this.stdout, baseline);
+  }
+
+  /** Tab → focus the category grid, ↑ wraps to the last card (Plugins),
+   *  Enter drills into the read-only inventory view. */
+  async drillIntoPlugins(): Promise<void> {
+    await this.press('\t');
+    await this.press('\x1b[A');
+    await this.press('\r');
   }
 
   async waitFor(needle: string, timeoutMs = 5000): Promise<string> {
@@ -166,7 +202,7 @@ afterEach(async () => {
 /** Point HOME at a fresh temp dir so interactive renders stay off the real
  *  home (same pattern as the other workbench view tests). */
 async function overrideHomeToTemp(): Promise<void> {
-  const root = await mkdtemp(join(tmpdir(), 'ccps-plugins-card-'));
+  const root = await mkdtemp(join(tmpdir(), 'ccps-plugins-view-'));
   tempRoots.push(root);
   const home = join(root, 'home');
   await fs.ensureDir(home);
@@ -178,8 +214,8 @@ async function overrideHomeToTemp(): Promise<void> {
 
 const reader = (inventory: PluginInventory) => async () => inventory;
 
-describe('Workbench read-only Plugins card (issue #96, §7.6)', () => {
-  it('renders the inventory as names + status with the delegation guidance', async () => {
+describe('Workbench Plugins category + drill view (issue #101, §7.6)', () => {
+  it('renders plugins as a grid category and keeps names inside the drill view', async () => {
     await overrideHomeToTemp();
     const h = new Harness();
     await h.renderApp(dataFor(makeProfile()), {
@@ -192,15 +228,40 @@ describe('Workbench read-only Plugins card (issue #96, §7.6)', () => {
       }),
     });
 
+    // The grid shows the category card only — no names leak onto the main pane.
+    const grid = await h.waitFor('Plugins');
+    expect(grid).not.toContain('probe-plugin@probe-marketplace');
+
+    await h.drillIntoPlugins();
     const output = await h.waitFor('probe-plugin@probe-marketplace');
-    // Names and enable state are visible.
+    // Names and enable state are visible in the drill view.
     expect(output).toContain('probe-plugin@probe-marketplace — enabled');
     expect(output).toContain('off@m — disabled');
     // Delegation guidance declares where changes happen.
     expect(output).toContain('change them through `claude plugin`');
 
     await h.unmount();
-  });
+  }, 20000);
+
+  it('Esc returns from the drill view to the category grid', async () => {
+    await overrideHomeToTemp();
+    const h = new Harness();
+    await h.renderApp(dataFor(makeProfile()), {
+      pluginInventoryReader: reader({
+        status: 'ok',
+        plugins: [{ id: 'probe-plugin@m', enabled: true }],
+      }),
+    });
+
+    await h.drillIntoPlugins();
+    await h.waitFor('probe-plugin@m');
+    await h.press('\x1b');
+    // The grid is back: the hint line for the focused grid reappears while the
+    // drill view's rows are gone from the newest frames.
+    const output = await h.waitFor('Plugins');
+    expect(output).toContain('Skills');
+    await h.unmount();
+  }, 20000);
 
   it('shows an empty state when nothing is installed, keeping the guidance', async () => {
     await overrideHomeToTemp();
@@ -209,12 +270,13 @@ describe('Workbench read-only Plugins card (issue #96, §7.6)', () => {
       pluginInventoryReader: reader({ status: 'ok', plugins: [] }),
     });
 
+    await h.drillIntoPlugins();
     const output = await h.waitFor('no plugins installed');
     expect(output).toContain('no plugins installed');
     expect(output).toContain('change them through `claude plugin`');
 
     await h.unmount();
-  });
+  }, 20000);
 
   it('degrades to an unavailable state when the delegated read reports failure', async () => {
     await overrideHomeToTemp();
@@ -226,12 +288,13 @@ describe('Workbench read-only Plugins card (issue #96, §7.6)', () => {
       pluginInventoryReader: async () => ({ status: 'unavailable' }),
     });
 
+    await h.drillIntoPlugins();
     const output = await h.waitFor('plugin inventory unavailable');
     expect(output).toContain('plugin inventory unavailable');
     expect(output).toContain('change them through `claude plugin`');
 
     await h.unmount();
-  });
+  }, 20000);
 
   it('offers no mutation affordances — management text names claude plugin only', async () => {
     await overrideHomeToTemp();
@@ -243,22 +306,22 @@ describe('Workbench read-only Plugins card (issue #96, §7.6)', () => {
       }),
     });
 
+    await h.drillIntoPlugins();
     await h.waitFor('probe-plugin@probe-marketplace');
     const output = h.text();
-    // The card is pure status: no install/remove verbs, no plugin-mutation key.
-    expect(output).not.toContain('install');
+    // The view is pure status: no install/remove verbs, no plugin-mutation key.
     expect(output).not.toContain('uninstall');
     expect(output).not.toContain('[p]');
     // The only claude-plugin mention is the delegation guidance.
     expect(output).toContain('change them through `claude plugin`');
 
     await h.unmount();
-  });
+  }, 20000);
 
-  it('caps the list at the pane budget at 80x24 and still shows the guidance', async () => {
+  it('collapses overflow into a +N line within an 80x24 pane budget', async () => {
     await overrideHomeToTemp();
     const h = new Harness(MinTtyStdout);
-    const plugins = Array.from({ length: 8 }, (_, i) => ({
+    const plugins = Array.from({ length: 30 }, (_, i) => ({
       id: `plugin-${i}@marketplace`,
       enabled: i % 2 === 0,
     }));
@@ -266,18 +329,18 @@ describe('Workbench read-only Plugins card (issue #96, §7.6)', () => {
       pluginInventoryReader: reader({ status: 'ok', plugins }),
     });
 
+    await h.drillIntoPlugins();
     const output = await h.waitFor('plugin-0@marketplace');
     // The overflow line reports the capped rows rather than dropping silently.
-    expect(output).toContain('+4 more');
-    // Rows beyond the cap are not rendered (the card stays in budget).
-    expect(output).not.toContain('plugin-7@marketplace');
-    // The card's last line (delegation guidance) is visible inside the 80x24
-    // pane; assert the unwrapped prefix — at this width the full phrase wraps
-    // mid-text and the flattened output interleaves the sidebar.
+    expect(output).toMatch(/\+\d+ more/);
+    // Rows beyond the window are not rendered (the view stays in budget).
+    expect(output).not.toContain('plugin-29@marketplace');
+    // The delegation line renders inside the 80x24 pane; assert the unwrapped
+    // prefix — at this width the full phrase wraps mid-text.
     expect(output).toContain('Claude-managed — change them through');
 
     await h.unmount();
-  });
+  }, 20000);
 
   it('shows the full inventory on a tall pane instead of capping at an arbitrary count', async () => {
     await overrideHomeToTemp();
@@ -290,24 +353,22 @@ describe('Workbench read-only Plugins card (issue #96, §7.6)', () => {
       pluginInventoryReader: reader({ status: 'ok', plugins }),
     });
 
+    await h.drillIntoPlugins();
     const output = await h.waitFor('plugin-9@marketplace');
-    // Every installed plugin is visible when the pane has room…
     expect(output).toContain('plugin-0@marketplace');
     expect(output).toContain('plugin-9@marketplace');
-    // …so no overflow line, and the guidance still renders.
     expect(output).not.toMatch(/\+\d+ more/);
     expect(output).toContain('Claude-managed — change them through `claude plugin`');
 
     await h.unmount();
-  });
+  }, 20000);
 
   it('re-probes a profile whose read failed instead of pinning unavailable for the session', async () => {
     await overrideHomeToTemp();
     const h = new Harness();
-    // First probe of 'coding' fails; every later probe succeeds. If the
-    // transient 'unavailable' were cached, switching away and back would not
-    // re-read coding — so the reader call count is the direct evidence that
-    // the failed state is retried rather than pinned.
+    // First probe of 'coding' fails; every later probe succeeds. The reader
+    // call count is the direct evidence that the failed state is retried
+    // rather than pinned.
     let codingReads = 0;
     const flakyReader = async (
       _appHomePath: string,
@@ -324,34 +385,34 @@ describe('Workbench read-only Plugins card (issue #96, §7.6)', () => {
       { pluginInventoryReader: flakyReader },
     );
 
-    // Initial probe of the selected profile fails closed.
+    // Initial probe of the selected profile fails closed: the drill view shows
+    // the unavailable state.
+    await h.drillIntoPlugins();
     await h.waitFor('plugin inventory unavailable');
-    // Switch to the second profile — its read succeeds.
-    h.stdin?.press('\x1b[B');
+    expect(codingReads).toBe(1);
+    // Back out: Esc leaves the drill view (grid focus), Esc returns to the tree.
+    await h.press('\x1b');
+    await h.press('\x1b');
+
+    // Switch to the second profile in the tree — its read succeeds, and the
+    // drilled view shows the inventory.
+    await h.press('\x1b[B');
+    await h.drillIntoPlugins();
     await h.waitFor('probe-plugin@m — enabled');
-    // Switch back: 'coding' is read again — the transient failure was not
-    // cached, so the re-visit re-probes instead of pinning 'unavailable'.
-    h.stdin?.press('\x1b[A');
-    // Wait for the re-probe to re-read 'coding' AND for that fresh inventory
-    // frame to supersede the failed-state frame in the accumulated output. The
-    // snapshot captured on the final poll is asserted below, so a frame landing
-    // between the poll and the assertion can't flip the comparison (CI Linux
-    // renders slower than the local macOS run, and the transient failure frame
-    // can be flushed in between).
+
+    // Switch back to coding: the transient failure was not cached, so the
+    // re-visit re-probes instead of pinning 'unavailable'.
+    await h.press('\x1b');
+    await h.press('\x1b');
+    await h.press('\x1b[A');
     const deadline = Date.now() + 5000;
-    let out = h.text();
-    while (Date.now() < deadline) {
-      out = h.text();
-      const inventoryAt = out.lastIndexOf('probe-plugin@m — enabled');
-      const failedAt = out.lastIndexOf('plugin inventory unavailable');
-      if (codingReads >= 2 && inventoryAt > failedAt) break;
-      await new Promise((resolve) => setTimeout(resolve, 50));
+    while (Date.now() < deadline && codingReads < 2) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
     }
-    expect(codingReads).toBeGreaterThanOrEqual(2);
-    expect(out.lastIndexOf('probe-plugin@m — enabled')).toBeGreaterThan(
-      out.lastIndexOf('plugin inventory unavailable'),
-    );
+    expect(codingReads).toBe(2);
+    await h.drillIntoPlugins();
+    await h.waitFor('probe-plugin@m — enabled');
 
     await h.unmount();
-  });
+  }, 30000);
 });

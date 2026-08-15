@@ -14,8 +14,11 @@ export const CATEGORIES = [
   { key: 'skills' as const, labelKey: 'main.category.skills' as const, drillable: true as const, resourceCategory: null, diffCategory: 'skills' as const },
   { key: 'agents' as const, labelKey: 'main.category.agents' as const, drillable: true as const, resourceCategory: 'agents' as const, diffCategory: 'agents' as const },
   { key: 'mcp' as const, labelKey: 'main.category.mcp' as const, drillable: true as const, resourceCategory: null, diffCategory: 'mcp' as const },
-  { key: 'settings' as const, labelKey: 'main.category.settings' as const, drillable: false as const, resourceCategory: null, diffCategory: 'settings' as const },
-  { key: 'launchConfig' as const, labelKey: 'main.category.launchConfig' as const, drillable: false as const, resourceCategory: null, diffCategory: 'launch-config' as const },
+  { key: 'settings' as const, labelKey: 'main.category.settings' as const, drillable: true as const, resourceCategory: null, diffCategory: 'settings' as const },
+  { key: 'launchConfig' as const, labelKey: 'main.category.launchConfig' as const, drillable: true as const, resourceCategory: null, diffCategory: 'launch-config' as const },
+  // Plugins join the grid as a regular category (issue #101 L4) — the separate
+  // bottom strip is gone; the drill view keeps the §7.6 read-only boundary.
+  { key: 'plugins' as const, labelKey: 'main.category.plugins' as const, drillable: true as const, resourceCategory: null, diffCategory: null },
 ] as const;
 
 export const CATEGORY_COUNT = CATEGORIES.length;

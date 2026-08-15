@@ -81,7 +81,7 @@ describe('AutoMemoryView render', () => {
       name: profileName,
       description: '',
       isDefault: false,
-      resourceCounts: { userMemory: 1, autoMemory: 0, skills: 0, agents: 0, mcp: 0, settings: 1, launchConfig: 1 },
+      resourceCounts: { userMemory: 1, autoMemory: 0, skills: 0, agents: 0, mcp: 0, settings: 1, launchConfig: 1, plugins: 0 },
     });
     const instance = render(
       React.createElement(AutoMemoryView, {

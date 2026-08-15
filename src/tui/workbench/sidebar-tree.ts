@@ -6,9 +6,18 @@ import type { WorkbenchProfile } from './profile-data';
  * Sidebar card-tree model (spec §4.1/§4.2, issue #83): Profile cards with
  * indented category and item rows. `buildSidebarRows` is a pure function so
  * filtering, expansion, and search auto-expansion are testable without Ink.
+ *
+ * Issue #101: expansion is two-level — expanding a profile lists its category
+ * rows only, and items appear once that category itself is expanded.
  */
 
 export type CategoryKey = (typeof CATEGORIES)[number]['key'];
+
+/** Key identifying one expanded category within one profile (NUL-separated so
+ *  profile names can never collide with the composite). */
+export function categoryExpandKey(profileName: string, categoryKey: CategoryKey): string {
+  return `${profileName}\x00${categoryKey}`;
+}
 
 /** Tree category order — derived from the main-pane card grid (main-pane.tsx). */
 export const SIDEBAR_CATEGORY_KEYS: readonly CategoryKey[] = CATEGORIES.map((c) => c.key);
@@ -42,6 +51,9 @@ export function categoryItems(profile: WorkbenchProfile, categoryKey: CategoryKe
       return profile.resourceDetails.settings;
     case 'launchConfig':
       return [];
+    case 'plugins':
+      // `?? []`: fixtures built before the plugins category omit the field.
+      return profile.resourceDetails.plugins ?? [];
   }
 }
 
@@ -49,6 +61,10 @@ export type BuildSidebarRowsOptions = {
   profiles: WorkbenchProfile[];
   /** Profiles expanded by the user (ignored while a query is active). */
   expanded: ReadonlySet<string>;
+  /** Categories expanded by the user, keyed by `categoryExpandKey`
+   *  (ignored while a query is active). When omitted, no-query expansion
+   *  shows the full subtree — the legacy shape the perf harness measures. */
+  expandedCategories?: ReadonlySet<string>;
   query: string;
   categoryLabels: Record<CategoryKey, string>;
   /** Cross-profile content matches from searchAllResources for the query. */
@@ -56,7 +72,7 @@ export type BuildSidebarRowsOptions = {
 };
 
 export function buildSidebarRows(opts: BuildSidebarRowsOptions): TreeRow[] {
-  const { profiles, expanded, categoryLabels, contentHits } = opts;
+  const { profiles, expanded, expandedCategories, categoryLabels, contentHits } = opts;
   const query = opts.query.trim().toLowerCase();
   const rows: TreeRow[] = [];
 
@@ -64,7 +80,7 @@ export function buildSidebarRows(opts: BuildSidebarRowsOptions): TreeRow[] {
     if (!query) {
       rows.push({ kind: 'profile', profileName: profile.name, depth: 0 });
       if (expanded.has(profile.name)) {
-        pushSubtree(rows, profile, SIDEBAR_CATEGORY_KEYS, null, categoryLabels);
+        pushSubtree(rows, profile, SIDEBAR_CATEGORY_KEYS, null, categoryLabels, [], expandedCategories);
       }
       continue;
     }
@@ -104,15 +120,24 @@ function pushSubtree(
   query: string | null,
   categoryLabels: Record<CategoryKey, string>,
   profileHits: SearchResult[] = [],
+  expandedCategories?: ReadonlySet<string>,
 ): void {
   for (const categoryKey of categories) {
     rows.push({ kind: 'category', profileName: profile.name, categoryKey, depth: 1 });
     const items = categoryItems(profile, categoryKey);
-    // When the query matched the category label itself, all items stay visible.
-    const labelMatched = query !== null && categoryLabels[categoryKey].toLowerCase().includes(query);
-    const visibleItems = query && !labelMatched
-      ? items.filter((item) => item.toLowerCase().includes(query))
-      : items;
+    let visibleItems: string[];
+    if (query === null && expandedCategories !== undefined) {
+      // No query: items show only under a user-expanded category (#101). The
+      // search auto-expand path omits `expandedCategories` and keeps the old
+      // full-subtree behavior (§4.2).
+      visibleItems = expandedCategories.has(categoryExpandKey(profile.name, categoryKey)) ? items : [];
+    } else {
+      // When the query matched the category label itself, all items stay visible.
+      const labelMatched = categoryLabels[categoryKey].toLowerCase().includes(query);
+      visibleItems = query && !labelMatched
+        ? items.filter((item) => item.toLowerCase().includes(query))
+        : items;
+    }
     for (const itemName of visibleItems) {
       rows.push({ kind: 'item', profileName: profile.name, categoryKey, itemName, depth: 2 });
     }

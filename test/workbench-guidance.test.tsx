@@ -120,13 +120,14 @@ const codingProfile: WorkbenchProfile = {
   isDefault: true,
   isLastUsed: true,
   status: 'valid',
-  resourceCounts: { userMemory: 1, autoMemory: 5, skills: 3, agents: 2, mcp: 1, settings: 1, launchConfig: 1 },
+  resourceCounts: { userMemory: 1, autoMemory: 5, skills: 3, agents: 2, mcp: 1, settings: 1, launchConfig: 1, plugins: 0 },
   resourceDetails: {
     userMemory: { kind: 'user-memory', name: 'CLAUDE.md', relativePath: 'claude-home/CLAUDE.md', exists: true, lineCount: 12, excerpt: '' },
     agents: [],
     skills: [],
     autoMemory: [],
     settings: [],
+    plugins: [],
   },
   mcpServers: [],
   validation: null,
@@ -406,7 +407,7 @@ describe('empty states', () => {
   it('empty category cards offer [a] add (Skills name copy or link)', async () => {
     const profile: WorkbenchProfile = {
       ...codingProfile,
-      resourceCounts: { userMemory: 1, autoMemory: 1, skills: 0, agents: 2, mcp: 1, settings: 1, launchConfig: 1 },
+      resourceCounts: { userMemory: 1, autoMemory: 1, skills: 0, agents: 2, mcp: 1, settings: 1, launchConfig: 1, plugins: 0 },
     };
     // Wide render on purpose: compact cells (issue #98, V1) drop descriptor
     // rows — including this offer — before touching the category name.

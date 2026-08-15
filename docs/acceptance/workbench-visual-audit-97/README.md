@@ -83,6 +83,9 @@ honest:
   their sole content surface in the current build is the pairwise diff
   (e12, e14) — there is no inspect/preview screen to shoot (spec S45/S86
   preview panes are not implemented yet).
+  *(Superseded by issue #101: both categories drill into a key-level
+  view/edit surface; Plugins moved from the bottom strip into the grid as
+  a regular category with its own read-only drill view.)*
 - Skills' category drill **is** the bulk-ops surface (spec §11.1), covered
   by f01–f04; per-skill SKILL.md preview (S61) is not implemented.
 - Every session runs en + zh × 80×24 + 140×40, so each frame above exists

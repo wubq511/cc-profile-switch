@@ -144,6 +144,7 @@ function buildSyntheticProfiles(
       mcp: 1,
       settings: 1,
       launchConfig: 1,
+      plugins: 0,
     },
     resourceDetails: {
       userMemory: { exists: true, name: 'CLAUDE.md' },
@@ -154,6 +155,7 @@ function buildSyntheticProfiles(
       ),
       autoMemory: ['MEMORY.md', 'topic-01.md'],
       settings: ['autoMemoryDirectory', 'claudeMdExcludes', 'env'],
+      plugins: [],
     },
     mcpServers: [`fixture-server-${s.name}`],
     validation: null,

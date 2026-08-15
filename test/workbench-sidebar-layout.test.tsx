@@ -49,13 +49,14 @@ const wideTreeData: WorkbenchData = {
     makeProfile({
       name: 'profile-001',
       description: 'Coding profile fixture 1.',
-      resourceCounts: { userMemory: 1, autoMemory: 3, skills: 50, agents: 2, mcp: 1, settings: 1, launchConfig: 1 },
+      resourceCounts: { userMemory: 1, autoMemory: 3, skills: 50, agents: 2, mcp: 1, settings: 1, launchConfig: 1, plugins: 0 },
       resourceDetails: {
         userMemory: { kind: 'user-memory', name: 'CLAUDE.md', relativePath: 'claude-home/CLAUDE.md', exists: true, lineCount: 12, excerpt: '' },
         agents: [],
         skills: Array.from({ length: 50 }, (_, i) => `skill-${String(i + 1).padStart(3, '0')}`),
         autoMemory: ['MEMORY.md', 'topic-01.md', 'topic-02.md'],
         settings: [],
+        plugins: [],
       },
     }),
   ],
@@ -120,6 +121,18 @@ describe('wide sidebar layout (issue #98, V17)', () => {
     stdin.press('\x1b[C');
     await waitForOutputSettled(stdout, baseline);
 
+    // Issue #101: items live behind a second expansion level — move onto the
+    // Auto Memory category (↓ past User Memory) and expand it with →.
+    let step = stdout.output;
+    stdin.press('\x1b[B');
+    await waitForOutputSettled(stdout, step);
+    step = stdout.output;
+    stdin.press('\x1b[B');
+    await waitForOutputSettled(stdout, step);
+    step = stdout.output;
+    stdin.press('\x1b[C');
+    await waitForOutputSettled(stdout, step);
+
     const lines = lastFrameLines(stdout.output);
     const autoMemoryCategory = lines.filter((l) => l.includes('Auto Memory (3)'));
     expect(autoMemoryCategory).toHaveLength(1);
@@ -160,6 +173,17 @@ describe('wide sidebar layout (issue #98, V17)', () => {
     const baseline = stdout.output;
     stdin.press('\x1b[C');
     await waitForOutputSettled(stdout, baseline);
+
+    // Issue #101: second expansion level — ↓↓ onto 自动记忆, then → expands it.
+    let step = stdout.output;
+    stdin.press('\x1b[B');
+    await waitForOutputSettled(stdout, step);
+    step = stdout.output;
+    stdin.press('\x1b[B');
+    await waitForOutputSettled(stdout, step);
+    step = stdout.output;
+    stdin.press('\x1b[C');
+    await waitForOutputSettled(stdout, step);
 
     const lines = lastFrameLines(stdout.output);
     expect(lines.filter((l) => l.includes('自动记忆 (3)'))).toHaveLength(1);

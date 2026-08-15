@@ -499,6 +499,31 @@ export const en = {
   // Main-pane category drill hints
   'main.drillUserMemory': '[u]',
   'main.drillAgents': '[a] · [enter]',
+  // Settings / Launch Config drill view (issue #101 L1): key-level list with
+  // view + edit, backed by core settings-resource / launch-config-resource.
+  'main.drillEdit': '[enter]',
+  'settings.view.hint.list': '[enter/e] edit · [x] remove · [Esc] back',
+  'settings.view.hint.list.noRemove': '[enter/e] edit · [Esc] back',
+  'settings.view.edit.prompt': 'new value for {key} (JSON or plain string)',
+  'settings.view.hint.edit': '[enter] save · [esc] cancel',
+  'settings.view.managed': '(managed)',
+  'settings.view.managedReadOnly': 'ccps-managed field — read-only here',
+  'settings.view.mcpRefused': 'mcpServers is Claude-managed — use claude mcp add --scope user',
+  'settings.view.warn.skipPermissions':
+    'Passes --dangerously-skip-permissions: Claude runs with every permission prompt disabled.',
+  'settings.view.warn.claudeArgs':
+    'Changes the raw arguments passed to Claude Code — wrong values can break launch.',
+  'settings.view.confirmProceed': '[y] apply · [esc] cancel',
+  'settings.view.removeConfirm':
+    'Remove {key}? The fragment moves to the Recovery Bin. [y] remove · [esc] cancel',
+  'settings.view.saved': 'saved {key}',
+  'settings.view.removed': 'removed {key} to the Recovery Bin',
+  'settings.view.invalid': 'invalid value for {key}',
+  'settings.view.malformed.settings':
+    'settings.json is malformed or missing — fix the file directly, then reopen this view',
+  'settings.view.malformed.launchConfig':
+    'profile.json is malformed or missing — fix the file directly, then reopen this view',
+  'settings.view.empty': '(no keys)',
   // Validation-finding severity labels
   'finding.severity.error': 'error',
   'finding.severity.warning': 'warning',

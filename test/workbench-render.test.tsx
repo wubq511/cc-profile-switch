@@ -42,7 +42,7 @@ const sampleData: WorkbenchData = {
       isDefault: true,
       isLastUsed: true,
       status: 'valid',
-      resourceCounts: { userMemory: 1, autoMemory: 5, skills: 3, agents: 2, mcp: 1, settings: 1, launchConfig: 1 },
+      resourceCounts: { userMemory: 1, autoMemory: 5, skills: 3, agents: 2, mcp: 1, settings: 1, launchConfig: 1, plugins: 0 },
       resourceDetails: {
         userMemory: { kind: 'user-memory', name: 'CLAUDE.md', relativePath: 'claude-home/CLAUDE.md', exists: true, lineCount: 12, excerpt: 'Prefer explicit answers.' },
         agents: [
@@ -52,6 +52,7 @@ const sampleData: WorkbenchData = {
         autoMemory: ['2026-07-01.md', '2026-07-02.md', '2026-07-03.md', '2026-07-04.md', '2026-07-05.md'],
         skills: ['pdf', 'review', 'commit'],
         settings: ['model'],
+        plugins: [],
       },
       mcpServers: ['filesystem'],
       validation: null,
@@ -62,13 +63,14 @@ const sampleData: WorkbenchData = {
       isDefault: false,
       isLastUsed: false,
       status: 'valid',
-      resourceCounts: { userMemory: 1, autoMemory: 2, skills: 1, agents: 0, mcp: 0, settings: 1, launchConfig: 1 },
+      resourceCounts: { userMemory: 1, autoMemory: 2, skills: 1, agents: 0, mcp: 0, settings: 1, launchConfig: 1, plugins: 0 },
       resourceDetails: {
         userMemory: { kind: 'user-memory', name: 'CLAUDE.md', relativePath: 'claude-home/CLAUDE.md', exists: true, lineCount: 8, excerpt: 'Structured learning.' },
         agents: [],
         autoMemory: ['2026-07-01.md', '2026-07-02.md'],
         skills: ['pdf'],
         settings: ['model'],
+        plugins: [],
       },
       mcpServers: [],
       validation: null,

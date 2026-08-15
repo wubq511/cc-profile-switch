@@ -142,6 +142,7 @@ describe('Workbench input dispatch ownership (issue #90)', () => {
         mcp: 0,
         settings: 1,
         launchConfig: 1,
+        plugins: 0,
       },
       resourceDetails: {
         userMemory: {
@@ -156,6 +157,7 @@ describe('Workbench input dispatch ownership (issue #90)', () => {
         autoMemory: [],
         skills: [],
         settings: ['model'],
+        plugins: [],
       },
       mcpServers: [],
       validation: null,

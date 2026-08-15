@@ -17,6 +17,8 @@ import { CATEGORIES } from './main-pane';
 import type { CustomTemplateSummary, WorkbenchProfile } from './profile-data';
 import {
   buildSidebarRows,
+  categoryExpandKey,
+  categoryItems,
   SIDEBAR_CATEGORY_KEYS,
   type CategoryKey,
   type TreeRow,
@@ -109,6 +111,9 @@ export function Sidebar({
   // Card-tree state (§4.1): user-driven expansion plus a cursor over the
   // visible rows; search auto-expands inside buildSidebarRows instead.
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
+  // Second expansion level (issue #101): items show only under a category the
+  // user expanded, so opening a profile no longer dumps every item row.
+  const [expandedCategories, setExpandedCategories] = useState<ReadonlySet<string>>(new Set());
   const [rowCursor, setRowCursor] = useState(0);
   const [contentHits, setContentHits] = useState<SearchResult[]>([]);
   // First-search-focus tip: shown only during the first search focus of the
@@ -129,11 +134,12 @@ export function Sidebar({
       buildSidebarRows({
         profiles,
         expanded,
+        expandedCategories,
         query: searchQuery,
         categoryLabels,
         contentHits,
       }),
-    [profiles, expanded, searchQuery, categoryLabels, contentHits],
+    [profiles, expanded, expandedCategories, searchQuery, categoryLabels, contentHits],
   );
 
   // Debounced cross-profile content search (§4.2): hits become auto-expanded
@@ -202,6 +208,16 @@ export function Sidebar({
       } else {
         next.add(profileName);
       }
+      return next;
+    });
+  };
+
+  const setCategoryExpanded = (profileName: string, categoryKey: CategoryKey, on: boolean): void => {
+    const key = categoryExpandKey(profileName, categoryKey);
+    setExpandedCategories((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(key);
+      else next.delete(key);
       return next;
     });
   };
@@ -435,8 +451,28 @@ export function Sidebar({
       return;
     }
     if (key.rightArrow) {
-      if (cursorRow?.kind === 'profile' && !searchActive) {
+      if (!searchActive && cursorRow?.kind === 'profile') {
         setExpanded((prev) => new Set(prev).add(cursorRow.profileName));
+      } else if (!searchActive && cursorRow?.kind === 'category') {
+        // Second expansion level (issue #101): → on a category expands its
+        // items; when already expanded it steps into the first child row.
+        const catProfile = profiles.find((p) => p.name === cursorRow.profileName);
+        const hasItems = catProfile ? categoryItems(catProfile, cursorRow.categoryKey).length > 0 : false;
+        if (!hasItems) return;
+        if (!expandedCategories.has(categoryExpandKey(cursorRow.profileName, cursorRow.categoryKey))) {
+          setCategoryExpanded(cursorRow.profileName, cursorRow.categoryKey, true);
+        } else {
+          const child = rows[rowCursor + 1];
+          if (
+            child &&
+            child.depth === 2 &&
+            child.profileName === cursorRow.profileName &&
+            'categoryKey' in child &&
+            child.categoryKey === cursorRow.categoryKey
+          ) {
+            moveCursor(rowCursor + 1);
+          }
+        }
       }
       return;
     }
@@ -449,12 +485,30 @@ export function Sidebar({
             return next;
           });
         }
-      } else if (cursorRow && cursorRow.kind !== 'profile') {
-        // Jump back to the parent Profile row.
-        const parentIdx = rows.findIndex(
-          (r) => r.kind === 'profile' && r.profileName === cursorRow.profileName,
-        );
-        if (parentIdx >= 0) setRowCursor(parentIdx);
+      } else if (cursorRow?.kind === 'item' || cursorRow?.kind === 'content-hit') {
+        // Ladder back (issue #101): item → its category row.
+        for (let i = rowCursor - 1; i >= 0; i--) {
+          const r = rows[i]!;
+          if (r.kind === 'profile') break;
+          if (
+            r.kind === 'category' &&
+            r.profileName === cursorRow.profileName &&
+            r.categoryKey === cursorRow.categoryKey
+          ) {
+            setRowCursor(i);
+            break;
+          }
+        }
+      } else if (cursorRow?.kind === 'category') {
+        // Expanded category collapses; a collapsed one jumps to its profile.
+        if (!searchActive && expandedCategories.has(categoryExpandKey(cursorRow.profileName, cursorRow.categoryKey))) {
+          setCategoryExpanded(cursorRow.profileName, cursorRow.categoryKey, false);
+        } else {
+          const parentIdx = rows.findIndex(
+            (r) => r.kind === 'profile' && r.profileName === cursorRow.profileName,
+          );
+          if (parentIdx >= 0) setRowCursor(parentIdx);
+        }
       }
       return;
     }
@@ -578,6 +632,17 @@ export function Sidebar({
 
     if (row.kind === 'category') {
       const count = profile ? profile.resourceCounts[row.categoryKey] : 0;
+      // Chevron only when the category can expand to item rows (issue #101);
+      // a visible child row right below means it is currently expanded.
+      const hasItems = profile ? categoryItems(profile, row.categoryKey).length > 0 : false;
+      const nextRow = rows[absoluteIndex + 1];
+      const isOpen =
+        nextRow !== undefined &&
+        nextRow.depth === 2 &&
+        nextRow.profileName === row.profileName &&
+        'categoryKey' in nextRow &&
+        nextRow.categoryKey === row.categoryKey;
+      const chevron = hasItems ? (isOpen ? '▾ ' : '▸ ') : '  ';
       return React.createElement(
         Box,
         { key: `c:${row.profileName}:${row.categoryKey}`, paddingX: 1 },
@@ -589,7 +654,7 @@ export function Sidebar({
             inverse: isCursor,
             wrap: 'truncate',
           },
-          `  ${categoryLabels[row.categoryKey]} (${count})`,
+          `  ${chevron}${categoryLabels[row.categoryKey]} (${count})`,
         ),
       );
     }

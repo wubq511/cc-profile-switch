@@ -37,6 +37,7 @@ function profile(name: string): WorkbenchProfile {
       mcp: 0,
       settings: 1,
       launchConfig: 1,
+      plugins: 0,
     },
     resourceDetails: {
       userMemory: {
@@ -61,6 +62,7 @@ function profile(name: string): WorkbenchProfile {
       autoMemory: [],
       skills: [],
       settings: ['model'],
+      plugins: [],
     },
     validation: null,
   };

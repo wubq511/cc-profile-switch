@@ -8,7 +8,6 @@ import type { ResourceNavState } from './resource-nav';
 import type { AgentFrontmatter, SearchResult } from '../../core/resource';
 import type { ResourceDiffResult } from '../../core/resource/diff-all';
 import type { EditSession } from '../../core/edit-session';
-import type { PluginInventory, PluginInventoryEntry } from '../../core/plugins';
 import { ResourceMainPane } from './resource-main';
 import { WatchingBadge } from './edit-session/WatchingBadge';
 import { FallbackMenu, type EditFallbackHandlers } from './edit-session/FallbackMenu';
@@ -23,9 +22,6 @@ type MainPaneProps = {
   nav: ResourceNavState;
   /** MCP servers that failed to connect — amber nudge (§5). */
   mcpFailed?: string[];
-  /** Selected Profile's plugin inventory (read-only card, §7.6/issue #96).
-   *  Absent while the delegated read is pending. */
-  pluginInventory?: PluginInventory;
   width: number;
   height: number;
   /** Whether the main pane holds keyboard focus (Tab-toggleable from sidebar). */
@@ -71,7 +67,6 @@ export function MainPane({
   profiles,
   nav,
   mcpFailed,
-  pluginInventory,
   width,
   height,
   focused,
@@ -126,23 +121,15 @@ export function MainPane({
   const liveProfileHints = liveKeys(PROFILE_HINTS.map((h) => h.key));
   // Compact cells (issue #98, V1/V2): the bordered multi-row card only fits
   // when the pane is both wide enough for the two-column grid (~30 cells per
-  // column) and tall enough for seven 6-row cards plus the Plugins card and
-  // hint lines. Where it does not fit, yoga squeezed the fixed-height cards
-  // and content tore through the borders, destroying the category names (the
-  // cards' primary labels). Compact mode renders one terminal row per
-  // category — name + count + focus `▸`, right-truncated — so all seven
-  // names stay visible and intact at any size. Descriptor rows (drill/diff
-  // hints, empty offers) drop first, exactly as the approved fix list orders
-  // it; the pane itself clips at its own edge as a last resort, never tearing
-  // into the footer.
+  // column) and tall enough for eight 6-row cards plus the hint lines. Where
+  // it does not fit, yoga squeezed the fixed-height cards and content tore
+  // through the borders, destroying the category names (the cards' primary
+  // labels). Compact mode renders one terminal row per category — name +
+  // count + focus `▸`, right-truncated — so all eight names stay visible and
+  // intact at any size. Descriptor rows (drill/diff hints, empty offers) drop
+  // first, exactly as the approved fix list orders it; the pane itself clips
+  // at its own edge as a last resort, never tearing into the footer.
   const compactCards = colWidth < 30 || height < 36;
-  // Vertical budget for the Plugins card's inventory list: the header, grid,
-  // and hint lines reserve a fixed share, and the card gets the remaining
-  // lines (its title and the delegation line consume two). There is no hard
-  // ceiling beyond the pane itself, so a tall terminal shows the full
-  // inventory instead of capping at an arbitrary count; on a minimum-size
-  // (80×24) pane the list still stays within budget.
-  const pluginsMaxRows = Math.max(1, height - 19);
 
   return React.createElement(
     // overflow hidden: when the pane's content genuinely exceeds a small
@@ -214,11 +201,6 @@ export function MainPane({
       { flexDirection: 'column', gap: compactCards ? 0 : 1, flexGrow: 1 },
       ...renderCategoryGrid(profile.resourceCounts, colWidth, cursor, focused ?? false, compactCards),
     ),
-    // Read-only Plugins status card (§7.6 boundary row, issue #96): the
-    // selected Profile's plugin inventory as pure status — names and enable
-    // state only — plus the delegation guidance. There are deliberately no
-    // mutation affordances: every change goes through `claude plugin`.
-    renderPluginsCard(pluginInventory, pluginsMaxRows),
     focused &&
       React.createElement(
         Box,
@@ -294,7 +276,9 @@ export function MainPane({
         ? ` ${t('main.drillUserMemory')}`
         : def.key === 'agents'
           ? ` ${t('main.drillAgents')}`
-          : ` ${t('main.drillBulk')}`
+          : def.key === 'settings' || def.key === 'launchConfig' || def.key === 'plugins'
+            ? ` ${t('main.drillEdit')}`
+            : ` ${t('main.drillBulk')}`
       : '';
     // Empty-category offer: `[a] add` (Skills also name the Copy/Link choice).
     const emptyLabel =
@@ -347,65 +331,6 @@ export function MainPane({
       drillHint && React.createElement(Text, { color: 'gray', wrap: 'truncate' }, drillHint),
       diffHint && React.createElement(Text, { color: 'gray', wrap: 'truncate' }, diffHint),
       emptyLabel && React.createElement(Text, { color: 'gray', wrap: 'truncate' }, emptyLabel),
-    );
-  }
-
-  // Read-only Plugins card body (issue #96, spec §7.6): inventory as pure
-  // status — names and enable state only. The list is capped to `maxRows`
-  // with a `+N more` overflow line so the card stays within the pane's
-  // vertical budget; the delegation line always renders, including while the
-  // delegated read is pending and when it fails.
-  function renderPluginsCard(
-    inventory: PluginInventory | undefined,
-    maxRows: number,
-  ): React.ReactElement {
-    // Fail-closed display: while the delegated read is pending (undefined) the
-    // card already renders the unavailable message, so a probe that resolves to
-    // 'unavailable' renders identically and Ink skips the frame — the on-mount
-    // read never perturbs the pane with an intermediate '…' state.
-    const body =
-      inventory === undefined || inventory.status === 'unavailable'
-        ? React.createElement(Text, { color: 'gray', wrap: 'wrap' }, t('plugins.unavailable'))
-        : inventory.plugins.length === 0
-          ? React.createElement(Text, { color: 'gray', wrap: 'wrap' }, t('plugins.empty'))
-          : renderPluginRows(inventory.plugins, maxRows);
-
-    return React.createElement(
-      Box,
-      { flexDirection: 'column', marginTop: 1, flexShrink: 0 },
-      React.createElement(Text, { bold: true }, t('main.category.plugins')),
-      body,
-      React.createElement(Text, { color: 'gray', wrap: 'wrap' }, t('plugins.managed')),
-    );
-  }
-
-  function renderPluginRows(
-    plugins: PluginInventoryEntry[],
-    maxRows: number,
-  ): React.ReactElement {
-    const shown = plugins.slice(0, maxRows);
-    const overflow = plugins.length - shown.length;
-    return React.createElement(
-      React.Fragment,
-      null,
-      ...shown.map((plugin) =>
-        React.createElement(
-          Text,
-          { key: plugin.id, wrap: 'wrap' },
-          `${plugin.id} — `,
-          React.createElement(
-            Text,
-            plugin.enabled ? { color: 'green' } : { color: 'gray' },
-            plugin.enabled ? t('plugins.enabled') : t('plugins.disabled'),
-          ),
-        ),
-      ),
-      overflow > 0 &&
-        React.createElement(
-          Text,
-          { color: 'gray', wrap: 'wrap' },
-          t('plugins.more', { count: String(overflow) }),
-        ),
     );
   }
 }

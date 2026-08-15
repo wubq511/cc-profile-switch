@@ -153,6 +153,7 @@ describe('top-level `e` edit in VS Code (§4.3/§8)', () => {
         mcp: 0,
         settings: 1,
         launchConfig: 1,
+        plugins: 0,
       },
       resourceDetails: {
         userMemory: {
@@ -169,6 +170,7 @@ describe('top-level `e` edit in VS Code (§4.3/§8)', () => {
         mcp: 0,
         settings: 1,
         launchConfig: 1,
+        plugins: [],
       },
       mcpServers: [],
       validation: null,

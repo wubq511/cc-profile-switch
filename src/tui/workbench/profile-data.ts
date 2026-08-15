@@ -32,6 +32,8 @@ export type ResourceCounts = {
   mcp: number;
   settings: number;
   launchConfig: number;
+  /** Installed plugins (0 until the delegated inventory read lands, §7.6). */
+  plugins: number;
 };
 
 export type ResourceDetails = {
@@ -43,6 +45,8 @@ export type ResourceDetails = {
   autoMemory: string[];
   /** Top-level keys of `claude-home/settings.json`. */
   settings: string[];
+  /** Plugin ids (plugin@marketplace) from the delegated inventory read. */
+  plugins: string[];
 };
 
 export type CustomTemplateSummary = {
@@ -106,6 +110,8 @@ export async function loadWorkbenchData(appHomePath?: string): Promise<Workbench
           skills,
           autoMemory,
           settings,
+          // Filled by the delegated plugin inventory read (issue #101 L4).
+          plugins: [],
         },
         mcpServers,
         validation,
@@ -151,8 +157,11 @@ async function countResources(
   const mcp = mcpCount;
   const settings = (await fs.pathExists(join(claudeHome, 'settings.json'))) ? 1 : 0;
   const launchConfig = 1; // profile.json always counts as 1
+  // Plugins merge in when the delegated inventory read lands (app.tsx); the
+  // data load itself stays off the CLI probe.
+  const plugins = 0;
 
-  return { userMemory, autoMemory, skills, agents, mcp, settings, launchConfig };
+  return { userMemory, autoMemory, skills, agents, mcp, settings, launchConfig, plugins };
 }
 
 /** Entry names in a directory (sidebar tree item rows); [] when absent. */

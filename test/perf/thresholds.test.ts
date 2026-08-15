@@ -281,6 +281,7 @@ describe('3× tier loading-state rule (issue #79)', () => {
           mcp: 1,
           settings: 1,
           launchConfig: 1,
+          plugins: 0,
         },
         resourceDetails: {
           userMemory: { exists: true, name: 'CLAUDE.md' },
@@ -288,6 +289,7 @@ describe('3× tier loading-state rule (issue #79)', () => {
           skills: Array.from({ length: 150 }, (_, i) => `skill-${String(i + 1).padStart(3, '0')}`),
           autoMemory: ['MEMORY.md', 'topic-01.md'],
           settings: ['autoMemoryDirectory', 'claudeMdExcludes', 'env'],
+          plugins: [],
         },
         mcpServers: [`fixture-server-${s.name}`],
         validation: null,
@@ -338,6 +340,7 @@ describe('3× tier loading-state rule (issue #79)', () => {
           mcp: 1,
           settings: 1,
           launchConfig: 1,
+          plugins: 0,
         },
         resourceDetails: {
           userMemory: { exists: true, name: 'CLAUDE.md' },
@@ -345,6 +348,7 @@ describe('3× tier loading-state rule (issue #79)', () => {
           skills: Array.from({ length: 150 }, (_, i) => `skill-${String(i + 1).padStart(3, '0')}`),
           autoMemory: ['MEMORY.md', 'topic-01.md'],
           settings: ['autoMemoryDirectory', 'claudeMdExcludes', 'env'],
+          plugins: [],
         },
         mcpServers: [`fixture-server-${s.name}`],
         validation: null,

@@ -108,6 +108,8 @@ import { DiscoverView } from './skills/discover';
 import type { InstallSourceRef } from './skills/install-wizard-reducer';
 import { AutoMemoryView } from './resources/auto-memory-view';
 import { BulkOpsView, type BulkCategory } from './resources/bulk-ops-view';
+import { SettingsView } from './resources/settings-view';
+import { PluginsView } from './resources/plugins-view';
 import { RecoveryView } from './resources/recovery-view';
 import { restorePluginItem, readPluginInventory, type PluginInventory } from '../../core/plugins';
 import {
@@ -124,6 +126,8 @@ type DrillDown =
   | { kind: 'none' }
   | { kind: 'autoMemory' }
   | { kind: 'bulk'; category: BulkCategory }
+  | { kind: 'kv'; category: 'settings' | 'launchConfig'; focusKey?: string }
+  | { kind: 'plugins' }
   | { kind: 'recovery' };
 
 /** Result caps for the Discover catalog (bounded interactive search). */
@@ -516,6 +520,27 @@ function WorkbenchInner({
       if (inventory.status !== 'ok') return; // card already shows unavailable
       setPluginInventoryByProfile((prev) => ({ ...prev, [profile.name]: inventory }));
       pluginInventoryRef.current = { ...pluginInventoryRef.current, [profile.name]: inventory };
+      // Merge into the workbench data so the Plugins grid card and sidebar
+      // tree rows see the inventory as a regular category (issue #101 L4).
+      setWorkbenchData((prev) =>
+        prev
+          ? {
+              ...prev,
+              profiles: prev.profiles.map((p) =>
+                p.name === profile.name
+                  ? {
+                      ...p,
+                      resourceCounts: { ...p.resourceCounts, plugins: inventory.plugins.length },
+                      resourceDetails: {
+                        ...p.resourceDetails,
+                        plugins: inventory.plugins.map((entry) => entry.id),
+                      },
+                    }
+                  : p,
+              ),
+            }
+          : prev,
+      );
     })();
     return () => {
       cancelled = true;
@@ -720,6 +745,24 @@ function WorkbenchInner({
           ) {
             setDrillDown({ kind: 'bulk', category: catKey });
             setCapture(true);
+          } else if (catKey === 'settings' || catKey === 'launchConfig') {
+            // Key-level editor drill (issue #101 L1).
+            setDrillDown({ kind: 'kv', category: catKey });
+            setCapture(true);
+          } else if (catKey === 'plugins') {
+            // Read-only inventory drill (§7.6, issue #101 L4).
+            setDrillDown({ kind: 'plugins' });
+            setCapture(true);
+          } else if (catKey === 'userMemory') {
+            // Enter on the User Memory card mirrors the live `u` drill
+            // (issue #101 sweep): every card answers Enter the same way.
+            setResourceNav((prev) =>
+              resourceNavReducer(prev, { type: 'OPEN_CATEGORY', category: 'user-memory' }),
+            );
+            setResourceContent(null);
+            setDiffResult(null);
+            setDrilledAgent(null);
+            setAgentFrontmatter(null);
           }
           return;
         }
@@ -1303,9 +1346,22 @@ function WorkbenchInner({
       }
 
       // Skills / MCP drill into the bulk-ops surface (spec §11.1); Settings and
-      // launchConfig have no dedicated drill surface — focus the card instead.
+      // Launch Config drill into the key-level editor (issue #101 L1).
       if (categoryKey === 'skills' || categoryKey === 'mcp') {
         setDrillDown({ kind: 'bulk', category: categoryKey });
+        setCapture(true);
+        return;
+      }
+
+      if (categoryKey === 'settings' || categoryKey === 'launchConfig') {
+        setDrillDown({ kind: 'kv', category: categoryKey, focusKey: itemName });
+        setCapture(true);
+        return;
+      }
+
+      // Plugins drill into the read-only inventory view (§7.6, issue #101 L4).
+      if (categoryKey === 'plugins') {
+        setDrillDown({ kind: 'plugins' });
         setCapture(true);
         return;
       }
@@ -2494,14 +2550,34 @@ function WorkbenchInner({
                                 captureProcess,
                                 headless,
                               })
-                            : React.createElement(MainPane, {
+                            : drillDown.kind === 'kv' && selectedProfile
+                              ? React.createElement(SettingsView, {
+                                  profile: selectedProfile,
+                                  appHomePath: getAppHomePaths().appHomePath,
+                                  category: drillDown.category,
+                                  width: mainWidth,
+                                  height: paneHeight,
+                                  onBack: handleExitDrillDown,
+                                  onDataChanged: () => {
+                                    void refreshData();
+                                  },
+                                  initialKey: drillDown.focusKey,
+                                  headless,
+                                })
+                              : drillDown.kind === 'plugins' && selectedProfile
+                                ? React.createElement(PluginsView, {
+                                    profile: selectedProfile,
+                                    inventory: pluginInventoryByProfile[selectedProfile.name],
+                                    width: mainWidth,
+                                    height: paneHeight,
+                                    onBack: handleExitDrillDown,
+                                    headless,
+                                  })
+                                : React.createElement(MainPane, {
                                 profile: selectedProfile,
                                 profiles: workbenchData.profiles,
                                 nav: resourceNav,
                                 mcpFailed,
-                                pluginInventory: selectedProfile
-                                  ? pluginInventoryByProfile[selectedProfile.name]
-                                  : undefined,
                                 width: mainWidth,
                                 height: paneHeight,
                                 focused: mainPaneFocus,

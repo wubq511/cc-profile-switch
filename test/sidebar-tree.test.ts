@@ -4,6 +4,7 @@ import type { SearchResult } from '../src/core/resource/types';
 import type { WorkbenchProfile } from '../src/tui/workbench/profile-data';
 import {
   buildSidebarRows,
+  categoryExpandKey,
   SIDEBAR_CATEGORY_KEYS,
   type CategoryKey,
   type TreeRow,
@@ -18,6 +19,7 @@ const LABELS: Record<CategoryKey, string> = {
   mcp: 'MCP',
   settings: 'Settings',
   launchConfig: 'Launch Config',
+  plugins: 'Plugins',
 };
 
 /** Alpha-profile fixture: the tree assertions rely on these specific
@@ -36,6 +38,7 @@ function makeProfile(overrides: Partial<WorkbenchProfile> = {}): WorkbenchProfil
       mcp: 1,
       settings: 2,
       launchConfig: 1,
+      plugins: 0,
     },
     resourceDetails: {
       userMemory: {
@@ -60,6 +63,7 @@ function makeProfile(overrides: Partial<WorkbenchProfile> = {}): WorkbenchProfil
       skills: ['pdf'],
       autoMemory: ['2026-08-01.md'],
       settings: ['model', 'env'],
+      plugins: [],
     },
     mcpServers: ['github'],
     ...overrides,
@@ -80,11 +84,17 @@ function makeHit(overrides: Partial<SearchResult> = {}): SearchResult {
 
 function rows(
   profiles: WorkbenchProfile[],
-  opts: { expanded?: string[]; query?: string; contentHits?: SearchResult[] } = {},
+  opts: {
+    expanded?: string[];
+    expandedCategories?: string[];
+    query?: string;
+    contentHits?: SearchResult[];
+  } = {},
 ): TreeRow[] {
   return buildSidebarRows({
     profiles,
     expanded: new Set(opts.expanded ?? []),
+    expandedCategories: new Set(opts.expandedCategories ?? []),
     query: opts.query ?? '',
     categoryLabels: LABELS,
     contentHits: opts.contentHits ?? [],
@@ -105,6 +115,7 @@ describe('SIDEBAR_CATEGORY_KEYS', () => {
       'mcp',
       'settings',
       'launchConfig',
+      'plugins',
     ]);
   });
 });
@@ -116,20 +127,39 @@ describe('buildSidebarRows with an empty query', () => {
     expect(result[0]).toMatchObject({ profileName: 'alpha', depth: 0 });
   });
 
-  it('expands a profile into category and item rows', () => {
+  it('expands a profile into category rows only (items stay collapsed)', () => {
+    // Issue #101: expanding a profile no longer dumps every item; categories
+    // stay collapsed until the user expands one.
     const result = rows([makeProfile()], { expanded: ['alpha'] });
     expect(kinds(result)).toEqual([
       'profile',
-      'category', 'item', // userMemory → CLAUDE.md
-      'category', 'item', // autoMemory
-      'category', 'item', // skills
-      'category', 'item', // agents
-      'category', 'item', // mcp
-      'category', 'item', 'item', // settings (2 keys)
-      'category', // launchConfig has no items
+      'category', // userMemory
+      'category', // autoMemory
+      'category', // skills
+      'category', // agents
+      'category', // mcp
+      'category', // settings
+      'category', // launchConfig
+      'category', // plugins
     ]);
     expect(result[1]).toMatchObject({ kind: 'category', categoryKey: 'userMemory', depth: 1 });
-    expect(result[2]).toMatchObject({ kind: 'item', categoryKey: 'userMemory', itemName: 'CLAUDE.md', depth: 2 });
+  });
+
+  it('lists items only under explicitly expanded categories', () => {
+    const result = rows([makeProfile()], {
+      expanded: ['alpha'],
+      expandedCategories: [
+        categoryExpandKey('alpha', 'skills'),
+        categoryExpandKey('alpha', 'settings'),
+      ],
+    });
+    const skillsIdx = result.findIndex((r) => r.kind === 'category' && r.categoryKey === 'skills');
+    expect(result[skillsIdx + 1]).toMatchObject({ kind: 'item', categoryKey: 'skills', itemName: 'pdf', depth: 2 });
+    const settingsIdx = result.findIndex((r) => r.kind === 'category' && r.categoryKey === 'settings');
+    expect(result[settingsIdx + 1]).toMatchObject({ kind: 'item', categoryKey: 'settings', itemName: 'model' });
+    expect(result[settingsIdx + 2]).toMatchObject({ kind: 'item', categoryKey: 'settings', itemName: 'env' });
+    // Every other category stays collapsed: no other item rows exist.
+    expect(result.filter((r) => r.kind === 'item')).toHaveLength(3);
   });
 
   it('keeps other profiles collapsed', () => {
@@ -169,6 +199,7 @@ describe('buildSidebarRows with a query', () => {
           { kind: 'agents', name: 'reviewer', relativePath: 'agents/reviewer.md', exists: true, frontmatter: null, frontmatterParseError: null, bodyExcerpt: '' },
           { kind: 'agents', name: 'planner', relativePath: 'agents/planner.md', exists: true, frontmatter: null, frontmatterParseError: null, bodyExcerpt: '' },
         ],
+        plugins: [],
       },
     });
     const result = rows([profile], { query: 'review' });

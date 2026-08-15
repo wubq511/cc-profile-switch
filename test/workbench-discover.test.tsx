@@ -139,6 +139,7 @@ const sampleData: WorkbenchData = {
         mcp: 1,
         settings: 1,
         launchConfig: 1,
+        plugins: 0,
       },
       resourceDetails: {
         userMemory: {
@@ -155,6 +156,7 @@ const sampleData: WorkbenchData = {
         mcp: 1,
         settings: 1,
         launchConfig: 1,
+        plugins: [],
       },
       mcpServers: [],
       validation: null,
