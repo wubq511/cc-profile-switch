@@ -214,6 +214,18 @@ describe('editor unavailable fallback (§8, S35)', () => {
     return { instance, stdout, stdin };
   }
 
+  /** Newest full-screen payload, flattened. Asserting on everything written
+   *  after a baseline is not frame-safe on win32: Ink repaints fullscreen
+   *  frames via clearTerminal there (ink #969), so a late async state tick
+   *  (e.g. the plugin-inventory probe resolving) replays the previous screen
+   *  into the post-baseline bytes. Splitting on both repaint boundaries
+   *  (eraseLines prefix and win32 clearTerminal) isolates the current frame. */
+  function lastFrame(stdout: FakeTtyStdout): string {
+    // eslint-disable-next-line no-control-regex
+    const segments = stdout.output.split(/(?:\x1b\[2K\x1b\[1A)*\x1b\[2K\x1b\[G|\x1b\[2J\x1b\[0f|\x1b\[2J\x1b\[3J\x1b\[H/);
+    return flatten(segments[segments.length - 1] ?? '');
+  }
+
   it('a failed handoff surfaces the inline error with the three fallback actions', async () => {
     setupSpawnError();
     await setupRealProfile();
@@ -286,7 +298,6 @@ describe('editor unavailable fallback (§8, S35)', () => {
     await waitForOutput(stdout, 'VS Code unavailable');
     expect(vi.mocked(spawn)).toHaveBeenCalledTimes(1);
 
-    const baseline = stdout.output; // uncleared — settle waits for a NEW frame
     setupSpawnSuccess();
     // spawn() runs synchronously once the key is processed, so the call count
     // is the near-synchronous observable for pressUntil.
@@ -295,11 +306,15 @@ describe('editor unavailable fallback (§8, S35)', () => {
     await waitForOutput(stdout, 'watching');
 
     expect(vi.mocked(spawn)).toHaveBeenCalledTimes(2);
-    // Assert only frames written after the retry: the menu frame stays in the
-    // old portion, the watching frame is new.
-    const fresh = flatten(stripAnsi(stdout.output.slice(baseline.length)));
-    expect(fresh).toContain('watching');
-    expect(fresh).not.toContain('VS Code unavailable');
+    // Assert the final visible frame only — historical frames in the raw
+    // stream still contain the pre-retry error screen (see lastFrame).
+    const settleDeadline = Date.now() + 3000;
+    while (Date.now() < settleDeadline && !lastFrame(stdout).includes('watching')) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    const finalFrame = lastFrame(stdout);
+    expect(finalFrame).toContain('watching');
+    expect(finalFrame).not.toContain('VS Code unavailable');
 
     instance.unmount();
     await instance.waitUntilExit();
@@ -343,10 +358,13 @@ describe('editor unavailable fallback (§8, S35)', () => {
       expected.options,
     );
 
-    // Assert only frames written after the handoff: the menu frame stays in the
-    // old portion of the accumulated output.
-    const fresh = flatten(stripAnsi(stdout.output.slice(baseline.length)));
-    expect(fresh).not.toContain('VS Code unavailable');
+    // Final visible frame must be a post-dismiss one — historical frames in
+    // the raw stream still contain the menu (see lastFrame).
+    const menuGoneDeadline = Date.now() + 3000;
+    while (Date.now() < menuGoneDeadline && lastFrame(stdout).includes('VS Code unavailable')) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    expect(lastFrame(stdout)).not.toContain('VS Code unavailable');
 
     instance.unmount();
     await instance.waitUntilExit();
@@ -372,22 +390,17 @@ describe('editor unavailable fallback (§8, S35)', () => {
     const baseline = stdout.output; // uncleared — settle waits for a NEW frame
     stdin.press('\u001b'); // Esc
     // Esc is idempotent (dismiss on an open menu, no-op once closed), so
-    // press-until-observed is safe. The sidebar search placeholder renders in
-    // every frame, so "last menu frame predates last sidebar frame" means the
-    // close render landed — immune to late frame chunks on slow runners.
+    // press-until-observed is safe. The dismiss render is observed as the
+    // newest frame losing the menu while keeping the sidebar (see lastFrame).
     const dismissed = await pressUntil(stdin, String.fromCodePoint(27), () => {
-      const tail = flatten(stripAnsi(stdout.output.slice(baseline.length)));
-      const lastSidebarFrame = tail.lastIndexOf('Type to search…');
-      return lastSidebarFrame !== -1 && tail.lastIndexOf('VS Code unavailable') < lastSidebarFrame;
+      const frame = lastFrame(stdout);
+      return frame.includes('Type to search…') && !frame.includes('VS Code unavailable');
     });
     expect(dismissed).toBe(true);
     await waitForOutputSettled(stdout, baseline);
 
     expect(vi.mocked(spawn)).toHaveBeenCalledTimes(1);
-    const fresh = flatten(stripAnsi(stdout.output.slice(baseline.length)));
-    expect(fresh.lastIndexOf('VS Code unavailable')).toBeLessThan(
-      fresh.lastIndexOf('Type to search…'),
-    );
+    expect(lastFrame(stdout)).not.toContain('VS Code unavailable');
 
     instance.unmount();
     await instance.waitUntilExit();

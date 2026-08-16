@@ -355,13 +355,15 @@ describe('BulkOpsView interactive journeys (S95/S96/S97)', () => {
         stdin.press('\x1b[B');
         await new Promise((resolve) => setTimeout(resolve, 15));
       }
-      await waitForOutputContaining(stdout, '▸ [ ] skill-50');
+      // Queued keys take a while to drain on loaded Windows runners.
+      await waitForOutputContaining(stdout, '▸ [ ] skill-50', 15000);
       // Select-all then remove: the selection count and the result status are
       // reserved bottom rows, never pushed off-screen by the long list.
       stdin.press('a');
       await waitForOutputContaining(stdout, '50 selected');
       stdin.press('x');
-      await waitForOutputContaining(stdout, 'Removed 50 to the Recovery Bin');
+      // 50 real directory moves far exceed the 5s default on Windows CI.
+      await waitForOutputContaining(stdout, 'Removed 50 to the Recovery Bin', 30000);
 
       instance.unmount();
       await instance.waitUntilExit();
