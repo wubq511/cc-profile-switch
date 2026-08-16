@@ -8,7 +8,8 @@ import React from 'react';
 import { render } from 'ink';
 
 import { loadWorkbenchData } from './profile-data';
-import { WorkbenchApp, takeLaunchResumeState, type LaunchResumeState } from './app';
+import { WorkbenchApp } from './app';
+import { takeLaunchResumeState, type LaunchResumeState } from './launch/launch-resume';
 import { createLaunchHandler } from './launch-cycle';
 import { resolveLocale, type Locale } from './i18n/react';
 import {
