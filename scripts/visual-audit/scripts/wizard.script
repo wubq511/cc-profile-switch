@@ -1,0 +1,31 @@
+# Session 2: skill install wizard — kind picker, full source list, remote
+# staging error. The manual-entry flow lives in wizard2.script: the full
+# fixture discovers ~950 cross-profile sources (19 profiles × 50 skills),
+# and the source-list tail row (manual entry) is unreachable by DOWN at any
+# delivery rate — the list also never renders its cursor at 80 cols (the
+# path column squeezes the ▸ name cell away).
+send {SPACE}
+wait 400
+send a
+wait 600
+shot d01-wizard-kind
+send {ENTER}
+wait-until "Local Skill Source|本地技能源" 8000
+shot d02-wizard-sources
+send {ESC}
+wait 400
+send {ESC}
+wait 400
+# remote flow: garbage repo → staging error (deterministic 404)
+send a
+wait 500
+send {RIGHT}
+shot d10-wizard-kind-remote
+send {ENTER}
+wait 500
+shot d11-wizard-remote-input
+type owner/repo-does-not-exist-zzz
+send {ENTER}
+wait 15000
+shot d12-wizard-remote-error
+send {ESC}

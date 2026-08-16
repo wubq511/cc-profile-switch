@@ -8,6 +8,7 @@ const reservedProfileNames = new Set([
   '..',
   'profiles',
   'backups',
+  'recovery-bin',
   'claude-home',
   'plugins',
   'mcp',

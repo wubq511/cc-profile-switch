@@ -1,0 +1,22 @@
+# Issue #97 edit-session watch states — run with reset-home.sh --editor editor-stub.
+# The editor stub exits 0 instantly (like the `code` / `open -a` handoff),
+# flipping the session opening → watching; watching then tracks the file, not
+# the editor process.
+shot w01-welcome
+send {SPACE}
+wait 400
+shot w02-home
+send e
+wait-until "watching|监听中" 8000
+shot w03-edit-watching
+send u
+wait 600
+send {ENTER}
+wait-until "watching|监听中" 6000
+shot w04-preview-watching
+sh date >> "$HOME/.cc-profile-switch/profiles/profile-001/claude-home/CLAUDE.md"
+wait-until "(#1)" 8000
+shot w05-preview-watch-change
+sh rm "$HOME/.cc-profile-switch/profiles/profile-001/claude-home/CLAUDE.md"
+wait-until "File deleted or renamed|文件已删除或重命名" 8000
+shot w06-preview-missing-overlay

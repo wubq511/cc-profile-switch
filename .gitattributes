@@ -2,3 +2,6 @@
 .claude/**/*.md text eol=lf
 .gitattributes text eol=lf
 .gitignore text eol=lf
+# Byte-for-byte golden: the fixture generator always serializes with LF, so the
+# committed golden must keep LF even on Windows checkouts (core.autocrlf=true).
+test/fixtures/golden/mini.plan.json text eol=lf

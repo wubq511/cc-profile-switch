@@ -1,0 +1,56 @@
+# Session 7: edit-session fallback + launch flow + missing-CLAUDE.md drill.
+# ORDER MATTERS: the pre-launch bar's Esc dispatch is a no-op (lifecycle.ts
+# LAUNCH_DISMISS only handles 'exited'), so once the bar opens the only exits
+# are Enter (launch), d (dry-run), or q (quit). Shots needing the idle grid
+# afterwards come first; the blocked bar (i07) is a hard dead end and is
+# captured last.
+send {SPACE}
+wait 400
+send e
+wait 900
+shot i01-edit-fallback
+send 2
+wait 400
+shot i02-edit-fallback-path
+send {ESC}
+wait 400
+# missing-CLAUDE.md drill on the broken profile (before any launch dead-end)
+until-hl "profile-018"
+shot i06-broken-profile-selected
+send u
+wait 700
+shot i09-usermem-missing
+send {ESC}
+wait 400
+# happy path: bar → dry-run → back to bar → Enter launches (stub claude exits 0)
+until-hl "profile-001" 30 up
+send l
+wait-until "Enter to launch|按 Enter 启动" 8000
+shot i03-launch-bar
+send d
+wait-until "Launch dry-run|试运行" 6000
+shot i04-dry-run
+send {ESC}
+wait-until "Enter to launch|按 Enter 启动" 6000
+send {ENTER}
+wait-until "exited|退出" 12000
+shot i08-launch-exit-flash
+send {ESC}
+wait 500
+# directory screen: L → Enter confirms the dir → back at the bar (Esc dead)
+# → Enter launches out → exit flash → Esc dismisses
+send L
+wait-until "Type a path:|输入路径" 10000
+shot i05-launch-dir
+send {ENTER}
+wait-until "Enter to launch|按 Enter 启动" 6000
+shot i05b-launch-bar-from-dir
+send {ENTER}
+wait-until "exited|退出" 12000
+send {ESC}
+wait 500
+# blocked launch on the broken profile — Esc/Enter both no-ops here
+until-hl "profile-018"
+send l
+wait-until "Launch blocked|启动被阻止" 8000
+shot i07-launch-blocked

@@ -1,0 +1,54 @@
+# Session 2b: wizard manual path + collision — run with
+# reset-home.sh --trim-skills. Every other profile's skills/ is emptied, so
+# the cross-profile source list is just the manual-entry row (the full
+# fixture discovers ~950 sources; its tail row is unreachable by DOWN).
+# The empty list's only row IS manual entry, so Enter reaches the typed-path
+# step directly — no blind walk needed here.
+send {SPACE}
+wait 400
+send a
+wait 600
+send {ENTER}
+wait-until "Local Skill Source|本地技能源" 8000
+shot d03-source-list-empty
+send {ENTER}
+wait-until "Local Skill Source path:|本地技能源路径：" 6000
+shot d04-manual-entry
+type /nonexistent-skill-dir
+send {ENTER}
+wait-until "not readable|not a Skill|不可读|不是 Skill" 6000
+shot d05-source-error
+send {ESC}
+wait-until "Enter path manually|手动输入路径" 6000
+send {ENTER}
+wait-until "Local Skill Source path:|本地技能源路径：" 6000
+rep 30 send {BACKSPACE}
+type {PWD}/.fixtures-out/skill-source
+send {ENTER}
+wait-until "Copy or Link|复制或链接" 6000
+shot d06-wizard-mode
+send {ENTER}
+wait-until "Confirm install|确认安装" 6000
+shot d07-wizard-confirm
+send {ENTER}
+wait-until "Skill installed|技能已安装" 12000
+shot d08-wizard-success
+send {ESC}
+wait 500
+# collision: install the same source again
+send a
+wait 500
+send {ENTER}
+wait-until "Local Skill Source|本地技能源" 8000
+send {ENTER}
+wait-until "Local Skill Source path:|本地技能源路径：" 6000
+rep 30 send {BACKSPACE}
+type {PWD}/.fixtures-out/skill-source
+send {ENTER}
+wait-until "Copy or Link|复制或链接" 6000
+send {ENTER}
+wait-until "Confirm install|确认安装" 6000
+send {ENTER}
+wait-until "Name collision|名称冲突" 6000
+shot d09-wizard-collision
+send {ESC}

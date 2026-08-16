@@ -360,7 +360,7 @@ describe('profile lifecycle commands', () => {
     const result = await runCli(userHome, ['validate', 'coding']);
 
     expect(result.output).toContain('Status: error');
-    expect(result.output).toContain('JSON_INVALID');
+    expect(result.output).toContain('SETTINGS_MALFORMED');
     expect(result.output).toContain(profilePaths.settingsPath);
   });
 

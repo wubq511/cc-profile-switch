@@ -1,0 +1,80 @@
+# Session 3: main-pane drills — grid, user memory, agents, diffs, search.
+send {SPACE}
+wait 400
+press-until "{TAB}" "Enter to drill in|Enter 进入"
+wait 1500
+shot e01-grid-focus
+send u
+wait 600
+shot e02-usermem-list
+send {ENTER}
+wait 500
+shot e03-usermem-preview
+send d
+wait 700
+shot e04-usermem-diff
+send {ESC}
+wait 300
+send {ESC}
+wait 300
+send {ESC}
+wait 400
+press-until "{TAB}" "Enter to drill in|Enter 进入"
+wait 400
+send a
+wait 600
+shot e05-agents-list
+send f
+wait 600
+shot e06-frontmatter-editor
+send {ESC}
+wait 300
+send a
+wait 400
+shot e07-agent-create-prompt
+send {ESC}
+wait 300
+send {ENTER}
+wait 500
+shot e08-agent-preview
+send c
+wait 500
+shot e09-resource-copy
+send {ESC}
+wait 300
+send /
+wait 300
+type agent-0
+wait 900
+shot e10-resource-search
+send {ESC}
+wait 300
+send {ESC}
+wait 300
+send {ESC}
+wait 300
+nav-grid "server inventory|仅对比服务器清单" d
+wait 500
+shot e11-mcp-diff
+send {ESC}
+wait 300
+nav-grid "autoMemoryDirectory" d
+wait 500
+shot e12-settings-diff
+send {ESC}
+wait 300
+# MCP category drill (spec §11.1: Skills/MCP drill into the bulk surface) —
+# fixture profile-001 carries one MCP server row.
+nav-grid "· MCP"
+wait 400
+shot e13-mcp-bulk
+send {ESC}
+wait 300
+# Launch Config has no drill surface (focuses the card); its only content
+# view is the pairwise diff — launch.* keys (mcpMode, skipPermissions, …)
+# with ≠/+/− verdicts and ⚠ sensitive warnings.
+nav-grid "skipPermissions" d
+wait 500
+shot e14-launchconfig-diff
+send {ESC}
+wait 300

@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { createAppConfig, getAppHomePaths } from '../src/core/app-config';
+import { loadAppState } from '../src/core/app-state';
 import {
   createProfileFromTemplate,
   getProfileTemplatePaths,
@@ -696,5 +697,299 @@ describe('launcher', () => {
     const afterLaunch = await fs.readJson(paths.settingsPath);
     expect(afterLaunch).toHaveProperty('claudeMdExcludes');
     expect(Array.isArray(afterLaunch.claudeMdExcludes)).toBe(true);
+  });
+
+  it('records cwd in state.json after a successful real launch', async () => {
+    const { appHome } = await makeProfile();
+    const projectCwd = await makeTempRoot('ccps-project-');
+
+    await launchProfile({
+      appHomePath: appHome,
+      profileName: 'coding',
+      cwd: projectCwd,
+      spawnProcess: async () => ({ exitCode: 0 }),
+      clock: () => new Date('2026-05-20T11:30:00Z'),
+    });
+
+    const state = await loadAppState(appHome);
+    expect(state.recentProjectDirs).toHaveLength(1);
+    expect(state.recentProjectDirs[0].path).toBe(projectCwd);
+  });
+
+  it('does not record cwd in state.json on a dry-run launch', async () => {
+    const { appHome } = await makeProfile();
+    const projectCwd = await makeTempRoot('ccps-project-');
+
+    await buildLaunchPlan({
+      appHomePath: appHome,
+      profileName: 'coding',
+      cwd: projectCwd,
+    });
+
+    const state = await loadAppState(appHome);
+    expect(state.recentProjectDirs).toHaveLength(0);
+  });
+
+  it('does not record cwd in state.json when profile validation blocks launch', async () => {
+    const { appHome, paths } = await makeProfile();
+    const projectCwd = await makeTempRoot('ccps-project-');
+    await rm(paths.settingsPath);
+
+    await expect(
+      launchProfile({
+        appHomePath: appHome,
+        profileName: 'coding',
+        cwd: projectCwd,
+        spawnProcess: async () => ({ exitCode: 0 }),
+      }),
+    ).rejects.toMatchObject({ code: 'PROFILE_VALIDATION_FAILED' });
+
+    const state = await loadAppState(appHome);
+    expect(state.recentProjectDirs).toHaveLength(0);
+  });
+
+  it('does not record recents or last-used on a non-zero exit (spec §13.3)', async () => {
+    const { appHome } = await makeProfile();
+    const projectCwd = await makeTempRoot('ccps-project-');
+
+    await expect(
+      launchProfile({
+        appHomePath: appHome,
+        profileName: 'coding',
+        cwd: projectCwd,
+        spawnProcess: async () => ({ exitCode: 2 }),
+      }),
+    ).rejects.toMatchObject({ code: 'CLAUDE_EXITED_WITH_ERROR' });
+
+    await expect(fs.readJson(join(appHome, 'config.json'))).resolves.toMatchObject({
+      lastUsedProfile: null,
+    });
+    const state = await loadAppState(appHome);
+    expect(state.recentProjectDirs).toHaveLength(0);
+  });
+
+  it('does not record recents or last-used on a signal exit (null exit code)', async () => {
+    const { appHome } = await makeProfile();
+    const projectCwd = await makeTempRoot('ccps-project-');
+
+    const result = await launchProfile({
+      appHomePath: appHome,
+      profileName: 'coding',
+      cwd: projectCwd,
+      spawnProcess: async () => ({ exitCode: null }),
+    });
+
+    // A signal exit is not a launch failure, but it is not a successful real
+    // launch either (spec §13.3) — metadata records nothing.
+    expect(result.exitCode).toBeNull();
+    await expect(fs.readJson(join(appHome, 'config.json'))).resolves.toMatchObject({
+      lastUsedProfile: null,
+    });
+    const state = await loadAppState(appHome);
+    expect(state.recentProjectDirs).toHaveLength(0);
+  });
+
+  // ─── launch env auth resolution (issue #87 G-finding) ────────────────
+  //
+  // Claude Code refuses to work when the spawned env carries BOTH
+  // ANTHROPIC_AUTH_TOKEN and ANTHROPIC_API_KEY. The layers that feed the
+  // launch env (shell process.env, real ~/.claude/settings.json, ccps API
+  // settings) can each contribute one of the pair, so the composition must
+  // resolve the conflict deterministically: highest-precedence layer wins.
+
+  describe('launch env auth resolution', () => {
+    type SpawnedEnv = NodeJS.ProcessEnv;
+
+    function isolateEnv(): () => void {
+      const keys = [
+        'ANTHROPIC_AUTH_TOKEN',
+        'ANTHROPIC_API_KEY',
+        'HOME',
+        'USERPROFILE',
+      ] as const;
+      const saved = new Map<string, string | undefined>();
+      for (const key of keys) {
+        saved.set(key, process.env[key]);
+        delete process.env[key];
+      }
+      return () => {
+        for (const key of keys) {
+          const value = saved.get(key);
+          if (value === undefined) {
+            delete process.env[key];
+          } else {
+            process.env[key] = value;
+          }
+        }
+      };
+    }
+
+    async function launchCapturingEnv(
+      appHome: string,
+      projectCwd: string,
+    ): Promise<SpawnedEnv> {
+      let captured: SpawnedEnv = {};
+      await launchProfile({
+        appHomePath: appHome,
+        profileName: 'coding',
+        cwd: projectCwd,
+        spawnProcess: async (_command, _args, options) => {
+          captured = (options as { env: SpawnedEnv }).env;
+          return { exitCode: 0 };
+        },
+      });
+      return captured;
+    }
+
+    it('keeps the profile auth token and drops an ambient shell API key', async () => {
+      const restore = isolateEnv();
+      try {
+        const home = await makeTempRoot('ccps-home-');
+        process.env.HOME = home;
+        process.env.USERPROFILE = home;
+        const { appHome, paths } = await makeProfile();
+        const projectCwd = await makeTempRoot('ccps-project-');
+        process.env.ANTHROPIC_API_KEY = 'shell-key';
+        await fs.writeJson(paths.settingsPath, {
+          autoMemoryDirectory: paths.autoMemoryPath,
+          env: { ANTHROPIC_AUTH_TOKEN: 'profile-token' },
+        });
+
+        const env = await launchCapturingEnv(appHome, projectCwd);
+
+        expect(env.ANTHROPIC_AUTH_TOKEN).toBe('profile-token');
+        expect(env.ANTHROPIC_API_KEY).toBeUndefined();
+      } finally {
+        restore();
+      }
+    });
+
+    it('keeps the profile API key and drops an ambient shell auth token', async () => {
+      const restore = isolateEnv();
+      try {
+        const home = await makeTempRoot('ccps-home-');
+        process.env.HOME = home;
+        process.env.USERPROFILE = home;
+        const { appHome, paths } = await makeProfile();
+        const projectCwd = await makeTempRoot('ccps-project-');
+        process.env.ANTHROPIC_AUTH_TOKEN = 'shell-token';
+        await fs.writeJson(paths.settingsPath, {
+          autoMemoryDirectory: paths.autoMemoryPath,
+          env: { ANTHROPIC_API_KEY: 'profile-key' },
+        });
+
+        const env = await launchCapturingEnv(appHome, projectCwd);
+
+        expect(env.ANTHROPIC_API_KEY).toBe('profile-key');
+        expect(env.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
+      } finally {
+        restore();
+      }
+    });
+
+    it('lets ccps API settings win over the real Claude settings env', async () => {
+      const restore = isolateEnv();
+      try {
+        const home = await makeTempRoot('ccps-home-');
+        process.env.HOME = home;
+        process.env.USERPROFILE = home;
+        const { appHome } = await makeProfile();
+        const projectCwd = await makeTempRoot('ccps-project-');
+        // Real user settings carry the working custom-API auth…
+        await fs.outputJson(join(home, '.claude', 'settings.json'), {
+          env: { ANTHROPIC_AUTH_TOKEN: 'real-token' },
+        });
+        // …while this profile's ccps API settings deliberately use a key.
+        await fs.writeJson(getAppHomePaths(appHome).apiSettingsPath, {
+          env: { ANTHROPIC_API_KEY: 'common-key' },
+        });
+
+        const env = await launchCapturingEnv(appHome, projectCwd);
+
+        expect(env.ANTHROPIC_API_KEY).toBe('common-key');
+        expect(env.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
+      } finally {
+        restore();
+      }
+    });
+
+    it('leaves a single layer that sets both auth variables untouched', async () => {
+      const restore = isolateEnv();
+      try {
+        const home = await makeTempRoot('ccps-home-');
+        process.env.HOME = home;
+        process.env.USERPROFILE = home;
+        const { appHome } = await makeProfile();
+        const projectCwd = await makeTempRoot('ccps-project-');
+        await fs.writeJson(getAppHomePaths(appHome).apiSettingsPath, {
+          env: { ANTHROPIC_AUTH_TOKEN: 'both-token', ANTHROPIC_API_KEY: 'both-key' },
+        });
+
+        const env = await launchCapturingEnv(appHome, projectCwd);
+
+        expect(env.ANTHROPIC_AUTH_TOKEN).toBe('both-token');
+        expect(env.ANTHROPIC_API_KEY).toBe('both-key');
+      } finally {
+        restore();
+      }
+    });
+
+    it('never injects <redacted> placeholders from imported profiles into the launch env', async () => {
+      const restore = isolateEnv();
+      try {
+        const home = await makeTempRoot('ccps-home-');
+        process.env.HOME = home;
+        process.env.USERPROFILE = home;
+        const { appHome, paths } = await makeProfile();
+        // An imported profile carries <redacted> placeholders for stripped
+        // secrets until the user re-enters them.
+        await fs.writeJson(paths.settingsPath, {
+          autoMemoryDirectory: paths.autoMemoryPath,
+          env: {
+            ANTHROPIC_API_KEY: '<redacted>',
+            ANTHROPIC_BASE_URL: 'https://router.example.test',
+          },
+        });
+
+        const plan = await buildLaunchPlan({
+          appHomePath: appHome,
+          profileName: 'coding',
+          cwd: await makeTempRoot('ccps-project-'),
+        });
+
+        expect(plan.apiEnv).toEqual({ ANTHROPIC_BASE_URL: 'https://router.example.test' });
+        expect(plan.apiConfig.keys).toEqual(['ANTHROPIC_BASE_URL']);
+      } finally {
+        restore();
+      }
+    });
+
+    it('surfaces the auth-env conflict as a dry-run warning', async () => {
+      const restore = isolateEnv();
+      try {
+        const home = await makeTempRoot('ccps-home-');
+        process.env.HOME = home;
+        process.env.USERPROFILE = home;
+        const { appHome } = await makeProfile();
+        await fs.outputJson(join(home, '.claude', 'settings.json'), {
+          env: { ANTHROPIC_AUTH_TOKEN: 'real-token' },
+        });
+        await fs.writeJson(getAppHomePaths(appHome).apiSettingsPath, {
+          env: { ANTHROPIC_API_KEY: 'common-key' },
+        });
+
+        const plan = await buildLaunchPlan({
+          appHomePath: appHome,
+          profileName: 'coding',
+          cwd: await makeTempRoot('ccps-project-'),
+        });
+        const output = formatLaunchDryRun(plan);
+
+        expect(plan.warnings.some((w) => w.code === 'LAUNCH_AUTH_ENV_CONFLICT')).toBe(true);
+        expect(output).toContain('LAUNCH_AUTH_ENV_CONFLICT');
+      } finally {
+        restore();
+      }
+    });
   });
 });

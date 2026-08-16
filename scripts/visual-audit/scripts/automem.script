@@ -1,0 +1,30 @@
+# Session 5: auto memory drill (sidebar tree entry) + restore collision dialog.
+send {SPACE}
+wait 400
+send {RIGHT}
+wait 300
+until-hl "Auto Memory (3)|MEMORY.md (3)|自动记忆 (3)"
+shot g00-tree-automem-row
+send {ENTER}
+wait 900
+shot g01-automem
+send c
+wait 400
+shot g02-automem-copy-prompt
+send {ESC}
+wait 300
+send u
+wait 700
+shot g03-automem-restore-picker
+until-marker "topic-01" 10
+send {ENTER}
+wait 600
+shot g04-collision-dialog
+send r
+wait 400
+shot g05-collision-rename
+send {ESC}
+wait 300
+send {ESC}
+wait 400
+send {ESC}

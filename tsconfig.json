@@ -8,9 +8,10 @@
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
+    "jsx": "react-jsx",
     "types": ["node", "vitest/globals"],
     "noEmit": true
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "tsup.config.ts"],
-  "exclude": ["dist", "node_modules"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.mts", "test/**/*.ts", "test/**/*.tsx", "tsup.config.ts"],
+  "exclude": ["dist", "node_modules", "src/tui/prototype-workbench", "src/tui/prototype-edit-session", "src/tui/prototype-ink-gate", "src/tui/prototype-diff", "src/tui/workbench"]
 }

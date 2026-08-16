@@ -1,8 +1,7 @@
 import { Command } from 'commander';
 
 import { registerCommands, type CommandRuntime } from './commands';
-
-export const cliVersion = '0.1.0';
+import { cliVersion } from './core/version';
 
 export type CreateProgramOptions = Partial<CommandRuntime>;
 
