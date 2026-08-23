@@ -59,6 +59,9 @@ describe('WelcomeBanner Ink component', () => {
         columns: 80,
         configEnabled: true,
         tick,
+        // Pin an empty env: CI=true (always set on GitHub Actions) would
+        // degrade the tier to plain and break the full-tier assertions.
+        env: {},
       }),
       {
         stdout: stdout as unknown as NodeJS.WriteStream,
