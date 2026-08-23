@@ -59,8 +59,11 @@ describe('WelcomeBanner Ink component', () => {
         columns: 80,
         configEnabled: true,
         tick,
-        // Pin an empty env: CI=true (always set on GitHub Actions) would
-        // degrade the tier to plain and break the full-tier assertions.
+        // Pin platform and env: CI=true (always set on GitHub Actions)
+        // would degrade the tier to plain, and win32 without terminal
+        // markers resolves to the ascii charset — both break the
+        // full-tier unicode assertions below.
+        platform: 'darwin',
         env: {},
       }),
       {
