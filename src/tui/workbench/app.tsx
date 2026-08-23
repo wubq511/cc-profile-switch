@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Box, useApp, useInput, useStdin, useStdout } from 'ink';
 
-import { getAppHomePaths, loadAppConfig } from '../../core/app-config';
+import { getAppHomePaths, loadAppConfig, loadAppConfigSync } from '../../core/app-config';
 import { type LaunchPlan } from '../../core/launcher';
 import { SkillsDiscoverySession } from '../../core/skills-discovery';
 import { type McpServerState } from '../../core/mcp-list';
@@ -84,6 +84,9 @@ type WorkbenchAppProps = {
   /** `workbench.editor` from config.json (§13.2): editor command override for
    * the external-edit handoff, e.g. "code -w". Undefined = VS Code default. */
   editorOverride?: string;
+  /** Override the welcome banner config read (tests). Undefined = read
+   * `welcomeBanner` from config.json, defaulting to enabled. */
+  welcomeBannerEnabled?: boolean;
 };
 
 export function WorkbenchApp({
@@ -103,6 +106,7 @@ export function WorkbenchApp({
   initialHintUsage,
   onHintUsed,
   editorOverride,
+  welcomeBannerEnabled,
 }: WorkbenchAppProps): React.ReactElement {
   const inner = React.createElement(WorkbenchInner, {
     data,
@@ -117,6 +121,7 @@ export function WorkbenchApp({
     configLoader,
     captureProcess,
     editorOverride,
+    welcomeBannerEnabled,
   });
   return React.createElement(
     I18nProvider,
@@ -142,6 +147,7 @@ function WorkbenchInner({
   configLoader,
   captureProcess,
   editorOverride,
+  welcomeBannerEnabled,
 }: {
   data: WorkbenchData;
   headless?: boolean;
@@ -161,6 +167,7 @@ function WorkbenchInner({
   configLoader?: (appHomePath: string) => Promise<ReturnType<typeof loadAppConfig>>;
   captureProcess?: CaptureProcess;
   editorOverride?: string;
+  welcomeBannerEnabled?: boolean;
 }): React.ReactElement {
   const { t, locale, switchLocale } = useI18n();
   // Core services (buildLaunchPlan, validateProfile, preview…) produce user-
@@ -171,6 +178,14 @@ function WorkbenchInner({
     [t],
   );
   const appHomePath = getAppHomePaths().appHomePath;
+  const welcomeBannerConfigEnabled = useMemo(() => {
+    if (welcomeBannerEnabled !== undefined) return welcomeBannerEnabled;
+    try {
+      return loadAppConfigSync(appHomePath).welcomeBanner !== false;
+    } catch {
+      return true;
+    }
+  }, [appHomePath, welcomeBannerEnabled]);
   const { exit } = useApp();
   const { stdout } = useStdout();
   const { stdin: inkStdin } = useStdin();
@@ -362,6 +377,13 @@ function WorkbenchInner({
       }
 
       if (welcomeVisible) {
+        // Focus-in/out reports are not keypresses: the terminal answers the
+        // \x1b[?1004h focus-reporting probe written at mount (workbench/
+        // index.mts) with \x1b[I / \x1b[O, and Ink's keypress parser strips
+        // the escape prefix, so handlers see the bare '[I' / '[O'. Without
+        // this filter the card self-dismissed on the focus-in answer right
+        // after startup.
+        if (input === '[I' || input === '[O') return;
         setWelcomeVisible(false);
         return;
       }
@@ -628,7 +650,11 @@ function WorkbenchInner({
       Box,
       { flexDirection: 'column', width, height },
       welcomeVisible
-        ? React.createElement(WelcomeCard, { width, height })
+        ? React.createElement(WelcomeCard, {
+            width,
+            height,
+            configEnabled: welcomeBannerConfigEnabled,
+          })
         : helpVisible
           ? React.createElement(KeymapOverlay, { visible: true })
           : wizardOverlay

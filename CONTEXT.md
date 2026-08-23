@@ -71,3 +71,7 @@ _Avoid_: Test plan, test suite
 **Pathology Library**:
 The enumerated set of malformed or degraded Profile shapes referenced by ID from Scenario Matrix rows, produced by the deterministic fixture generator rather than captured from real Profiles.
 _Avoid_: Real Profile fixture, snapshot
+
+**Welcome Banner**:
+The character-art banner of the Profile Workbench, shown on its welcome screen and in interactive `--help`/`--version` output; it renders the `ccps` wordmark with a color gradient and never appears in non-interactive output.
+_Avoid_: Launch banner, splash screen, logo

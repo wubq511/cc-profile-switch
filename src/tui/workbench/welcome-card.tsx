@@ -2,11 +2,20 @@ import React from 'react';
 import { Box, Text } from 'ink';
 
 import { useI18n } from './i18n/react';
+import { WelcomeBanner } from './welcome-banner/WelcomeBanner';
 
 /** Once-per-session welcome card (issue #76 §5), extracted from app.tsx
  *  (issue #89). Pure presentation; the session flag that gates it lives in
  *  app.tsx next to `resetWelcomeSessionForTests`. */
-export function WelcomeCard({ width, height }: { width: number; height: number }): React.ReactElement {
+export function WelcomeCard({
+  width,
+  height,
+  configEnabled,
+}: {
+  width: number;
+  height: number;
+  configEnabled: boolean;
+}): React.ReactElement {
   const { t } = useI18n();
 
   return React.createElement(
@@ -15,6 +24,7 @@ export function WelcomeCard({ width, height }: { width: number; height: number }
     React.createElement(
       Box,
       { flexDirection: 'column', borderStyle: 'round', paddingX: 2, paddingY: 1 },
+      React.createElement(WelcomeBanner, { columns: width, configEnabled }),
       React.createElement(Text, { bold: true }, t('welcome.title')),
       React.createElement(
         Box,

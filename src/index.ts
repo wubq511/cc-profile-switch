@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { createProgram } from './cli';
+import { resolveEntryMode } from './entry-mode';
 import { formatError } from './utils/errors';
 
 async function main(): Promise<void> {
@@ -12,18 +13,18 @@ async function main(): Promise<void> {
     return;
   }
 
-  const isDualTty = process.stdin.isTTY && process.stdout.isTTY;
-  const hasSubcommand = extractSubcommand() !== undefined;
+  const isDualTty = Boolean(process.stdin.isTTY && process.stdout.isTTY);
+  const entryMode = resolveEntryMode(process.argv.slice(2), isDualTty);
 
   // Interactive dual-TTY bare `ccps` opens Profile Workbench (issue #54 §3.1).
-  if (isDualTty && !hasSubcommand) {
+  if (entryMode === 'workbench') {
     const { launchWorkbench } = await import('./tui/workbench-loader');
     await launchWorkbench();
     return;
   }
 
   // Non-TTY bare `ccps` prints help to stderr, exit 1 (issue #54 §3.1).
-  if (!isDualTty && !hasSubcommand) {
+  if (entryMode === 'help') {
     const program = createProgram();
     process.stderr.write(program.helpInformation());
     process.exitCode = 1;
@@ -32,16 +33,6 @@ async function main(): Promise<void> {
 
   const program = createProgram();
   await program.parseAsync(process.argv);
-}
-
-function extractSubcommand(): string | undefined {
-  // argv = [node, ccps, ...args]
-  const args = process.argv.slice(2);
-  if (args.length === 0) return undefined;
-  const first = args[0];
-  // Flags like --help, --version are not subcommands
-  if (first.startsWith('-')) return undefined;
-  return first;
 }
 
 main().catch((error: unknown) => {

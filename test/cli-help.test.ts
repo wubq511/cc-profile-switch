@@ -50,6 +50,7 @@ describe('ccps help', () => {
       );
 
       expect(output.join('')).toContain('Usage: ccps');
+      expect(output.join('')).not.toContain('█');
       expect(existsSync(join(userHome, '.cc-profile-switch'))).toBe(false);
     } finally {
       if (originalHome === undefined) {
@@ -64,5 +65,22 @@ describe('ccps help', () => {
       }
       rmSync(userHome, { recursive: true, force: true });
     }
+  });
+
+  it('non-TTY --version output is unchanged and contains no banner', () => {
+    const output: string[] = [];
+    const program = createProgram();
+    program.configureOutput({
+      writeOut: (value) => output.push(value),
+      writeErr: (value) => output.push(value),
+    });
+    program.exitOverride();
+
+    expect(() => program.parse(['node', 'ccps', '--version'], { from: 'user' })).toThrow(
+      expect.objectContaining({ code: 'commander.version' }),
+    );
+
+    expect(output.join('')).toBe('0.1.0\n');
+    expect(output.join('')).not.toContain('█');
   });
 });

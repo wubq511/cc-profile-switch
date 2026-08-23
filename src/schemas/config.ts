@@ -49,8 +49,9 @@ export const appConfigV2Schema = z
         editor: z.string().optional(),
         skillsDiscoveryExperimental: z.boolean().default(true),
         language: z.enum(['zh', 'en']).optional(),
+        welcomeBanner: z.boolean().default(true),
       })
-      .default({ skillsDiscoveryExperimental: true }),
+      .default({ skillsDiscoveryExperimental: true, welcomeBanner: true }),
   })
   .strict();
 

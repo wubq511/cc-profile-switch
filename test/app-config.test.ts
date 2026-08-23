@@ -39,7 +39,7 @@ describe('app config', () => {
       createdAt: '2026-01-02T03:04:05.000Z',
       updatedAt: '2026-01-02T03:04:05.000Z',
       recovery: { retentionDays: 30 },
-      workbench: { skillsDiscoveryExperimental: true },
+      workbench: { skillsDiscoveryExperimental: true, welcomeBanner: true },
     });
   });
 
@@ -179,6 +179,26 @@ describe('app config', () => {
     expect(saved.recovery.retentionDays).toBe(7);
     expect(saved.workbench.skillsDiscoveryExperimental).toBe(false);
     expect(saved.workbench.language).toBe('zh');
+  });
+
+  it('defaults welcomeBanner to true and allows disabling it', async () => {
+    const appHome = await makeAppHome();
+    const config = await createAppConfig(appHome, { clock: fixedClock });
+
+    expect(config.workbench.welcomeBanner).toBe(true);
+
+    const saved = await saveAppConfig(
+      appHome,
+      {
+        ...config,
+        workbench: { ...config.workbench, welcomeBanner: false },
+      },
+      { clock: laterClock },
+    );
+    expect(saved.workbench.welcomeBanner).toBe(false);
+
+    const loaded = await loadAppConfig(appHome);
+    expect(loaded.workbench.welcomeBanner).toBe(false);
   });
 
   it('writes config atomically (no .tmp residue)', async () => {

@@ -52,7 +52,7 @@ const appConfigSpec: VersionedJsonSpec<AppConfig, 2> = {
         createdAt: v1.createdAt,
         updatedAt: v1.updatedAt,
         recovery: { retentionDays: 30 },
-        workbench: { skillsDiscoveryExperimental: true },
+        workbench: { skillsDiscoveryExperimental: true, welcomeBanner: true },
       };
     }
     throw new CcpsError(
@@ -87,7 +87,7 @@ export function createInitialAppConfig(clock: Clock = () => new Date()): AppConf
     createdAt: timestamp,
     updatedAt: timestamp,
     recovery: { retentionDays: 30 },
-    workbench: { skillsDiscoveryExperimental: true },
+    workbench: { skillsDiscoveryExperimental: true, welcomeBanner: true },
   };
 }
 
