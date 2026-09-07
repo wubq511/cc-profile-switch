@@ -6,8 +6,14 @@ import { getAppHomePaths, loadAppConfig, type Clock } from './app-config';
 import { atomicWriteJson } from './versioned-json';
 import { processSecrets, pruneRuntimeInternals } from './profile-export';
 import {
+  selectResourcesIntoStaging,
+  sweepRuntimeEntriesFromStagedProfile,
+  type ResourceCopyFailure,
+} from './resource-policy';
+import {
   clearNativeMcpServers,
   collectLegacyMcpEnvKeys,
+  collectMcpHeaderKeys,
   collectSettingsSecretKeys,
   repairImportedProfile,
   reRegisterMcpServers,
@@ -25,27 +31,33 @@ import type { CaptureProcess } from '../platform/process';
 import { profileConfigSchema } from '../schemas/profile';
 import type { BundleStrippedKeys } from '../schemas/profile-bundle';
 import {
-  customTemplateManifestSchema,
+  CUSTOM_TEMPLATE_MANIFEST_VERSION,
+  customTemplateManifestV2Schema,
+  customTemplateV2OrV1Schema,
   type CustomTemplateManifest,
 } from '../schemas/custom-template';
 import { CcpsError } from '../utils/errors';
 
 /**
  * Custom profile templates — save a Profile as a reusable template and create
- * new Profiles from it (spec §11.3, issue #75).
+ * new Profiles from it (spec §11.3, issue #75; boundary per issue #105).
  *
  * On-disk layout (mirrors the export bundle layout):
  *   templates/<name>/
- *     template.json   — zod-validated manifest (CustomTemplateManifest)
- *     profile/        — stripped profile tree (same shape as profiles/<name>/)
+ *     template.json   — zod-validated manifest (CustomTemplateManifest, v2)
+ *     profile/        — resource-selected profile tree (same shape as profiles/<name>/)
  *
  * Safety contract:
- *   - Templates NEVER contain secrets. Secret-class env values are always
+ *   - Templates NEVER contain secrets. Env and MCP header values are always
  *     redacted at save time; unlike export there is no include-secrets opt-in
  *     (templates are plaintext at rest in app home). Key names are recorded in
  *     the manifest for guided re-entry on create (import experience).
- *   - Auto Memory (session-derived), runtime internals (sessions/projects/
- *     OAuth), Backups and the Recovery Bin are never captured.
+ *   - The tree is selected into staging through the same shared resource
+ *     pipeline as export (no whole-tree copy + prune): Auto Memory,
+ *     runtime internals (sessions/history/projects/caches/credentials),
+ *     Backups and the Recovery Bin are never captured. Linked Skills are
+ *     kept as references — the template records their names in
+ *     `linkedSkills` and the link itself is never materialized.
  *   - MCP servers are captured as inventory only; create re-registers them
  *     through the delegated `claude mcp add --scope user` path, never via
  *     direct `.claude.json` writes (import parity).
@@ -94,13 +106,15 @@ export type CreateProfileFromCustomTemplateResult = {
   settingsSecretKeysToReenter: string[];
   /** Legacy root `mcp.json` env key names needing re-entry, grouped by server. */
   legacyMcpEnvKeysToReenter: { server: string; keys: string[] }[];
+  /** MCP HTTP header key names needing re-entry, grouped by server. */
+  mcpHeaderKeysToReenter: { server: string; keys: string[] }[];
   validation: ProfileValidationResult;
 };
 
 /**
  * Scan-only stripping preview for the save-as-template confirmation panel.
- * Copies the profile to a throwaway staging dir, runs the same prune + redact
- * pipeline a real save would run, and reports what would be stripped. Writes
+ * Runs the same resource selection + redact pipeline a real save would run
+ * into a throwaway staging dir, and reports what would be stripped. Writes
  * nothing under `templates/` and never mutates the source profile.
  */
 export async function previewSaveProfileAsTemplate(options: {
@@ -121,7 +135,7 @@ export async function previewSaveProfileAsTemplate(options: {
     profilePaths.profileRootPath,
     async ({ strippedKeys }) => ({
       strippedKeys,
-      strippedCount: countStrippedKeys(strippedKeys),
+      strippedCount: countStripped(strippedKeys),
       autoMemoryExcluded: true as const,
     }),
   );
@@ -153,7 +167,9 @@ export async function saveProfileAsTemplate(
     throw new CcpsError(
       'TEMPLATE_ALREADY_EXISTS',
       'A custom template with this name already exists.',
-      { guidance: `Remove the existing template first or choose a different name: ${templateName}` },
+      {
+        guidance: `Remove the existing template first or choose a different name: ${templateName}`,
+      },
     );
   }
 
@@ -164,20 +180,22 @@ export async function saveProfileAsTemplate(
     templatesPath,
     '.ccps-tmp-',
     profilePaths.profileRootPath,
-    async ({ stagingRoot, stagingProfile, strippedKeys }) => {
-      const manifest = customTemplateManifestSchema.parse({
-        version: 1,
+    async ({ stagingRoot, stagingProfile, strippedKeys, linkedSkills, selection }) => {
+      const manifest = customTemplateManifestV2Schema.parse({
+        version: CUSTOM_TEMPLATE_MANIFEST_VERSION,
         name: templateName,
         ...(await readSourceDescription(stagingProfile)),
         sourceProfile: options.profileName,
         createdAt: (options.clock ?? (() => new Date()))().toISOString(),
         strippedKeys,
         mcpServerNames: await readTemplateMcpServerNames(stagingProfile),
+        linkedSkills,
+        excludedTopLevelEntries: selection.skipped,
       });
       await atomicWriteJson(path.join(stagingRoot, TEMPLATE_MANIFEST_FILE), manifest);
 
       await fs.move(stagingRoot, targetPath, { overwrite: false });
-      return { manifest, strippedCount: countStrippedKeys(strippedKeys) };
+      return { manifest, strippedCount: countStripped(strippedKeys) };
     },
   );
 }
@@ -188,9 +206,7 @@ export async function saveProfileAsTemplate(
  * validation is skipped — listing must never crash, and nothing is silently
  * deleted.
  */
-export async function listCustomTemplates(
-  appHomePath?: string,
-): Promise<CustomTemplateManifest[]> {
+export async function listCustomTemplates(appHomePath?: string): Promise<CustomTemplateManifest[]> {
   const home = appHomePath ?? getAppHomePaths().appHomePath;
   const templatesPath = resolveInside(home, TEMPLATES_DIR);
   if (!(await fs.pathExists(templatesPath))) {
@@ -204,7 +220,7 @@ export async function listCustomTemplates(
     }
     try {
       const raw = await fs.readJson(path.join(templatesPath, entry.name, TEMPLATE_MANIFEST_FILE));
-      manifests.push(customTemplateManifestSchema.parse(raw));
+      manifests.push(parseTemplateManifest(raw));
     } catch {
       // skip — never delete, never crash
     }
@@ -213,10 +229,19 @@ export async function listCustomTemplates(
 }
 
 /**
+ * Parse a template manifest of any supported version (v1, v2); a newer
+ * version fails schema validation (rejected upstream, never silently read).
+ */
+export function parseTemplateManifest(raw: unknown): CustomTemplateManifest {
+  return customTemplateV2OrV1Schema.parse(raw);
+}
+
+/**
  * Create a new Profile from a custom template. Reuses the import experience:
  * the stripped tree lands, managed fields are repaired for the new name, MCP
  * servers are re-registered through the delegated `claude mcp add` path, and
- * the result lists every secret key name needing guided re-entry.
+ * the result lists every secret key name needing guided re-entry (env and
+ * HTTP header key names alike).
  */
 export async function createProfileFromCustomTemplate(
   options: CreateProfileFromCustomTemplateOptions,
@@ -253,6 +278,29 @@ export async function createProfileFromCustomTemplate(
     errorOnExist: true,
   });
 
+  // Defense in depth for templates saved by older ccps versions (v1 era,
+  // pre-policy): a legacy template tree may still carry runtime entries.
+  // The staged copy is swept with the same runtime-entry rule as imports;
+  // the stored template artifact itself is never rewritten.
+  await sweepRuntimeEntriesFromStagedProfile(targetPaths.profileRootPath);
+
+  // Linked Skills travel as references only: re-create the symlink (if the
+  // source target still exists) rather than materializing the external dir.
+  const linkedSkills = manifest.version >= 2 ? manifest.linkedSkills : [];
+  for (const skillName of linkedSkills) {
+    const linkPath = path.join(targetPaths.claudeHomePath, 'skills', skillName);
+    const linkedTarget = await readTemplateLinkedSkillTarget(templateDir, skillName);
+    if (linkedTarget === undefined) {
+      // Source tree unavailable from this machine/template — the new profile
+      // simply lacks the skill; re-link is a manual step.
+      continue;
+    }
+    await fs.remove(linkPath).catch(() => undefined);
+    await fs.symlink(linkedTarget, linkPath, 'dir').catch(async () => {
+      await fs.symlink(linkedTarget, linkPath, 'junction').catch(() => undefined);
+    });
+  }
+
   // Capture the MCP inventory, then reset .claude.json — the only writes that
   // populate it come from delegated `claude mcp add --scope user`.
   const servers = await readMcpServersMap(targetPaths.profileRootPath);
@@ -280,8 +328,29 @@ export async function createProfileFromCustomTemplate(
     mcpServers,
     settingsSecretKeysToReenter: collectSettingsSecretKeys(manifest.strippedKeys),
     legacyMcpEnvKeysToReenter: collectLegacyMcpEnvKeys(manifest.strippedKeys),
+    mcpHeaderKeysToReenter: collectMcpHeaderKeys(manifest.strippedKeys),
     validation,
   };
+}
+
+/** Read the recorded target for a template Linked Skill entry, if present. */
+async function readTemplateLinkedSkillTarget(
+  templateDir: string,
+  skillName: string,
+): Promise<string | undefined> {
+  try {
+    const raw = await fs.readJson(path.join(templateDir, TEMPLATE_LINKED_SKILLS_FILE));
+    if (isRecordShape(raw) && typeof raw[skillName] === 'string') {
+      return raw[skillName];
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
+function isRecordShape(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /**
@@ -320,13 +389,17 @@ function reservedTemplateNames(): Set<string> {
   return new Set([...listProfileTemplates(), 'blank', 'none']);
 }
 
+/** Sidecar recording Linked Skill symlink targets (relative to the source). */
+const TEMPLATE_LINKED_SKILLS_FILE = 'linked-skills.json';
+
 /**
- * Shared staging pipeline for preview and save: mkdtemp a staging dir under
- * `stagingParent`, copy the profile tree into staging/profile/, strip it down
- * to what a template captures (no Auto Memory, no runtime internals), and
- * redact every secret-class value. The callback receives the staged paths and
- * the harvested strippedKeys; staging is always removed afterwards (a no-op
- * once the callback has renamed it away, as save does).
+ * Shared staging pipeline for preview and save: run the shared resource
+ * selection into a staging dir under `stagingParent` (no Auto Memory, no
+ * runtime internals, no whole-tree copy), keep Linked Skill references, and
+ * redact every secret-class value. The callback receives the staged paths,
+ * the harvested strippedKeys, and the selection summary; staging is always
+ * removed afterwards (a no-op once the callback has renamed it away, as save
+ * does).
  */
 async function withStrippedStaging<T>(
   stagingParent: string,
@@ -336,39 +409,118 @@ async function withStrippedStaging<T>(
     stagingRoot: string;
     stagingProfile: string;
     strippedKeys: BundleStrippedKeys[];
+    linkedSkills: string[];
+    selection: { skipped: string[] };
   }) => Promise<T>,
 ): Promise<T> {
   const stagingRoot = await mkdtemp(path.join(stagingParent, prefix));
   try {
     const stagingProfile = path.join(stagingRoot, TEMPLATE_PROFILE_DIR);
-    // The source profile is never mutated; all stripping happens on the copy.
-    await fs.copy(profileRootPath, stagingProfile, {
-      overwrite: false,
-      errorOnExist: true,
+    const selection = await selectResourcesIntoStaging({
+      sourceProfileRoot: profileRootPath,
+      stagingProfileRoot: stagingProfile,
+      includeAutoMemory: false,
+      // Linked Skills are kept as references (recorded in the manifest +
+      // sidecar), never materialized — template-specific policy (§11.3).
+      keepLinkedSkillReferences: true,
     });
-    await prepareStrippedTree(stagingProfile);
+    if (selection.failures.length > 0) {
+      throwOnSelectionFailure(selection.failures);
+    }
+    // Linked Skills cannot pass the selection's symlink refusal; templates
+    // keep them as references. Read the target strings from the SOURCE links
+    // (only the link itself, never the external content) so the manifest and
+    // sidecar agree on exactly the links create can re-create.
+    const linkedSkillTargets = await collectLinkedSkillTargets(profileRootPath);
+    await writeLinkedSkillSidecar(stagingRoot, linkedSkillTargets);
+
+    // Defense in depth on the staged copy: drop any runtime entry that could
+    // not be selected (the allowlist already prevents them) and prune
+    // .claude.json to the MCP inventory — OAuth/account fields never enter a
+    // template. These calls never touch the source profile.
+    await sweepRuntimeEntriesFromStagedProfile(stagingProfile);
+    await pruneRuntimeInternals(stagingProfile);
+
     // Always redact: templates never contain secrets — there is no
-    // include-secrets opt-in (§11.3).
+    // include-secrets opt-in (§11.3). The redaction pass also prunes
+    // .claude.json to the MCP inventory (env/header values stripped,
+    // OAuth/account fields dropped) and strips settings/mcp.json env values.
     const { strippedKeys } = await processSecrets(stagingProfile, { redact: true });
-    return await fn({ stagingRoot, stagingProfile, strippedKeys });
+    return await fn({
+      stagingRoot,
+      stagingProfile,
+      strippedKeys,
+      linkedSkills: [...linkedSkillTargets.keys()],
+      selection: { skipped: selection.skipped },
+    });
   } finally {
     await fs.remove(stagingRoot);
   }
 }
 
+function throwOnSelectionFailure(failures: ResourceCopyFailure[]): void {
+  const first = failures[0];
+  if (first === undefined) {
+    return;
+  }
+  throw new CcpsError(first.code, first.message, { guidance: first.guidance });
+}
+
 /**
- * Strip a staged profile tree down to what a template captures: drop Auto
- * Memory (session-derived) and runtime internals (sessions/projects/OAuth).
+ * Targets of Linked Skills (symlinks directly under claude-home/skills/), keyed
+ * by skill name. Only the link itself is read — the external directory is
+ * never entered. A link whose target cannot be read records nothing: the
+ * manifest then omits it rather than promising a reference it cannot keep.
  */
-async function prepareStrippedTree(stagingProfile: string): Promise<void> {
-  await fs.remove(path.join(stagingProfile, 'claude-home', 'memory', 'auto'));
-  await pruneRuntimeInternals(stagingProfile);
+async function collectLinkedSkillTargets(profileRootPath: string): Promise<Map<string, string>> {
+  const skillsDir = path.join(profileRootPath, 'claude-home', 'skills');
+  let entries: fs.Dirent[];
+  try {
+    entries = await fs.readdir(skillsDir, { withFileTypes: true });
+  } catch (error) {
+    if (isNodeError(error) && error.code === 'ENOENT') {
+      return new Map();
+    }
+    throw error;
+  }
+  const targets = new Map<string, string>();
+  for (const entry of entries) {
+    if (!entry.isSymbolicLink()) {
+      continue;
+    }
+    const linkPath = path.join(skillsDir, entry.name);
+    try {
+      targets.set(entry.name, await fs.readlink(linkPath));
+    } catch {
+      // unreadable link — record nothing for it
+    }
+  }
+  return targets;
+}
+
+/**
+ * Record Linked Skill targets in a sidecar so create can re-create the
+ * references. Only the target path string is stored — the external directory
+ * itself is never read or copied into the template.
+ */
+async function writeLinkedSkillSidecar(
+  stagingRoot: string,
+  targets: Map<string, string>,
+): Promise<void> {
+  if (targets.size === 0) {
+    return;
+  }
+  await fs.writeJson(
+    path.join(stagingRoot, TEMPLATE_LINKED_SKILLS_FILE),
+    Object.fromEntries(targets),
+    { spaces: 2 },
+  );
 }
 
 async function readTemplateManifest(manifestPath: string): Promise<CustomTemplateManifest> {
   try {
     const raw = await fs.readJson(manifestPath);
-    return customTemplateManifestSchema.parse(raw);
+    return parseTemplateManifest(raw);
   } catch (error) {
     throw new CcpsError(
       'TEMPLATE_INVALID',
@@ -382,9 +534,7 @@ async function readTemplateManifest(manifestPath: string): Promise<CustomTemplat
 }
 
 /** Carry the source profile's description into the manifest, when present. */
-async function readSourceDescription(
-  stagingProfile: string,
-): Promise<{ description?: string }> {
+async function readSourceDescription(stagingProfile: string): Promise<{ description?: string }> {
   try {
     const raw = await fs.readJson(path.join(stagingProfile, 'profile.json'));
     const parsed = profileConfigSchema.safeParse(raw);
@@ -400,6 +550,6 @@ async function readTemplateMcpServerNames(stagingProfile: string): Promise<strin
   return [...servers.keys()].sort((a, b) => a.localeCompare(b));
 }
 
-function countStrippedKeys(strippedKeys: BundleStrippedKeys[]): number {
+function countStripped(strippedKeys: BundleStrippedKeys[]): number {
   return strippedKeys.reduce((total, entry) => total + entry.keys.length, 0);
 }
