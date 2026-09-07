@@ -29,6 +29,7 @@ import {
   getRecoveryItemDisplayName,
 } from '../src/core/recovery-bin';
 import { createProfileFromTemplate } from '../src/core/profile-template';
+import { validateProfile } from '../src/core/validator';
 
 describe('Recovery Bin service', () => {
   const tempRoots: string[] = [];
@@ -834,6 +835,111 @@ describe('Recovery Bin service', () => {
       // Both the recreated original and the new-name restore exist.
       expect(await fs.pathExists(join(profilesPath, 'coding'))).toBe(true);
       expect(await fs.pathExists(join(profilesPath, 'coding-2', 'profile.json'))).toBe(true);
+    });
+
+    it('restore-as-new-name (#108): reports the new name and rebinds identity to the target', async () => {
+      const appHome = await makeAppHome();
+      const profileDir = await makeProfile(appHome, 'alpha');
+      await fs.writeFile(
+        join(profileDir, 'profile.json'),
+        JSON.stringify({
+          name: 'alpha',
+          description: 'user description',
+          launch: { mcpMode: 'none' },
+          createdAt: '2026-07-31T16:00:00.000Z',
+          updatedAt: '2026-07-31T16:00:00.000Z',
+        }),
+        'utf8',
+      );
+
+      const item = await createFileTreeItem({
+        appHomePath: appHome,
+        origin: 'remove',
+        kind: 'profile',
+        profile: 'alpha',
+        coordinates: { targetRelativePath: 'profiles/alpha' },
+        sourcePath: profileDir,
+        clock: fixedClock,
+      });
+      await fs.remove(profileDir);
+
+      const result = await restoreRecoveryItem({
+        appHomePath: appHome,
+        itemId: item.id,
+        collisionResolution: 'restore-as-new-name',
+        newName: 'beta',
+        clock: fixedClock,
+      });
+
+      // The restore result reports the ACTUAL target (issue #108).
+      expect(result.restoredProfile).toBe('beta');
+      expect(result.consumed).toBe(true);
+
+      const { profilesPath } = getAppHomePaths(appHome);
+      const betaRoot = join(profilesPath, 'beta');
+
+      // profile.json name rebound; user fields preserved.
+      const betaProfileJson = await fs.readJson(join(betaRoot, 'profile.json'));
+      expect(betaProfileJson.name).toBe('beta');
+      expect(betaProfileJson.description).toBe('user description');
+      expect(betaProfileJson.launch).toEqual({ mcpMode: 'none' });
+
+      // Auto memory path bound to beta; MEMORY.md heading follows.
+      const betaSettings = await fs.readJson(join(betaRoot, 'claude-home', 'settings.json'));
+      expect(betaSettings.autoMemoryDirectory).toBe(join(betaRoot, 'claude-home', 'memory', 'auto'));
+      await expect(
+        fs.readFile(join(betaRoot, 'claude-home', 'memory', 'auto', 'MEMORY.md'), 'utf8'),
+      ).resolves.toContain('# beta Auto Memory');
+
+      // Managed boundary rule present at the restored target.
+      await expect(
+        fs.readFile(join(betaRoot, 'claude-home', 'rules', 'ccps-profile.md'), 'utf8'),
+      ).resolves.toContain('ccps-managed-profile-boundary:start:v2');
+
+      // Validate no longer reports a restore-introduced mismatch.
+      const validation = await validateProfile({ appHomePath: appHome, name: 'beta' });
+      expect(validation.findings.map((finding) => finding.code)).not.toContain(
+        'PROFILE_MEMORY_DIRECTORY_MISMATCH',
+      );
+
+      // The source item was consumed.
+      expect(await listRecoveryBinItems(appHome)).toHaveLength(0);
+    });
+
+    it('restore-as-new-name (#108): a pre-publish repair failure occupies no name and keeps the item', async () => {
+      const appHome = await makeAppHome();
+      const profileDir = await makeProfile(appHome, 'alpha');
+      // Break the payload: no profile.json inside the removed profile tree.
+      await fs.remove(join(profileDir, 'profile.json'));
+
+      const item = await createFileTreeItem({
+        appHomePath: appHome,
+        origin: 'remove',
+        kind: 'profile',
+        profile: 'alpha',
+        coordinates: { targetRelativePath: 'profiles/alpha' },
+        sourcePath: profileDir,
+        clock: fixedClock,
+      });
+      await fs.remove(profileDir);
+
+      await expect(
+        restoreRecoveryItem({
+          appHomePath: appHome,
+          itemId: item.id,
+          collisionResolution: 'restore-as-new-name',
+          newName: 'gamma',
+          clock: fixedClock,
+        }),
+      ).rejects.toMatchObject({ code: 'PROFILE_IDENTITY_REPAIR_FAILED' });
+
+      // Commit-point contract: no gamma directory, no staging residue, and
+      // the Recovery Item is intact for retry.
+      const { profilesPath } = getAppHomePaths(appHome);
+      expect(await fs.pathExists(join(profilesPath, 'gamma'))).toBe(false);
+      const residue = (await fs.readdir(profilesPath)).filter((name) => name.startsWith('.ccps-'));
+      expect(residue).toEqual([]);
+      expect(await listRecoveryBinItems(appHome)).toHaveLength(1);
     });
 
     it('restores a profile-kind item back in place (S12)', async () => {

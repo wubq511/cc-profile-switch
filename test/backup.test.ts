@@ -6,7 +6,17 @@ import path, { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { createAppConfig, getAppHomePaths } from '../src/core/app-config';
-import { listBackups, permanentlyDeleteBackup, restoreProfileFromBackup } from '../src/core/backup';
+import {
+  allocateBackupDirPath,
+  createBackupStagingDir,
+  listBackups,
+  parseBackupId,
+  permanentlyDeleteBackup,
+  publishBackupFromStaging,
+  publishBackupWithCollisionRetry,
+  restoreProfileFromBackup,
+} from '../src/core/backup';
+import { validateProfile } from '../src/core/validator';
 import { backupProfile } from '../src/core/profile';
 import { createProfileFromTemplate } from '../src/core/profile-template';
 
@@ -298,13 +308,15 @@ describe('Profile Backup service', () => {
     it('blocks backup ids that escape the backups directory', async () => {
       const appHome = await makeAppHome();
 
+      // The strict protocol rejects the traversal-shaped id outright; the
+      // traversal can never reach resolveInside.
       await expect(
         restoreProfileFromBackup({
           appHomePath: appHome,
           backupId: '../escape-20260801-100000',
           clock: restoreClock,
         }),
-      ).rejects.toMatchObject({ code: 'PATH_OUTSIDE_BASE' });
+      ).rejects.toMatchObject({ code: 'BACKUP_INVALID_ID' });
     });
   });
 
@@ -346,9 +358,259 @@ describe('Profile Backup service', () => {
     it('blocks backup ids that escape the backups directory', async () => {
       const appHome = await makeAppHome();
 
+      // The strict protocol rejects the traversal-shaped id outright; the
+      // traversal can never reach resolveInside.
       await expect(
         permanentlyDeleteBackup('../escape-20260801-100000', appHome),
-      ).rejects.toMatchObject({ code: 'PATH_OUTSIDE_BASE' });
+      ).rejects.toMatchObject({ code: 'BACKUP_INVALID_ID' });
+    });
+  });
+
+  // ─── Backup ID protocol — same-second ids, #107 ───────────────────────
+
+  describe('Backup ID protocol (#107)', () => {
+    it('lists, restores, and deletes a same-second suffixed backup id end to end', async () => {
+      const appHome = await makeAppHome();
+      await makeProfile(appHome, 'alpha');
+      const { backupsPath } = getAppHomePaths(appHome);
+      await backupProfile({ appHomePath: appHome, name: 'alpha', clock: backupClock });
+
+      // Second backup in the SAME second through the shared protocol: the
+      // allocator produces a suffixed id and staging→publish lands it as a
+      // first-class backup. (The normal `ccps backup` create path is wired
+      // in ./profile; this exercises the protocol every backup shares.)
+      const secondTarget = await allocateBackupDirPath(backupsPath, 'alpha', backupClock);
+      expect(path.basename(secondTarget)).toBe('alpha-20260801-100000-2');
+      const secondStaging = await createBackupStagingDir(backupsPath);
+      await fs.copy(
+        join(getAppHomePaths(appHome).profilesPath, 'alpha'),
+        secondStaging,
+        { overwrite: false, errorOnExist: true },
+      );
+      await publishBackupFromStaging(secondStaging, secondTarget);
+
+      const list = await listBackups(appHome);
+      expect(list.entries.map((entry) => entry.id)).toEqual([
+        'alpha-20260801-100000',
+        'alpha-20260801-100000-2',
+      ]);
+      expect(list.entries[1].sizeBytes).toBeGreaterThan(0);
+      expect(list.totalSizeBytes).toBe(
+        list.entries.reduce((sum, entry) => sum + entry.sizeBytes, 0),
+      );
+
+      // The suffixed backup restores the content it captured (restoring into
+      // a fresh name proves its own snapshot, not a mix with the first).
+      const secondBackupClaudeMd = await fs.readFile(
+        join(backupsPath, 'alpha-20260801-100000-2', 'claude-home', 'CLAUDE.md'),
+        'utf8',
+      );
+      const restored = await restoreProfileFromBackup({
+        appHomePath: appHome,
+        backupId: 'alpha-20260801-100000-2',
+        newName: 'from-second',
+        clock: restoreClock,
+      });
+      expect(restored.restoredProfile).toBe('from-second');
+      await expect(
+        fs.readFile(
+          join(restored.restoredToPath, 'claude-home', 'CLAUDE.md'),
+          'utf8',
+        ),
+      ).resolves.toBe(secondBackupClaudeMd);
+
+      // Delete removes exactly the selected suffixed item.
+      await permanentlyDeleteBackup('alpha-20260801-100000-2', appHome);
+      const afterDelete = await listBackups(appHome);
+      expect(afterDelete.entries.map((entry) => entry.id)).toEqual(['alpha-20260801-100000']);
+    });
+
+    it('parses hyphenated profile names and timestamp-like segments without mistaking them for counters', () => {
+      expect(parseBackupId('my-profile-20260801-100000')).toEqual({
+        profileName: 'my-profile',
+        timestamp: '20260801-100000',
+        counter: null,
+      });
+      expect(parseBackupId('my-profile-20260801-100000-7')).toEqual({
+        profileName: 'my-profile',
+        timestamp: '20260801-100000',
+        counter: 7,
+      });
+      // A profile whose own name ends in a timestamp-like segment: the final
+      // timestamp is the anchor, the earlier segment belongs to the profile.
+      expect(parseBackupId('release-20260801-999999-20260801-100000-3')).toEqual({
+        profileName: 'release-20260801-999999',
+        timestamp: '20260801-100000',
+        counter: 3,
+      });
+    });
+
+    it('rejects traversal and malformed ids in the shared parser', () => {
+      expect(() => parseBackupId('../escape-20260801-100000')).toThrowError();
+      expect(() => parseBackupId('coding-20260801')).toThrowError();
+      expect(() => parseBackupId('coding')).toThrowError();
+      expect(() => parseBackupId('coding-20260801-100000-')).toThrowError();
+      expect(() => parseBackupId('coding-20260801-100000-2-3')).toThrowError();
+    });
+
+    it('allocates unique same-second targets and stages-publishes without mixing writers', async () => {
+      const appHome = await makeAppHome();
+      await makeProfile(appHome, 'alpha');
+      const { backupsPath } = getAppHomePaths(appHome);
+
+      // Two allocator rounds in the same second each get a fresh id; the
+      // first publish then claims its id on disk and the next allocator
+      // moves past it — no allocation ever targets existing content.
+      const firstTarget = await allocateBackupDirPath(backupsPath, 'alpha', backupClock);
+      expect(path.basename(firstTarget)).toBe('alpha-20260801-100000');
+
+      const staging = await createBackupStagingDir(backupsPath);
+      await fs.writeFile(join(staging, 'payload.txt'), 'first', 'utf8');
+      await publishBackupFromStaging(staging, firstTarget);
+      expect(await fs.pathExists(firstTarget)).toBe(true);
+
+      const secondTarget = await allocateBackupDirPath(backupsPath, 'alpha', backupClock);
+      expect(path.basename(secondTarget)).toBe('alpha-20260801-100000-2');
+      expect(secondTarget).not.toBe(firstTarget);
+
+      // The published backup is immediately first-class: listed, parseable,
+      // deletable through the shared protocol.
+      const list = await listBackups(appHome);
+      expect(list.entries.map((entry) => entry.id)).toEqual(['alpha-20260801-100000']);
+      await permanentlyDeleteBackup('alpha-20260801-100000', appHome);
+      expect((await listBackups(appHome)).entries).toEqual([]);
+    });
+
+    it('concurrent same-second allocations never share a target', async () => {
+      const appHome = await makeAppHome();
+      await makeProfile(appHome, 'alpha');
+      const { backupsPath } = getAppHomePaths(appHome);
+
+      // Two writers allocate in the same second, then both stage and publish.
+      // The publish retry is the arbiter: the id that lands first wins, the
+      // loser republishes under the next counter id — no overwrite, no mix.
+      const [left, right] = await Promise.all([
+        allocateBackupDirPath(backupsPath, 'alpha', backupClock),
+        allocateBackupDirPath(backupsPath, 'alpha', backupClock),
+      ]);
+
+      const stageFor = async (marker: string): Promise<string> => {
+        const staging = await createBackupStagingDir(backupsPath);
+        await fs.writeFile(join(staging, 'marker.txt'), marker, 'utf8');
+        return staging;
+      };
+      const materialize = async (staging: string, target: string): Promise<string> =>
+        publishBackupWithCollisionRetry(
+          staging,
+          target,
+          backupsPath,
+          'alpha',
+          backupClock,
+          async (finalTarget) => {
+            // Exclusive create of the target directory: EEXIST when the
+            // winner claimed the id first — the merge hazard of a plain
+            // errorOnExist directory copy is exactly what this rejects.
+            await fs.mkdir(finalTarget);
+            await fs.copy(staging, finalTarget, { overwrite: false, errorOnExist: true });
+            await fs.remove(staging);
+          },
+        );
+
+      const leftStaging = await stageFor('left');
+      const rightStaging = await stageFor('right');
+      const [leftFinal, rightFinal] = await Promise.all([
+        materialize(leftStaging, left),
+        materialize(rightStaging, right),
+      ]);
+
+      expect(leftFinal).not.toBe(rightFinal);
+      const ids = (await listBackups(appHome)).entries.map((entry) => entry.id).sort();
+      expect(ids).toEqual(['alpha-20260801-100000', 'alpha-20260801-100000-2']);
+    });
+
+    it('staging directories are not listed as backups and carry the reconciled tmp prefix', async () => {
+      const appHome = await makeAppHome();
+      await makeProfile(appHome, 'coding');
+      const { backupsPath } = getAppHomePaths(appHome);
+      await createBackupStagingDir(backupsPath);
+
+      const list = await listBackups(appHome);
+      expect(list.entries).toEqual([]);
+    });
+
+    it('restore-as-new-name applies the identity repair — new name, auto memory, rule, excludes, and clean Validate', async () => {
+      const appHome = await makeAppHome();
+      await makeProfile(appHome, 'alpha');
+      // User customization that must survive the restore.
+      const alphaSettingsPath = join(
+        getAppHomePaths(appHome).profilesPath,
+        'alpha',
+        'claude-home',
+        'settings.json',
+      );
+      const alphaSettings = await fs.readJson(alphaSettingsPath);
+      await fs.writeJson(alphaSettingsPath, {
+        ...alphaSettings,
+        customUserKey: { keep: true },
+      });
+
+      await backupProfile({ appHomePath: appHome, name: 'alpha', clock: backupClock });
+
+      const result = await restoreProfileFromBackup({
+        appHomePath: appHome,
+        backupId: 'alpha-20260801-100000',
+        newName: 'beta',
+        clock: restoreClock,
+      });
+
+      expect(result.restoredProfile).toBe('beta');
+      const betaRoot = join(getAppHomePaths(appHome).profilesPath, 'beta');
+      expect(await fs.pathExists(join(betaRoot, 'profile.json'))).toBe(true);
+
+      const betaProfileJson = await fs.readJson(join(betaRoot, 'profile.json'));
+      expect(betaProfileJson.name).toBe('beta');
+
+      const betaSettings = await fs.readJson(join(betaRoot, 'claude-home', 'settings.json'));
+      expect(betaSettings.autoMemoryDirectory).toBe(join(betaRoot, 'claude-home', 'memory', 'auto'));
+      expect(betaSettings.customUserKey).toEqual({ keep: true });
+
+      await expect(
+        fs.readFile(join(betaRoot, 'claude-home', 'memory', 'auto', 'MEMORY.md'), 'utf8'),
+      ).resolves.toContain('# beta Auto Memory');
+
+      await expect(
+        fs.readFile(join(betaRoot, 'claude-home', 'rules', 'ccps-profile.md'), 'utf8'),
+      ).resolves.toContain('ccps-managed-profile-boundary:start:v2');
+
+      const launchValidation = await validateProfile({ appHomePath: appHome, name: 'beta' });
+      expect(launchValidation.findings.map((finding) => finding.code)).not.toContain(
+        'PROFILE_MEMORY_DIRECTORY_MISMATCH',
+      );
+    });
+
+    it('a pre-publish failure occupies neither the target name nor the listing', async () => {
+      const appHome = await makeAppHome();
+      await makeProfile(appHome, 'alpha');
+      await backupProfile({ appHomePath: appHome, name: 'alpha', clock: backupClock });
+
+      // Corrupt the backup so the identity repair refuses it: profile.json gone.
+      const { backupsPath } = getAppHomePaths(appHome);
+      await fs.remove(join(backupsPath, 'alpha-20260801-100000', 'profile.json'));
+
+      await expect(
+        restoreProfileFromBackup({
+          appHomePath: appHome,
+          backupId: 'alpha-20260801-100000',
+          newName: 'beta',
+          clock: restoreClock,
+        }),
+      ).rejects.toMatchObject({ code: 'PROFILE_IDENTITY_REPAIR_FAILED' });
+
+      // No beta profile, no staging residue in profiles/.
+      const { profilesPath } = getAppHomePaths(appHome);
+      expect(await fs.pathExists(join(profilesPath, 'beta'))).toBe(false);
+      const residue = (await fs.readdir(profilesPath)).filter((name) => name.startsWith('.ccps-'));
+      expect(residue).toEqual([]);
     });
   });
 });

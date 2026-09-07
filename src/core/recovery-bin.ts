@@ -5,6 +5,8 @@ import { getAppHomePaths, loadAppConfig, saveAppConfig, type Clock } from './app
 import {
   recoveryItemSchema,
   UPDATE_ORIGIN_TTL_DAYS,
+  getRestoredName,
+  withRestoredName,
   type RecoveryItem,
   type RecoveryItemOrigin,
   type RecoveryItemKind,
@@ -14,7 +16,9 @@ import {
 import type { PluginCoordinates } from '../schemas/plugins';
 import { resolveInside, validateProfileName } from '../platform/path';
 import { CcpsError } from '../utils/errors';
+import { isNodeError, isRecord } from '../utils/type-guards';
 import { atomicWriteJson } from './versioned-json';
+import { repairProfileIdentity } from './profile-identity';
 
 // ─── Public types ───────────────────────────────────────────────────────
 
@@ -54,6 +58,10 @@ export type RecoveryBinItem = RecoveryItem & {
 };
 
 export type RestoreResult = {
+  /**
+   * The profile the restore actually landed on: the new name for
+   * restore-as-new-name flows (issue #108), the recorded profile otherwise.
+   */
   restoredProfile: string;
   /** The item directory was consumed (removed) on success. */
   consumed: true;
@@ -75,12 +83,25 @@ export type RestoreOptions = {
    * Required when collisionResolution is 'restore-as-new-name'. Renames the
    * entry within the same profile (last path segment for file-tree items, last
    * keyPath segment for fragments). For kind 'profile' items it is the new
-   * profile name instead.
+   * profile name instead — the restore reports that new name in its result
+   * (issue #108).
    */
   newName?: string;
   /** Required to restore plugin-shape items; reinstall + re-apply state. */
   pluginRestore?: PluginRestoreHandler;
   clock?: Clock;
+};
+
+/**
+ * The staged pre-publish failure contract (issue #108): thrown when a
+ * whole-profile restore fails before the target directory is published. The
+ * source item stays intact for retry and no new name was occupied.
+ */
+export type ProfileRestoreStaging = {
+  item: RecoveryBinItem;
+  stagingDir: string;
+  targetDir: string;
+  targetName: string;
 };
 
 export type SweepResult = {
@@ -460,8 +481,10 @@ export async function restoreRecoveryItem(options: RestoreOptions): Promise<Rest
   const { profilesPath } = getAppHomePaths(appHomePath);
   const clock = options.clock ?? (() => new Date());
 
+  let restoredProfile = item.profile;
+
   if (item.shape === 'file-tree') {
-    await restoreFileTreeItem(item, profilesPath, appHomePath, options, clock);
+    restoredProfile = await restoreFileTreeItem(item, profilesPath, appHomePath, options, clock);
   } else if (item.shape === 'plugin') {
     await restorePluginItem(item, options.pluginRestore);
   } else {
@@ -482,14 +505,78 @@ export async function restoreRecoveryItem(options: RestoreOptions): Promise<Rest
     await restoreFragmentItem(item, profilesPath, appHomePath, options, clock);
   }
 
-  await fs.remove(item.itemDirPath);
+  // Publish (the rename above) is the commit point: the item is only consumed
+  // after it, and a consume failure downgrades to a warning with the item
+  // marked restored — it must never masquerade as a failed restore (issue
+  // #108, spec Decision 12).
+  const consumed = true;
+  try {
+    await fs.remove(item.itemDirPath);
+  } catch (error) {
+    await markItemRestored(item, restoredProfile);
+    recordRestoreConsumptionWarning(error);
+  }
 
-  return { restoredProfile: item.profile, consumed: true };
+  return { restoredProfile, consumed };
+}
+
+/**
+ * Post-publish crash reconciliation (issue #108): if a previous run restored
+ * this item but crashed before consuming it, the item.json carries
+ * `restoredName` and the item is reported as no longer restorable instead of
+ * re-restoring a stale payload over the user's live profile.
+ */
+async function assertItemNotAlreadyRestored(item: RecoveryBinItem): Promise<void> {
+  if (getRestoredName(item) === undefined) return;
+  throw new CcpsError(
+    'RECOVERY_ITEM_ALREADY_RESTORED',
+    `This Recovery Item was already restored as "${getRestoredName(item) ?? item.profile}".`,
+    {
+      guidance:
+        'The restored profile was published before the item could be consumed; permanently delete the stale item when its payload is no longer needed.',
+    },
+  );
+}
+
+/** Best-effort post-publish bookkeeping; never fails the restore. */
+async function markItemRestored(item: RecoveryBinItem, restoredName: string): Promise<void> {
+  try {
+    const itemJsonPath = path.join(item.itemDirPath, 'item.json');
+    if (!(await fs.pathExists(itemJsonPath))) return;
+    const raw: unknown = await fs.readJson(itemJsonPath);
+    if (!isRecord(raw)) return;
+    await atomicWriteJson(itemJsonPath, withRestoredName(raw as RecoveryItem, restoredName));
+  } catch {
+    // Bookkeeping only; the restore already committed.
+  }
+}
+
+function recordRestoreConsumptionWarning(error: unknown): void {
+  if (isNodeError(error)) {
+    lastRestoreConsumptionWarning = `Recovery Item cleanup failed (${error.code ?? 'io error'}); the item was kept.`;
+    return;
+  }
+  lastRestoreConsumptionWarning =
+    'Recovery Item cleanup failed; the restored profile is live and the item was kept.';
 }
 
 export async function permanentlyDeleteItem(itemId: string, appHomePath?: string): Promise<void> {
   const item = await getRecoveryItem(itemId, appHomePath);
   await fs.remove(item.itemDirPath);
+}
+
+/**
+ * Warning from the most recent restore whose Recovery Item could not be
+ * consumed after the restored profile had already published (issue #108):
+ * the restore is committed, the item was kept, and the UI must surface both
+ * facts. Null when the last restore consumed cleanly. Reset by reading.
+ */
+let lastRestoreConsumptionWarning: string | null = null;
+
+export function consumeRestoreConsumptionWarning(): string | null {
+  const warning = lastRestoreConsumptionWarning;
+  lastRestoreConsumptionWarning = null;
+  return warning;
 }
 
 export async function emptyRecoveryBin(appHomePath?: string): Promise<void> {
@@ -708,7 +795,7 @@ async function restoreFileTreeItem(
   appHomePath: string,
   options: RestoreOptions,
   clock: Clock,
-): Promise<void> {
+): Promise<string> {
   const coords = item.coordinates as FileTreeCoordinates;
   const profileDir = path.join(profilesPath, item.profile);
   const resolution = options.collisionResolution ?? 'refuse';
@@ -724,6 +811,7 @@ async function restoreFileTreeItem(
   // restore-as-new-name targets a renamed location regardless of whether the
   // original still exists: the caller asked for the new name explicitly.
   let targetPath = baseTargetPath;
+  const restoredProfile = item.profile;
 
   if (resolution === 'restore-as-new-name') {
     const newName = requireNewName(options);
@@ -731,14 +819,36 @@ async function restoreFileTreeItem(
     if (isProfileItem) {
       // A whole-profile payload restores into a brand-new profile directory
       // (spec §9.3 S13: recreate `coding`, restore as `coding-2`, both exist).
-      const newProfileDir = path.join(profilesPath, validateProfileName(newName));
+      // Staged first (issue #108): the copy plus identity repair complete in
+      // `.ccps-tmp-*` and the rename into place is the commit point, so a
+      // pre-publish failure never occupies the new name.
+      const targetName = validateProfileName(newName);
+      const newProfileDir = path.join(profilesPath, targetName);
       if (await fs.pathExists(newProfileDir)) {
         throw collisionError('A profile already exists with the new name.');
       }
-      await fs.ensureDir(newProfileDir);
-      const payloadPath = path.join(item.itemDirPath, coords.targetRelativePath);
-      await fs.copy(payloadPath, newProfileDir, { overwrite: false, errorOnExist: true });
-      return;
+      await assertItemNotAlreadyRestored(item);
+
+      const stagingDir = resolveInside(
+        profilesPath,
+        `.ccps-tmp-bin-restore-${item.id.replace(/[^A-Za-z0-9_-]/g, '-').slice(0, 80)}`,
+      );
+      await fs.remove(stagingDir);
+      await fs.ensureDir(stagingDir);
+      try {
+        const payloadPath = path.join(item.itemDirPath, coords.targetRelativePath);
+        await fs.copy(payloadPath, stagingDir, { overwrite: false, errorOnExist: true });
+        await repairProfileIdentity({
+          stagingPath: stagingDir,
+          finalPath: newProfileDir,
+          profileName: targetName,
+        });
+        await fs.rename(stagingDir, newProfileDir);
+      } catch (error) {
+        await fs.remove(stagingDir).catch(() => {});
+        throw error;
+      }
+      return targetName;
     }
 
     // Resource-level rename: same profile, new name for the last path segment
@@ -769,6 +879,7 @@ async function restoreFileTreeItem(
   await fs.ensureDir(path.dirname(targetPath));
   const payloadPath = path.join(item.itemDirPath, coords.targetRelativePath);
   await fs.copy(payloadPath, targetPath, { overwrite: false, errorOnExist: true });
+  return restoredProfile;
 }
 
 async function restoreFragmentItem(
