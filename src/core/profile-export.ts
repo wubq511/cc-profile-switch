@@ -6,10 +6,13 @@ import * as tar from 'tar';
 import { getAppHomePaths, loadAppConfig, type Clock } from './app-config';
 import { atomicWriteJson } from './versioned-json';
 import { getProfileTemplatePaths } from './profile-template';
+import { selectResourcesIntoStaging, type ResourceCopyFailure } from './resource-policy';
 import { cliVersion } from './version';
 import { isPathInside, resolveFilesystemPath } from '../platform/path';
 import {
-  bundleManifestSchema,
+  BUNDLE_MANIFEST_VERSION,
+  countStrippedKeys,
+  bundleManifestV2Schema,
   type BundleManifest,
   type BundleResourceCounts,
   type BundleStrippedKeys,
@@ -20,18 +23,28 @@ import { isNodeError, isRecord } from '../utils/type-guards';
 /**
  * Profile export — packages one Profile as a single portable `.tar.gz` file.
  *
- * Spec: docs/Spec-profile-workbench.md §11.2 Export.
+ * Spec: docs/Spec-profile-workbench.md §11.2 Export; issue #105 boundary.
  *
  * Bundle layout (tar.gz root):
- *   manifest.json   — authoritative index (BundleManifest)
- *   profile/        — verbatim profile file tree (profiles/<name>/ contents)
+ *   manifest.json   — authoritative index (BundleManifest, version 2)
+ *   profile/        — resource-selected profile tree (profiles/<name>/ contents)
  *
  * Safety contract:
- *   - Default mode strips secret-class env values (settings.json env.ANTHROPIC_*,
- *     .claude.json and legacy mcp.json mcpServers[*].env). Key names are kept
- *     and reported; values become "<redacted>". If a secret-bearing file cannot
- *     be parsed, the export is refused rather than risk leaking secrets.
- *   - --includeSecrets writes the raw tree and the bundle file is chmod 0600.
+ *   - Resources are selected into staging entry-by-entry through the shared
+ *     resource policy (./resource-policy) — never a whole-tree copy followed
+ *     by deletion. Known runtime data (sessions, history, projects, caches,
+ *     credentials) and unknown top-level claude-home entries are never copied,
+ *     in every mode including --include-secrets.
+ *   - Default mode strips secret-class values: settings.json env.ANTHROPIC_*,
+ *     .claude.json and legacy mcp.json mcpServers[*].env, and MCP HTTP header
+ *     values (mcpServers[*].headers[*]). Key names are kept and reported;
+ *     values become "<redacted>". A secret-bearing file that cannot be parsed
+ *     refuses the export rather than risk leaking secrets.
+ *   - --includeSecrets widens env/header VALUE redaction only — runtime data
+ *     still never travels — and the bundle file is chmod 0600.
+ *   - Symlinks/junctions inside the profile tree are refused before the linked
+ *     content is read, including when a configuration file or one of its
+ *     ancestor directories is itself a link to excluded content.
  *   - The Recovery Bin lives at app-home level (sibling of profiles/); export
  *     only reads profiles/<name>/, so Bin items are never exported by structure.
  *   - Never reads or touches the real ~/.claude or ~/.claude.json.
@@ -62,11 +75,11 @@ export type ExportProfileResult = {
   bundlePath: string;
   manifest: BundleManifest;
   strippedKeys: BundleStrippedKeys[];
+  /** Manifest `resources` counts, mirrored for callers without re-parsing. */
+  resources: BundleResourceCounts;
 };
 
-export async function exportProfile(
-  options: ExportProfileOptions,
-): Promise<ExportProfileResult> {
+export async function exportProfile(options: ExportProfileOptions): Promise<ExportProfileResult> {
   const appHomePath = options.appHomePath ?? getAppHomePaths().appHomePath;
   await loadAppConfig(appHomePath);
 
@@ -103,19 +116,24 @@ export async function exportProfile(
   const stagingProfile = path.join(stagingRoot, BUNDLE_PROFILE_DIR);
 
   try {
-    // Copy the profile tree into staging/profile/. The source profile is never
-    // mutated; all redaction happens on the staging copy.
-    await fs.copy(profilePaths.profileRootPath, stagingProfile, {
-      overwrite: false,
-      errorOnExist: true,
+    // Select resources into staging entry-by-entry (spec #103 Implementation
+    // Decision 1): the shared policy copies only supported resources, refuses
+    // symlinks before their targets are read, and never copies a whole tree
+    // for later pruning. Export keeps Auto Memory; templates exclude it.
+    const selection = await selectResourcesIntoStaging({
+      sourceProfileRoot: profilePaths.profileRootPath,
+      stagingProfileRoot: stagingProfile,
+      includeAutoMemory: true,
     });
+    throwOnResourceFailures(selection.failures);
 
-    // Runtime internals are never exported (spec §6.4: OAuth/tokens/sessions/
-    // history/caches/credentials "not in the matrix at all"; invariant 3).
-    // Plugins (§7.6) are NOT runtime internals — they are a managed resource
-    // category with delegated lifecycle, so plugins/ travels with the bundle.
-    // The --include-secrets opt-in controls env VALUE redaction only; it never
-    // permits exporting these.
+    // Defense in depth on the staged copy (never the source): .claude.json
+    // keeps only its mcpServers inventory — non-MCP fields Claude Code may
+    // have written under the profile (OAuth/account/project state) are
+    // runtime data that never travel, in either mode (spec §6.4 invariant 3).
+    // The selection already refused runtime directories, so this only prunes
+    // the JSON; a malformed .claude.json still refuses the export rather than
+    // risk carrying runtime content past the scan.
     await pruneRuntimeInternals(stagingProfile);
 
     // Always scan for secret-class keys (to set `secretsPresent`); only redact
@@ -127,8 +145,8 @@ export async function exportProfile(
 
     const mcpServerNames = await readMcpServerNames(stagingProfile);
     const resources = await countResources(stagingProfile, mcpServerNames);
-    const manifest: BundleManifest = bundleManifestSchema.parse({
-      version: 1,
+    const manifest: BundleManifest = bundleManifestV2Schema.parse({
+      version: BUNDLE_MANIFEST_VERSION,
       bundleFormat: 'ccps-profile-bundle',
       exporterVersion: cliVersion,
       exportedAt: (options.clock ?? (() => new Date()))().toISOString(),
@@ -139,6 +157,8 @@ export async function exportProfile(
       strippedKeys,
       resources,
       mcpServerNames,
+      topLevelEntries: selection.copiedTopLevelEntries,
+      excludedTopLevelEntries: selection.skipped,
     });
     await atomicWriteJson(path.join(stagingRoot, BUNDLE_MANIFEST_FILE), manifest);
 
@@ -165,10 +185,19 @@ export async function exportProfile(
       bundlePath: outputPath,
       manifest,
       strippedKeys,
+      resources,
     };
   } finally {
     await fs.remove(stagingRoot);
   }
+}
+
+function throwOnResourceFailures(failures: ResourceCopyFailure[]): void {
+  const first = failures[0];
+  if (first === undefined) {
+    return;
+  }
+  throw new CcpsError(first.code, first.message, { guidance: first.guidance });
 }
 
 function validateOutputPath(outputPath: string, profileRootPath: string): void {
@@ -183,6 +212,10 @@ function validateOutputPath(outputPath: string, profileRootPath: string): void {
 
 /**
  * Scan the staged profile for secret-class keys; optionally redact their values.
+ *
+ * Secret-class values live in settings.json `env.ANTHROPIC_*`, MCP server
+ * `env` values, and MCP HTTP `headers` values (issue #105: header values obey
+ * the same redaction and key-name reporting rules as env values).
  *
  * Always returns `secretsPresent` (true when any secret-class key was found, in
  * either mode — required by issue #73's "secrets presence" manifest field).
@@ -208,34 +241,58 @@ export async function processSecrets(
     }
   }
 
-  const claudeJsonServers = await processMcpEnv(
+  const claudeJsonServers = await processMcpEnvAndHeaders(
     path.join(stagingProfile, 'claude-home', '.claude.json'),
     CLAUDE_JSON_REL,
     options.redact,
   );
-  for (const [server, keys] of claudeJsonServers) {
-    secretsPresent = true;
-    if (options.redact) {
+  for (const entry of claudeJsonServers) {
+    if (entry.envKeys.length > 0 || entry.headerKeys.length > 0) {
+      secretsPresent = true;
+    }
+    if (options.redact && entry.envKeys.length > 0) {
       strippedKeys.push({
         file: CLAUDE_JSON_REL,
         scope: 'mcp-env',
-        mcpServer: server,
-        keys,
+        mcpServer: entry.server,
+        keys: entry.envKeys,
+      });
+    }
+    if (options.redact && entry.headerKeys.length > 0) {
+      strippedKeys.push({
+        file: CLAUDE_JSON_REL,
+        scope: 'mcp-headers',
+        mcpServer: entry.server,
+        keys: entry.headerKeys,
       });
     }
   }
 
   const legacyMcpPath = path.join(stagingProfile, 'mcp.json');
   if (await fs.pathExists(legacyMcpPath)) {
-    const legacyServers = await processMcpEnv(legacyMcpPath, MCP_JSON_REL, options.redact);
-    for (const [server, keys] of legacyServers) {
-      secretsPresent = true;
-      if (options.redact) {
+    const legacyServers = await processMcpEnvAndHeaders(
+      legacyMcpPath,
+      MCP_JSON_REL,
+      options.redact,
+    );
+    for (const entry of legacyServers) {
+      if (entry.envKeys.length > 0 || entry.headerKeys.length > 0) {
+        secretsPresent = true;
+      }
+      if (options.redact && entry.envKeys.length > 0) {
         strippedKeys.push({
           file: MCP_JSON_REL,
           scope: 'mcp-env',
-          mcpServer: server,
-          keys,
+          mcpServer: entry.server,
+          keys: entry.envKeys,
+        });
+      }
+      if (options.redact && entry.headerKeys.length > 0) {
+        strippedKeys.push({
+          file: MCP_JSON_REL,
+          scope: 'mcp-headers',
+          mcpServer: entry.server,
+          keys: entry.headerKeys,
         });
       }
     }
@@ -247,10 +304,37 @@ export async function processSecrets(
 /**
  * Scan env.ANTHROPIC_* keys in settings.json; when `redact`, replace their
  * values with `<redacted>`. Returns the affected key names (sorted).
+ *
+ * A present-but-malformed `env` bag (non-object) cannot be verified clean, so
+ * the export refuses: a tampered structure must never bypass the scan by
+ * failing to look like an env bag.
  */
 async function processSettingsEnv(filePath: string, redact: boolean): Promise<string[]> {
   const json = await readJsonForRedaction(filePath, SETTINGS_REL);
-  if (json === undefined || !isRecord(json) || !isRecord(json.env)) {
+  if (json === undefined) {
+    return [];
+  }
+  if (!isRecord(json)) {
+    throw new CcpsError(
+      'EXPORT_SECRET_FILE_UNREADABLE',
+      `${SETTINGS_REL} is not a JSON object; cannot safely export.`,
+      {
+        // Mode-independent refusal: --include-secrets cannot bypass it, so it
+        // is not offered as guidance.
+        guidance: `Fix ${SETTINGS_REL} in the source profile, then retry the export.`,
+      },
+    );
+  }
+  if (json.env !== undefined && !isRecord(json.env)) {
+    throw new CcpsError(
+      'EXPORT_SECRET_FILE_UNREADABLE',
+      `${SETTINGS_REL} env is not an object; cannot safely export.`,
+      {
+        guidance: `Fix env in ${SETTINGS_REL} of the source profile, then retry the export.`,
+      },
+    );
+  }
+  if (!isRecord(json.env)) {
     return [];
   }
   const stripped: string[] = [];
@@ -268,47 +352,110 @@ async function processSettingsEnv(filePath: string, redact: boolean): Promise<st
   return stripped.sort((left, right) => left.localeCompare(right));
 }
 
+type McpServerSecretKeys = {
+  server: string;
+  envKeys: string[];
+  headerKeys: string[];
+};
+
 /**
- * Scan every value under mcpServers[*].env; when `redact`, replace each with
- * `<redacted>`. Returns a server→key-names map (insertion order preserved).
- * MCP env values are secret-class per issue #73 and spec §6.5.
+ * Scan every value under mcpServers[*].env and every value under
+ * mcpServers[*].headers; when `redact`, replace each with `<redacted>`.
+ * Returns per-server key-name lists (sorted). Malformed shapes (env or
+ * headers not an object, non-string entries) are stripped wholesale or fail
+ * the export — a malformed structure must never bypass redaction by failing
+ * to look like a secret bag, and never silently counts as a safe empty one.
  */
-async function processMcpEnv(
+async function processMcpEnvAndHeaders(
   filePath: string,
   label: string,
   redact: boolean,
-): Promise<Map<string, string[]>> {
-  const result = new Map<string, string[]>();
+): Promise<McpServerSecretKeys[]> {
+  const result: McpServerSecretKeys[] = [];
   const json = await readJsonForRedaction(filePath, label);
-  if (json === undefined || !isRecord(json) || !isRecord(json.mcpServers)) {
+  if (json === undefined) {
+    return result;
+  }
+  if (!isRecord(json)) {
+    throw new CcpsError(
+      'EXPORT_SECRET_FILE_UNREADABLE',
+      `${label} is not a JSON object; cannot safely export.`,
+      {
+        guidance: `Fix ${label} in the source profile, then retry the export.`,
+      },
+    );
+  }
+  if (!isRecord(json.mcpServers)) {
     return result;
   }
   let mutated = false;
   for (const [serverName, serverDef] of Object.entries(json.mcpServers)) {
-    if (!isRecord(serverDef) || !isRecord(serverDef.env)) {
+    if (!isRecord(serverDef)) {
       continue;
     }
-    const stripped: string[] = [];
-    for (const [key, value] of Object.entries(serverDef.env)) {
-      if (value !== REDACTED) {
-        stripped.push(key);
-        if (redact) {
-          serverDef.env[key] = REDACTED;
-          mutated = true;
-        }
-      }
+    const envKeys = stripBag(serverDef, 'env', redact);
+    const headerKeys = stripBag(serverDef, 'headers', redact);
+    if (envKeys.mutated || headerKeys.mutated) {
+      mutated = true;
     }
-    if (stripped.length > 0) {
-      result.set(
-        serverName,
-        stripped.sort((left, right) => left.localeCompare(right)),
-      );
+    if (envKeys.keys.length > 0 || headerKeys.keys.length > 0) {
+      result.push({
+        server: serverName,
+        envKeys: envKeys.keys.sort((left, right) => left.localeCompare(right)),
+        headerKeys: headerKeys.keys.sort((left, right) => left.localeCompare(right)),
+      });
     }
   }
   if (redact && mutated) {
     await atomicWriteJson(filePath, json);
   }
   return result;
+}
+
+/**
+ * Strip (or report) the values of one secret-class bag on a server entry.
+ * A missing bag is empty. A present-but-malformed bag (non-object — e.g. a
+ * raw string or array) cannot be verified clean: in redact mode it is
+ * replaced wholesale and no key/value is reported or carried; in scan-only
+ * mode the bag passes through untouched and nothing is reported either —
+ * the enumerable "keys" of a non-object (character or array indices) are not
+ * real key names. In redact mode every remaining value is replaced with the
+ * `<redacted>` marker — including non-primitive values (nested objects/
+ * arrays), which cannot be proven clean and must not be copied through the
+ * scan. Scan-only mode surfaces key names for re-entry without touching the
+ * values.
+ */
+function stripBag(
+  serverDef: Record<string, unknown>,
+  bagName: 'env' | 'headers',
+  redact: boolean,
+): { keys: string[]; mutated: boolean } {
+  const bag = serverDef[bagName];
+  if (bag === undefined) {
+    return { keys: [], mutated: false };
+  }
+  if (!isRecord(bag)) {
+    // Malformed: cannot prove it is clean. In redact mode the whole bag is
+    // dropped (no content survives); nothing enumerable to report.
+    if (redact) {
+      serverDef[bagName] = {};
+      return { keys: [], mutated: true };
+    }
+    return { keys: [], mutated: false };
+  }
+  const keys: string[] = [];
+  let mutated = false;
+  for (const [key, value] of Object.entries(bag)) {
+    if (value === REDACTED) {
+      continue;
+    }
+    keys.push(key);
+    if (redact) {
+      bag[key] = REDACTED;
+      mutated = true;
+    }
+  }
+  return { keys, mutated };
 }
 
 /**
@@ -326,18 +473,25 @@ async function readJsonForRedaction(filePath: string, label: string): Promise<un
     throw new CcpsError(
       'EXPORT_SECRET_FILE_UNREADABLE',
       `${label} could not be parsed; cannot safely export.`,
-      { guidance: `Fix ${label} or export with --include-secrets.`, cause: error },
+      {
+        guidance: `Fix ${label} in the source profile, then retry the export.`,
+        cause: error,
+      },
     );
   }
 }
 
 /**
- * Remove runtime internals from the staged tree. Per spec §6.4, runtime
- * internals are OAuth/tokens/sessions/history/caches/credentials — "not in the
- * matrix at all". `sessions/` and `projects/` carry that runtime state and are
- * stripped in BOTH modes. `plugins/` is NOT runtime internals (§7.6 — delegated
- * lifecycle managed resource) and travels with the bundle. Non-MCP fields of
- * `.claude.json` (OAuth/account) are also stripped.
+ * Remove runtime internals from a staged tree. Retained for callers that
+ * stage a tree by other means (e.g. tests, or a future non-tar carrier):
+ * the export path itself now selects resources through the shared policy
+ * instead of copying first and pruning here.
+ *
+ * Per spec §6.4, runtime internals are OAuth/tokens/sessions/history/caches/
+ * credentials — "not in the matrix at all". `sessions/` and `projects/` carry
+ * that runtime state and are stripped in BOTH modes. `plugins/` is NOT
+ * runtime internals (§7.6 — delegated lifecycle managed resource) and stays.
+ * Non-MCP fields of `.claude.json` (OAuth/account) are also stripped.
  */
 export async function pruneRuntimeInternals(stagingProfile: string): Promise<void> {
   const claudeHome = path.join(stagingProfile, 'claude-home');
@@ -382,12 +536,14 @@ async function countResources(
   };
 
   const userMemory = (await fs.pathExists(path.join(claudeHome, 'CLAUDE.md'))) ? 1 : 0;
-  const autoMemory = await countEntries(path.join(claudeHome, 'memory', 'auto'), (e) =>
-    e.isFile(),
-  );
-  const skills = await countEntries(path.join(claudeHome, 'skills'), (e) =>
-    // a Linked Skill is a symlink (§7.2) — count it alongside files and dirs
-    e.isFile() || e.isDirectory() || e.isSymbolicLink(),
+  const autoMemory = await countEntries(path.join(claudeHome, 'memory', 'auto'), (e) => e.isFile());
+  const skills = await countEntries(
+    path.join(claudeHome, 'skills'),
+    (e) =>
+      // a Linked Skill is a symlink (§7.2) — count it alongside files and dirs.
+      // The selection pipeline refuses symlinks before export, so a staged
+      // symlink here can only come from a caller that bypassed the pipeline.
+      e.isFile() || e.isDirectory() || e.isSymbolicLink(),
   );
   const agents = await countEntries(path.join(claudeHome, 'agents'), (e) => e.isFile());
   const settings = (await fs.pathExists(path.join(claudeHome, 'settings.json'))) ? 1 : 0;
@@ -421,3 +577,6 @@ async function readMcpServerNames(stagingProfile: string): Promise<string[]> {
   }
   return Object.keys(value.mcpServers).sort((left, right) => left.localeCompare(right));
 }
+
+// Re-export so existing import sites (CLI, tests) keep a single module to use.
+export { countStrippedKeys };

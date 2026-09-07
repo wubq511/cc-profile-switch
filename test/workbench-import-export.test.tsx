@@ -560,6 +560,46 @@ describe('Workbench profile export/import flows (issue #95)', () => {
     }
   }, 20000);
 
+  it('import flash lists MCP HTTP header keys needing re-entry (S100, issue #105)', async () => {
+    const srcAppHome = await makeAppHome(['coding']);
+    const { profilesPath } = getAppHomePaths(srcAppHome);
+    await fs.writeJson(getClaudeJsonPath(join(profilesPath, 'coding')), {
+      mcpServers: {
+        httpapi: {
+          type: 'http',
+          url: 'https://mcp.example.com/v1',
+          headers: { Authorization: 'Bearer hdr-secret-789' },
+        },
+      },
+    });
+    const bundlePath = await makeBundle(srcAppHome);
+
+    await overrideHomeToTemp();
+    const appHome = getAppHomePaths().appHomePath;
+    await createAppConfig(appHome, { clock: FIXED_CLOCK });
+    const data = await loadWorkbenchData(appHome);
+
+    const { capture } = mockClaudeAdd();
+    const h = new Harness();
+    try {
+      await h.renderApp(data, { mcpProbe: async () => [], captureProcess: capture });
+      await h.press('i');
+      await h.waitFor('Bundle path:');
+      await h.typeText(bundlePath);
+      await h.press('\r');
+      await h.waitFor('Import profile');
+      await h.press('y');
+      await h.waitFor('Imported "coding"');
+      const flash = h.text();
+      // header key names surface for guided re-entry (values never travel)
+      expect(flash).toContain('Re-enter 1 MCP HTTP header keys: Authorization');
+      // the stripped header value never reaches the screen
+      expect(flash).not.toContain('hdr-secret-789');
+    } finally {
+      await h.unmount();
+    }
+  }, 20000);
+
   it('surfaces an import that fails auto-validate (S100 final step)', async () => {
     const srcAppHome = await makeAppHome(['coding']);
     // Remove the auto-memory MEMORY.md entrypoint: export still succeeds (the

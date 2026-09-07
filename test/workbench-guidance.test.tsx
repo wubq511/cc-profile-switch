@@ -32,6 +32,7 @@ import {
   type HintsApi,
 } from '../src/tui/workbench/guidance';
 import type { WorkbenchProfile, WorkbenchData } from '../src/tui/workbench/profile-data';
+import type { CaptureProcess } from '../src/platform/process';
 import type { McpServerState } from '../src/core/mcp-list';
 import { flatten, noPluginsReader, renderWithLocale, stripAnsi } from './render-helpers';
 
@@ -541,8 +542,15 @@ describe('keypress guidance flows', () => {
 
   async function renderInteractive(
     element: React.ReactElement,
+    options: { columns?: number } = {},
   ): Promise<{ instance: ReturnType<typeof render>; stdout: FakeTtyStdout; stdin: FakeTtyStdin }> {
     const stdout = new FakeTtyStdout();
+    if (options.columns !== undefined) {
+      // The footer flash row truncates at the terminal width (wrap: truncate);
+      // flows whose flash spans several report parts render at a realistic
+      // width so the full message can be asserted.
+      stdout.columns = options.columns;
+    }
     const stdin = new FakeTtyStdin();
     const instance = render(element, {
       stdout: stdout as unknown as NodeJS.WriteStream,
@@ -857,6 +865,82 @@ describe('keypress guidance flows', () => {
         const frame = flatten(stripAnsi(stdout.output));
         expect(frame).toContain('"fresh" created from template "team-base"');
         expect(frame).toContain('Re-enter 1 secret keys: ANTHROPIC_API_KEY');
+        // The profile really landed in the tmp app home.
+        expect(
+          await fs.pathExists(getProfileTemplatePaths(appHome, 'fresh').profileRootPath),
+        ).toBe(true);
+        instance.unmount();
+        await instance.waitUntilExit();
+      });
+    });
+
+    it('S103b: create from a custom template flashes MCP header keys to re-enter (#105)', async () => {
+      const { userHome, appHome } = await makeRealAppHome();
+      // Give the source profile an MCP HTTP server with a header secret; the
+      // saved template carries only the key name, and create must flash it.
+      const paths = getProfileTemplatePaths(appHome, 'coding');
+      await fs.writeJson(paths.claudeUserConfigPath, {
+        mcpServers: {
+          httpapi: {
+            type: 'http',
+            url: 'https://mcp.example.com/v1',
+            headers: { Authorization: 'Bearer hdr-secret-789' },
+          },
+        },
+      });
+      await saveProfileAsTemplate({
+        appHomePath: appHome,
+        profileName: 'coding',
+        templateName: 'team-hdrs',
+        clock: TEMPLATE_FIXED_CLOCK,
+      });
+
+      // Create re-registers servers through delegation; keep it hermetic.
+      // The add fails (no real `claude`), which the flow records per-server
+      // without aborting — the re-entry flash still surfaces header keys.
+      const capture: CaptureProcess = async (_command, args) => {
+        if (args[0] === 'mcp' && args[1] === 'add') {
+          return { exitCode: 1, stdout: '', stderr: 'mock add failed', timedOut: false };
+        }
+        return { exitCode: 0, stdout: '', stderr: '', timedOut: false };
+      };
+
+      await withHome(userHome, async () => {
+        resetWelcomeSessionForTests();
+        const data: WorkbenchData = {
+          ...sampleData,
+          customTemplates: [{ name: 'team-hdrs', sourceProfile: 'coding' }],
+        };
+        const { instance, stdout, stdin } = await renderInteractive(
+          React.createElement(WorkbenchApp, {
+            data,
+            initialLocale: 'en',
+            skipWelcome: true,
+            captureProcess: capture,
+          }),
+          // The flash spans created-from + env + header parts; the footer
+          // row truncates at width 100, so render at a realistic width and
+          // assert the full message.
+          { columns: 150 },
+        );
+
+        await openPickerAtCustomRow(stdin, stdout);
+        // Select the custom row → step 2 name prompt.
+        const selectBaseline = stdout.output;
+        stdin.press('\r');
+        await waitForOutputSettled(stdout, selectBaseline);
+        expect(stripAnsi(stdout.output)).toContain('Profile name:');
+
+        await pressEach(stdin, stdout, 'fresh');
+        stdin.press('\r');
+        await waitForOutputContaining(stdout, 'created from template "team-hdrs"');
+        const frame = flatten(stripAnsi(stdout.output));
+        expect(frame).toContain('"fresh" created from template "team-hdrs"');
+        // settings env keys (existing shape) and MCP header keys both flash
+        expect(frame).toContain('Re-enter 1 secret keys: ANTHROPIC_API_KEY');
+        expect(frame).toContain('Re-enter 1 MCP HTTP header keys: Authorization');
+        // the stripped header value never reaches the screen
+        expect(frame).not.toContain('hdr-secret-789');
         // The profile really landed in the tmp app home.
         expect(
           await fs.pathExists(getProfileTemplatePaths(appHome, 'fresh').profileRootPath),

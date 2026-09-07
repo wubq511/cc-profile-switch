@@ -9,10 +9,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createProgram } from '../src/cli';
 import { createAppConfig, getAppHomePaths } from '../src/core/app-config';
 import { exportProfile } from '../src/core/profile-export';
-import {
-  createProfileFromTemplate,
-  getProfileTemplatePaths,
-} from '../src/core/profile-template';
+import { createProfileFromTemplate, getProfileTemplatePaths } from '../src/core/profile-template';
 import { bundleManifestSchema, type BundleManifest } from '../src/schemas/profile-bundle';
 import { CcpsError } from '../src/utils/errors';
 
@@ -130,7 +127,7 @@ describe('profile export service', () => {
     const manifest = await readManifest(extractDir);
 
     expect(manifest.bundleFormat).toBe('ccps-profile-bundle');
-    expect(manifest.version).toBe(1);
+    expect(manifest.version).toBe(2);
     expect(manifest.exporterVersion).toBe('0.1.0');
     expect(manifest.profileName).toBe('coding');
     expect(manifest.includeSecrets).toBe(false);
@@ -140,11 +137,13 @@ describe('profile export service', () => {
 
     // profile tree is present
     expect(await fs.pathExists(path.join(extractDir, 'profile', 'profile.json'))).toBe(true);
+    expect(await fs.pathExists(path.join(extractDir, 'profile', 'claude-home', 'CLAUDE.md'))).toBe(
+      true,
+    );
     expect(
-      await fs.pathExists(path.join(extractDir, 'profile', 'claude-home', 'CLAUDE.md')),
-    ).toBe(true);
-    expect(
-      await fs.pathExists(path.join(extractDir, 'profile', 'claude-home', 'memory', 'auto', 'MEMORY.md')),
+      await fs.pathExists(
+        path.join(extractDir, 'profile', 'claude-home', 'memory', 'auto', 'MEMORY.md'),
+      ),
     ).toBe(true);
   });
 
@@ -233,9 +232,7 @@ describe('profile export service', () => {
     const githubEntry = manifest.strippedKeys.find(
       (e) => e.scope === 'mcp-env' && e.mcpServer === 'github',
     );
-    expect(githubEntry?.keys).toEqual(
-      expect.arrayContaining(['EXTRA', 'GITHUB_TOKEN']),
-    );
+    expect(githubEntry?.keys).toEqual(expect.arrayContaining(['EXTRA', 'GITHUB_TOKEN']));
   });
 
   it('include-secrets writes raw values and chmods the bundle 0600', async () => {
@@ -406,7 +403,12 @@ describe('profile export service', () => {
     await fs.writeFile(bundlePath, 'pre-existing', 'utf8');
 
     await expect(
-      exportProfile({ appHomePath: appHome, name: 'coding', outputPath: bundlePath, clock: FIXED_CLOCK }),
+      exportProfile({
+        appHomePath: appHome,
+        name: 'coding',
+        outputPath: bundlePath,
+        clock: FIXED_CLOCK,
+      }),
     ).rejects.toMatchObject({ code: 'EXPORT_PATH_EXISTS' });
   });
 
@@ -417,7 +419,12 @@ describe('profile export service', () => {
     const insidePath = path.join(paths.profileRootPath, 'leak.tar.gz');
 
     await expect(
-      exportProfile({ appHomePath: appHome, name: 'coding', outputPath: insidePath, clock: FIXED_CLOCK }),
+      exportProfile({
+        appHomePath: appHome,
+        name: 'coding',
+        outputPath: insidePath,
+        clock: FIXED_CLOCK,
+      }),
     ).rejects.toMatchObject({ code: 'EXPORT_PATH_INSIDE_PROFILE' });
   });
 
@@ -434,7 +441,12 @@ describe('profile export service', () => {
     const bundlePath = await makeOutputPath();
 
     await expect(
-      exportProfile({ appHomePath: appHome, name: 'coding', outputPath: bundlePath, clock: FIXED_CLOCK }),
+      exportProfile({
+        appHomePath: appHome,
+        name: 'coding',
+        outputPath: bundlePath,
+        clock: FIXED_CLOCK,
+      }),
     ).rejects.toMatchObject({ code: 'EXPORT_SECRET_FILE_UNREADABLE' });
     // nothing written
     expect(await fs.pathExists(bundlePath)).toBe(false);
@@ -450,7 +462,12 @@ describe('profile export service', () => {
     );
 
     await expect(
-      exportProfile({ appHomePath: appHome, name: 'coding', outputPath: bundlePath, clock: FIXED_CLOCK }),
+      exportProfile({
+        appHomePath: appHome,
+        name: 'coding',
+        outputPath: bundlePath,
+        clock: FIXED_CLOCK,
+      }),
     ).rejects.toMatchObject({ code: 'EXPORT_DIR_MISSING' });
   });
 
@@ -487,32 +504,33 @@ describe('profile export service', () => {
   });
 
   it.skipIf(process.platform !== 'darwin')(
-    'preserves a Linked Skill symlink in the bundle (macOS)',
+    'refuses a Linked Skill symlink in the bundle (macOS)',
     async () => {
       const { appHome } = await makeAppHome();
       await makeProfile(appHome, 'coding');
       const paths = getProfileTemplatePaths(appHome, 'coding');
-      // a Linked Skill is a symlink in claude-home/skills/<name>
+      // a Linked Skill is a symlink in claude-home/skills/<name>; Portable
+      // Export refuses it (issue #105): a link cannot keep its live-at-source
+      // semantics inside a tar bundle.
       const linkTarget = await mkdtemp(join(tmpdir(), 'ccps-skill-src-'));
       await fs.writeFile(path.join(linkTarget, 'SKILL.md'), '# linked skill', 'utf8');
       await fs.symlink(linkTarget, path.join(paths.skillsPath, 'linked-skill'), 'dir');
 
       const bundlePath = await makeOutputPath();
-      await exportProfile({
-        appHomePath: appHome,
-        name: 'coding',
-        outputPath: bundlePath,
-        clock: FIXED_CLOCK,
-      });
 
-      const extractDir = await extractBundle(bundlePath);
-      const linkPath = path.join(extractDir, 'profile', 'claude-home', 'skills', 'linked-skill');
-      const stats = await fs.lstat(linkPath);
-      // The Linked Skill is preserved as a symlink entry. tar strips the
-      // leading '/' from absolute symlink targets as a safety measure, so we
-      // assert the link type and that the target basename is carried.
-      expect(stats.isSymbolicLink()).toBe(true);
-      expect(await fs.readlink(linkPath)).toContain(path.basename(linkTarget));
+      await expect(
+        exportProfile({
+          appHomePath: appHome,
+          name: 'coding',
+          outputPath: bundlePath,
+          clock: FIXED_CLOCK,
+        }),
+      ).rejects.toMatchObject({ code: 'RESOURCE_LINK_FORBIDDEN' });
+      // nothing published
+      expect(await fs.pathExists(bundlePath)).toBe(false);
+      // the external skill source was never read or modified (synthetic sentinel)
+      const sentinel = path.join(linkTarget, 'SKILL.md');
+      expect(await fs.readFile(sentinel, 'utf8')).toBe('# linked skill');
     },
   );
 
@@ -566,6 +584,391 @@ describe('profile export service', () => {
     });
     expect(result.bundlePath).toBe(path.resolve(bundlePath));
     expect(await fs.pathExists(bundlePath)).toBe(true);
+  });
+
+  // --- issue #105 boundary: resource selection & header redaction ------------
+
+  it('excludes runtime and unknown claude-home entries in every mode (selection before staging)', async () => {
+    const { appHome } = await makeAppHome();
+    await makeProfile(appHome, 'coding');
+    const paths = getProfileTemplatePaths(appHome, 'coding');
+    // known runtime data + unknown top-level entries + credentials file
+    await fs.outputFile(path.join(paths.claudeHomePath, 'sessions', 's.jsonl'), '{}');
+    await fs.outputFile(path.join(paths.claudeHomePath, 'history', 'h.jsonl'), '{}');
+    await fs.outputFile(path.join(paths.claudeHomePath, 'projects', 'p', 'x.jsonl'), '{}');
+    await fs.outputFile(path.join(paths.claudeHomePath, 'todos', 't.json'), '[]');
+    await fs.outputFile(path.join(paths.claudeHomePath, 'cache', 'c.bin'), 'x');
+    await fs.outputFile(path.join(paths.claudeHomePath, 'shell-snapshots', 'sh'), 'x');
+    await fs.outputFile(path.join(paths.claudeHomePath, '.credentials.json'), '{"t":1}');
+    await fs.outputFile(path.join(paths.claudeHomePath, 'some-unknown-runtime-dir', 'x'), 'x');
+    await fs.outputFile(path.join(paths.claudeHomePath, 'unknown-top-file.txt'), 'x');
+
+    for (const includeSecrets of [false, true]) {
+      const bundlePath = await makeOutputPath();
+      await exportProfile({
+        appHomePath: appHome,
+        name: 'coding',
+        outputPath: bundlePath,
+        includeSecrets,
+        clock: FIXED_CLOCK,
+      });
+      const extractDir = await extractBundle(bundlePath);
+      const claudeHome = path.join(extractDir, 'profile', 'claude-home');
+      for (const excluded of [
+        'sessions',
+        'history',
+        'projects',
+        'todos',
+        'cache',
+        'shell-snapshots',
+        '.credentials.json',
+        'some-unknown-runtime-dir',
+        'unknown-top-file.txt',
+      ]) {
+        expect(await fs.pathExists(path.join(claudeHome, excluded))).toBe(false);
+      }
+      // supported resources still travel
+      expect(await fs.pathExists(path.join(claudeHome, 'settings.json'))).toBe(true);
+      expect(await fs.pathExists(path.join(extractDir, 'profile', 'profile.json'))).toBe(true);
+      // manifest records exclusions
+      const manifest = await readManifest(extractDir);
+      if (manifest.version === 2) {
+        expect(manifest.excludedTopLevelEntries).toEqual(
+          expect.arrayContaining([
+            'claude-home/sessions',
+            'claude-home/history',
+            'claude-home/projects',
+            'claude-home/todos',
+            'claude-home/cache',
+          ]),
+        );
+      }
+    }
+  });
+
+  it('never exports an unknown top-level profile entry (e.g. stray downloads)', async () => {
+    const { appHome } = await makeAppHome();
+    await makeProfile(appHome, 'coding');
+    const paths = getProfileTemplatePaths(appHome, 'coding');
+    await fs.outputFile(path.join(paths.profileRootPath, 'leaked-runtime.bin'), 'x');
+    await fs.outputFile(path.join(paths.profileRootPath, 'backups'), 'not really');
+
+    const bundlePath = await makeOutputPath();
+    await exportProfile({
+      appHomePath: appHome,
+      name: 'coding',
+      outputPath: bundlePath,
+      clock: FIXED_CLOCK,
+    });
+    const extractDir = await extractBundle(bundlePath);
+    expect(await fs.pathExists(path.join(extractDir, 'profile', 'leaked-runtime.bin'))).toBe(false);
+    expect(await fs.pathExists(path.join(extractDir, 'profile', 'backups'))).toBe(false);
+  });
+
+  it('carries the Skill Provenance Record with the bundle', async () => {
+    const { appHome } = await makeAppHome();
+    await makeProfile(appHome, 'coding');
+    const paths = getProfileTemplatePaths(appHome, 'coding');
+    await fs.writeJson(path.join(paths.profileRootPath, 'skills-provenance.json'), {
+      version: 1,
+      skills: {},
+    });
+
+    const bundlePath = await makeOutputPath();
+    await exportProfile({
+      appHomePath: appHome,
+      name: 'coding',
+      outputPath: bundlePath,
+      clock: FIXED_CLOCK,
+    });
+    const extractDir = await extractBundle(bundlePath);
+    expect(await fs.pathExists(path.join(extractDir, 'profile', 'skills-provenance.json'))).toBe(
+      true,
+    );
+  });
+
+  it('strips MCP header values alongside env values with a dedicated mcp-headers scope', async () => {
+    const { appHome } = await makeAppHome();
+    await makeProfile(appHome, 'coding');
+    const paths = getProfileTemplatePaths(appHome, 'coding');
+    await fs.writeJson(paths.claudeUserConfigPath, {
+      mcpServers: {
+        httpapi: {
+          type: 'http',
+          url: 'https://mcp.example.com/v1',
+          headers: { Authorization: 'Bearer hdr-secret-789', 'X-Api-Key': 'key-000' },
+          env: { GITHUB_TOKEN: 'ghp_secret_token_456' },
+        },
+        legacyhdr: {
+          type: 'sse',
+          url: 'https://sse.example.com',
+          headers: 'not-an-object',
+        },
+      },
+    });
+    const bundlePath = await makeOutputPath();
+
+    const result = await exportProfile({
+      appHomePath: appHome,
+      name: 'coding',
+      outputPath: bundlePath,
+      clock: FIXED_CLOCK,
+    });
+
+    const extractDir = await extractBundle(bundlePath);
+    const claudeJson = await fs.readJson(
+      path.join(extractDir, 'profile', 'claude-home', '.claude.json'),
+    );
+    // header values redacted in place
+    expect(claudeJson.mcpServers.httpapi.headers.Authorization).toBe('<redacted>');
+    expect(claudeJson.mcpServers.httpapi.headers['X-Api-Key']).toBe('<redacted>');
+    expect(claudeJson.mcpServers.httpapi.url).toBe('https://mcp.example.com/v1');
+
+    // dedicated v2 scope recorded per server
+    const headerEntry = result.strippedKeys.find(
+      (e) => e.scope === 'mcp-headers' && e.mcpServer === 'httpapi',
+    );
+    expect(headerEntry?.file).toBe('claude-home/.claude.json');
+    expect(headerEntry?.keys).toEqual(['Authorization', 'X-Api-Key']);
+    // env scope separate from header scope
+    const envEntry = result.strippedKeys.find(
+      (e) => e.scope === 'mcp-env' && e.mcpServer === 'httpapi',
+    );
+    expect(envEntry?.keys).toEqual(['GITHUB_TOKEN']);
+
+    // malformed (non-object) headers: the raw string's characters are not
+    // trusted through — the bag is replaced with an empty object, and no
+    // value survives into the bundle
+    const malformedEntry = result.strippedKeys.find(
+      (e) => e.scope === 'mcp-headers' && e.mcpServer === 'legacyhdr',
+    );
+    expect(malformedEntry).toBeUndefined();
+    expect(claudeJson.mcpServers.legacyhdr.headers).toEqual({});
+    expect(await treeContains(extractDir, 'not-an-object')).toBe(false);
+
+    // header secret never lands in the archive
+    expect(await treeContains(extractDir, 'hdr-secret-789')).toBe(false);
+    expect(await treeContains(extractDir, 'key-000')).toBe(false);
+  });
+
+  it('refuses a malformed settings.json env bag instead of treating it as safe', async () => {
+    const { appHome } = await makeAppHome();
+    await makeProfile(appHome, 'coding');
+    const paths = getProfileTemplatePaths(appHome, 'coding');
+    await fs.writeJson(paths.settingsPath, { env: 'not-an-object' });
+
+    const bundlePath = await makeOutputPath();
+    await expect(
+      exportProfile({
+        appHomePath: appHome,
+        name: 'coding',
+        outputPath: bundlePath,
+        clock: FIXED_CLOCK,
+      }),
+    ).rejects.toMatchObject({ code: 'EXPORT_SECRET_FILE_UNREADABLE' });
+    expect(await fs.pathExists(bundlePath)).toBe(false);
+  });
+
+  it('include-secrets keeps raw env/header values but still excludes runtime entries', async () => {
+    const { appHome } = await makeAppHome();
+    await makeProfile(appHome, 'coding');
+    const paths = getProfileTemplatePaths(appHome, 'coding');
+    await fs.writeJson(paths.claudeUserConfigPath, {
+      mcpServers: {
+        httpapi: {
+          type: 'http',
+          url: 'https://mcp.example.com/v1',
+          headers: { Authorization: 'Bearer hdr-secret-789' },
+        },
+      },
+    });
+    await fs.outputFile(path.join(paths.claudeHomePath, 'sessions', 's.jsonl'), '{}');
+
+    const bundlePath = await makeOutputPath();
+    await exportProfile({
+      appHomePath: appHome,
+      name: 'coding',
+      outputPath: bundlePath,
+      includeSecrets: true,
+      clock: FIXED_CLOCK,
+    });
+
+    const extractDir = await extractBundle(bundlePath);
+    const claudeJson = await fs.readJson(
+      path.join(extractDir, 'profile', 'claude-home', '.claude.json'),
+    );
+    expect(claudeJson.mcpServers.httpapi.headers.Authorization).toBe('Bearer hdr-secret-789');
+    // runtime exclusion holds even in include-secrets mode
+    expect(await fs.pathExists(path.join(extractDir, 'profile', 'claude-home', 'sessions'))).toBe(
+      false,
+    );
+  });
+
+  it('never carries non-MCP fields of .claude.json (runtime state), in either mode', async () => {
+    const { appHome } = await makeAppHome();
+    await makeProfile(appHome, 'coding');
+    const paths = getProfileTemplatePaths(appHome, 'coding');
+    // Fields Claude Code may write under the profile's claude-home: OAuth
+    // account state and per-project history metadata. These are runtime data,
+    // not the supported mcpServers inventory.
+    await fs.writeJson(paths.claudeUserConfigPath, {
+      oauthAccount: { email: 'runtime-user@example.com', tokens: { t: 'rt-oauth-token-000' } },
+      projects: { '/some/project': { lastSessionId: 'rt-session-111' } },
+      mcpServers: {
+        github: {
+          type: 'stdio',
+          command: 'npx',
+          env: { GITHUB_TOKEN: 'ghp_secret_token_456' },
+        },
+      },
+    });
+
+    for (const includeSecrets of [false, true]) {
+      const bundlePath = await makeOutputPath();
+      await exportProfile({
+        appHomePath: appHome,
+        name: 'coding',
+        outputPath: bundlePath,
+        includeSecrets,
+        clock: FIXED_CLOCK,
+      });
+      const extractDir = await extractBundle(bundlePath);
+      const claudeJson = await fs.readJson(
+        path.join(extractDir, 'profile', 'claude-home', '.claude.json'),
+      );
+      // only the mcpServers inventory survives
+      expect(Object.keys(claudeJson).sort()).toEqual(['mcpServers']);
+      expect(claudeJson.mcpServers.github.command).toBe('npx');
+      // runtime state never lands in the archive
+      expect(await treeContains(extractDir, 'rt-oauth-token-000')).toBe(false);
+      expect(await treeContains(extractDir, 'rt-session-111')).toBe(false);
+      // source profile untouched
+      const source = await fs.readJson(paths.claudeUserConfigPath);
+      expect(source.oauthAccount.email).toBe('runtime-user@example.com');
+      expect(source.projects['/some/project'].lastSessionId).toBe('rt-session-111');
+    }
+  });
+
+  it('redacts non-string header/env values (nested objects never pass the scan)', async () => {
+    const { appHome } = await makeAppHome();
+    await makeProfile(appHome, 'coding');
+    const paths = getProfileTemplatePaths(appHome, 'coding');
+    await fs.writeJson(paths.claudeUserConfigPath, {
+      mcpServers: {
+        httpapi: {
+          type: 'http',
+          url: 'https://mcp.example.com/v1',
+          headers: { Authorization: 'Bearer hdr-secret-789', 'X-Nested': { token: 'nested-000' } },
+          env: { COMPLEX: ['arr-secret-001'] },
+        },
+      },
+    });
+
+    const bundlePath = await makeOutputPath();
+    const result = await exportProfile({
+      appHomePath: appHome,
+      name: 'coding',
+      outputPath: bundlePath,
+      clock: FIXED_CLOCK,
+    });
+    const extractDir = await extractBundle(bundlePath);
+    const claudeJson = await fs.readJson(
+      path.join(extractDir, 'profile', 'claude-home', '.claude.json'),
+    );
+    const server = claudeJson.mcpServers.httpapi;
+    // every value replaced with the marker — none survives in any shape
+    expect(server.headers.Authorization).toBe('<redacted>');
+    expect(server.headers['X-Nested']).toBe('<redacted>');
+    expect(server.env.COMPLEX).toBe('<redacted>');
+    expect(await treeContains(extractDir, 'nested-000')).toBe(false);
+    expect(await treeContains(extractDir, 'arr-secret-001')).toBe(false);
+    // key names reported under their own scopes
+    const headerEntry = result.strippedKeys.find(
+      (e) => e.scope === 'mcp-headers' && e.mcpServer === 'httpapi',
+    );
+    expect(headerEntry?.keys).toEqual(['Authorization', 'X-Nested']);
+    const envEntry = result.strippedKeys.find(
+      (e) => e.scope === 'mcp-env' && e.mcpServer === 'httpapi',
+    );
+    expect(envEntry?.keys).toEqual(['COMPLEX']);
+  });
+
+  it('refuses export when a config file is a symlink to excluded content (sentinel untouched)', async () => {
+    const { appHome } = await makeAppHome();
+    await makeProfile(appHome, 'coding');
+    const paths = getProfileTemplatePaths(appHome, 'coding');
+    // external sentinel the link points at — must never be read or modified
+    const sentinelDir = await mkdtemp(join(tmpdir(), 'ccps-export-sentinel-'));
+    tempRoots.push(sentinelDir);
+    const sentinel = path.join(sentinelDir, 'settings.json');
+    await fs.writeFile(sentinel, '{"env":{"ANTHROPIC_API_KEY":"sk-ant-outside"}}', 'utf8');
+    await fs.unlink(paths.settingsPath);
+    await fs.symlink(sentinel, paths.settingsPath);
+
+    const bundlePath = await makeOutputPath();
+    await expect(
+      exportProfile({
+        appHomePath: appHome,
+        name: 'coding',
+        outputPath: bundlePath,
+        clock: FIXED_CLOCK,
+      }),
+    ).rejects.toMatchObject({ code: 'RESOURCE_CONFIG_LINK_FORBIDDEN' });
+    expect(await fs.pathExists(bundlePath)).toBe(false);
+    // the linked external file was not read into the bundle or rewritten
+    expect(await fs.readFile(sentinel, 'utf8')).toContain('sk-ant-outside');
+  });
+
+  it('refuses export when an ancestor directory of a config file is a symlink', async () => {
+    const { appHome } = await makeAppHome();
+    await makeProfile(appHome, 'coding');
+    const paths = getProfileTemplatePaths(appHome, 'coding');
+    // swap the real claude-home for a link to an external dir holding settings
+    const external = await mkdtemp(join(tmpdir(), 'ccps-export-ancestor-'));
+    tempRoots.push(external);
+    await fs.copy(paths.claudeHomePath, path.join(external, 'claude-home'));
+    await fs.writeJson(path.join(external, 'claude-home', 'settings.json'), {
+      env: { ANTHROPIC_API_KEY: 'sk-ant-via-ancestor' },
+    });
+    await fs.remove(paths.claudeHomePath);
+    await fs.symlink(path.join(external, 'claude-home'), paths.claudeHomePath, 'dir');
+
+    const bundlePath = await makeOutputPath();
+    await expect(
+      exportProfile({
+        appHomePath: appHome,
+        name: 'coding',
+        outputPath: bundlePath,
+        clock: FIXED_CLOCK,
+      }),
+    ).rejects.toMatchObject({ code: 'RESOURCE_LINK_FORBIDDEN' });
+    expect(await fs.pathExists(bundlePath)).toBe(false);
+    expect(
+      await fs.readFile(path.join(external, 'claude-home', 'settings.json'), 'utf8'),
+    ).toContain('sk-ant-via-ancestor');
+  });
+
+  it('reports accurate manifest counts reflecting the real output tree', async () => {
+    const { appHome } = await makeAppHome();
+    await makeProfile(appHome, 'coding');
+    const paths = getProfileTemplatePaths(appHome, 'coding');
+    await injectSecrets(appHome, 'coding');
+    await fs.outputFile(path.join(paths.claudeHomePath, 'sessions', 's.jsonl'), '{}');
+
+    const bundlePath = await makeOutputPath();
+    const result = await exportProfile({
+      appHomePath: appHome,
+      name: 'coding',
+      outputPath: bundlePath,
+      clock: FIXED_CLOCK,
+    });
+
+    // stripped keys mirror the actual redaction pass (2 settings + 3 mcp env)
+    expect(result.strippedKeys.reduce((sum, e) => sum + e.keys.length, 0)).toBe(5);
+    expect(result.manifest.secretsPresent).toBe(true);
+    expect(result.manifest.secretsStripped).toBe(true);
+    const manifest = await readManifest(await extractBundle(bundlePath));
+    expect(manifest.strippedKeys).toEqual(result.strippedKeys);
   });
 });
 

@@ -12,19 +12,15 @@ import {
   getProfileTemplatePaths,
   type ProfileTemplatePaths,
 } from './profile-template';
-import {
-  addMcpServer,
-  deriveTransport,
-  getClaudeJsonPath,
-  readMcpServersMap,
-} from './mcp-servers';
+import { addMcpServer, deriveTransport, getClaudeJsonPath, readMcpServersMap } from './mcp-servers';
+import { sweepRuntimeEntriesFromStagedProfile } from './resource-policy';
 import { cliVersion } from './version';
 import { validateProfile, type ProfileValidationResult } from './validator';
 import { resolveFilesystemPath, validateProfileName } from '../platform/path';
 import type { CaptureProcess } from '../platform/process';
 import { profileConfigSchema, type ProfileConfig } from '../schemas/profile';
 import {
-  bundleManifestSchema,
+  parseBundleManifest,
   type BundleManifest,
   type BundleStrippedKeys,
 } from '../schemas/profile-bundle';
@@ -36,13 +32,22 @@ import { isRecord } from '../utils/type-guards';
  * Profile import — creates a new Profile from a portable `.tar.gz` bundle
  * produced by `exportProfile`.
  *
- * Spec: docs/Spec-profile-workbench.md §11.2 Import (issue #74).
+ * Spec: docs/Spec-profile-workbench.md §11.2 Import (issue #74); boundary per
+ * issue #105.
  *
  * Bundle layout (tar.gz root, produced by export):
- *   manifest.json   — authoritative index (BundleManifest)
- *   profile/        — verbatim profile file tree (profiles/<name>/ contents)
+ *   manifest.json   — authoritative index (BundleManifest, v1 or v2)
+ *   profile/        — resource-selected profile tree
  *
  * Safety contract:
+ *   - Manifests of the current version (2) and the previous version (1) are
+ *     accepted; anything newer is refused. Historical artifacts are never
+ *     rewritten — a v1 bundle imports as-is (minus the runtime sweep below).
+ *   - The staged tree is swept through the shared resource policy before it
+ *     is published: runtime entries an older bundle may carry (sessions,
+ *     history, projects, caches, credentials, unknown top-level entries) are
+ *     removed, so an old bundle's runtime data never lands in a new Profile.
+ *     Manifest claims never override this content check.
  *   - A mandatory manifest preview is surfaced to the `confirm` callback before
  *     the profile directory is created. Nothing under `profiles/` is written
  *     until the caller confirms.
@@ -56,9 +61,10 @@ import { isRecord } from '../utils/type-guards';
  *     import or the post-import Validate.
  *   - Stripped secret values stay as `<redacted>` key-name placeholders in the
  *     imported settings.json (and legacy mcp.json). The result reports every
- *     key name that needs guided re-entry. MCP env values are never passed
- *     through `claude mcp add -e` during import — the user re-enters them — so
- *     the secret-in-memory rule holds even for `--include-secrets` bundles.
+ *     key name that needs guided re-entry — env key names and MCP HTTP header
+ *     key names alike. No stripped value is ever passed to the delegated CLI;
+ *     MCP env/header values never pass through `claude mcp add` during import,
+ *     so the secret-in-memory rule holds even for `--include-secrets` bundles.
  *   - Validate runs automatically after import and its findings are surfaced.
  *   - Never reads or touches the real ~/.claude or ~/.claude.json; extraction
  *     happens in a staging dir under app home, and tar's default path
@@ -87,6 +93,8 @@ export type ImportMcpServerResult = {
   reRegistered: boolean;
   /** Env key names the user must re-enter for this server (values never travel). */
   envKeysToReenter: string[];
+  /** HTTP header key names the user must re-enter for this server. */
+  headerKeysToReenter: string[];
   /** Present when `reRegistered` is false. */
   failureMessage?: string;
 };
@@ -101,6 +109,8 @@ export type ImportResult = {
   settingsSecretKeysToReenter: string[];
   /** Legacy root `mcp.json` env key names needing re-entry, grouped by server. */
   legacyMcpEnvKeysToReenter: { server: string; keys: string[] }[];
+  /** MCP HTTP header key names needing re-entry, grouped by server. */
+  mcpHeaderKeysToReenter: { server: string; keys: string[] }[];
   validation: ProfileValidationResult;
 };
 
@@ -210,14 +220,10 @@ async function extractBundle(
   try {
     await tar.x({ file: bundlePath, cwd: stagingRoot });
   } catch (error) {
-    throw new CcpsError(
-      'IMPORT_BUNDLE_READ_FAILED',
-      'Bundle could not be extracted.',
-      {
-        guidance: `Ensure the file is a valid ccps profile bundle produced by ccps export: ${bundlePath}`,
-        cause: error,
-      },
-    );
+    throw new CcpsError('IMPORT_BUNDLE_READ_FAILED', 'Bundle could not be extracted.', {
+      guidance: `Ensure the file is a valid ccps profile bundle produced by ccps export: ${bundlePath}`,
+      cause: error,
+    });
   }
 
   const manifestPath = path.join(stagingRoot, BUNDLE_MANIFEST_FILE);
@@ -235,7 +241,7 @@ async function extractBundle(
   let parsedManifest: BundleManifest;
   try {
     const raw = await fs.readJson(manifestPath);
-    parsedManifest = bundleManifestSchema.parse(raw);
+    parsedManifest = parseBundleManifest(raw);
   } catch (error) {
     throw new CcpsError(
       'IMPORT_MANIFEST_INVALID',
@@ -274,6 +280,13 @@ async function applyImport(args: ApplyImportArgs): Promise<ImportResult> {
   const targetPaths = getProfileTemplatePaths(appHomePath, targetName);
   const stagingProfile = args.stagingProfile;
 
+  // Content-over-manifest sweep (issue #105): the manifest may claim anything,
+  // so the staged tree itself is filtered through the shared resource policy
+  // before it can become a Profile. Runtime entries carried by an older
+  // exporter — sessions, history, projects, caches, credentials, unknown
+  // top-level claude-home entries — are removed here, in every mode.
+  await sweepRuntimeEntriesFromStagedProfile(stagingProfile);
+
   // Capture native MCP servers from the staged .claude.json, then clear them.
   // The profile's .claude.json must never carry ccps-direct server writes; each
   // server is re-registered through Claude Code's delegated add path below.
@@ -305,6 +318,7 @@ async function applyImport(args: ApplyImportArgs): Promise<ImportResult> {
     mcpServers,
     settingsSecretKeysToReenter: collectSettingsSecretKeys(manifest.strippedKeys),
     legacyMcpEnvKeysToReenter: collectLegacyMcpEnvKeys(manifest.strippedKeys),
+    mcpHeaderKeysToReenter: collectMcpHeaderKeys(manifest.strippedKeys),
     validation,
   };
 }
@@ -328,13 +342,9 @@ export async function repairImportedProfile(
   // copyProfile). The bundled config is re-validated so a tampered manifest
   // never silently lands an invalid profile.json.
   if (!(await fs.pathExists(paths.profileConfigPath))) {
-    throw new CcpsError(
-      'IMPORT_PROFILE_INVALID',
-      'Bundled profile.json is missing.',
-      {
-        guidance: 'Re-export the source profile with a current ccps version.',
-      },
-    );
+    throw new CcpsError('IMPORT_PROFILE_INVALID', 'Bundled profile.json is missing.', {
+      guidance: 'Re-export the source profile with a current ccps version.',
+    });
   }
   const profileJson = await fs.readJson(paths.profileConfigPath);
   const parsed = profileConfigSchema.safeParse(profileJson);
@@ -385,9 +395,8 @@ export async function reRegisterMcpServers(
   const entries = [...servers.entries()].sort(([a], [b]) => a.localeCompare(b));
 
   for (const [name, entry] of entries) {
-    const envKeysToReenter = isRecord(entry.env)
-      ? Object.keys(entry.env).sort((a, b) => a.localeCompare(b))
-      : [];
+    const envKeysToReenter = stringKeyNames(entry.env);
+    const headerKeysToReenter = stringKeyNames(entry.headers);
 
     const transport = deriveTransport(entry);
     if (transport !== 'stdio' && transport !== 'sse' && transport !== 'http') {
@@ -395,6 +404,7 @@ export async function reRegisterMcpServers(
         name,
         reRegistered: false,
         envKeysToReenter,
+        headerKeysToReenter,
         failureMessage: 'MCP server transport could not be determined.',
       });
       continue;
@@ -409,24 +419,37 @@ export async function reRegisterMcpServers(
     } else if ((transport === 'sse' || transport === 'http') && typeof entry.url === 'string') {
       addOptions.url = entry.url;
     }
-    // env is intentionally never passed: secret-class values never travel
-    // through `claude mcp add -e` during import (secret-in-memory rule). The
-    // key names are returned above for guided re-entry.
-
+    // env and headers are intentionally never passed: secret-class values
+    // never travel through `claude mcp add -e`/`--header` during import
+    // (secret-in-memory rule). The key names are returned above for guided
+    // re-entry.
     try {
       await addMcpServer(profileRootPath, addOptions, { captureProcess });
-      results.push({ name, reRegistered: true, envKeysToReenter });
+      results.push({ name, reRegistered: true, envKeysToReenter, headerKeysToReenter });
     } catch (error) {
       results.push({
         name,
         reRegistered: false,
         envKeysToReenter,
+        headerKeysToReenter,
         failureMessage: errorMessage(error),
       });
     }
   }
 
   return results;
+}
+
+/**
+ * Sorted key names of a server entry bag. Malformed bags (non-object values)
+ * still surface their enumerable key names — a malformed structure must not
+ * hide re-entry requirements, and no value is ever read beyond key names.
+ */
+function stringKeyNames(bag: unknown): string[] {
+  if (!isRecord(bag)) {
+    return [];
+  }
+  return Object.keys(bag).sort((left, right) => left.localeCompare(right));
 }
 
 export function collectSettingsSecretKeys(strippedKeys: BundleStrippedKeys[]): string[] {
@@ -450,6 +473,23 @@ export function collectLegacyMcpEnvKeys(
   const out: { server: string; keys: string[] }[] = [];
   for (const entry of strippedKeys) {
     if (entry.scope === 'mcp-env' && entry.file === 'mcp.json' && entry.mcpServer) {
+      out.push({ server: entry.mcpServer, keys: [...entry.keys] });
+    }
+  }
+  return out;
+}
+
+/**
+ * MCP HTTP header key names needing guided re-entry (issue #105): header
+ * values are stripped under the same rules as env values, and the v2
+ * `mcp-headers` stripped-key scope records their names per server.
+ */
+export function collectMcpHeaderKeys(
+  strippedKeys: BundleStrippedKeys[],
+): { server: string; keys: string[] }[] {
+  const out: { server: string; keys: string[] }[] = [];
+  for (const entry of strippedKeys) {
+    if (entry.scope === 'mcp-headers' && entry.mcpServer) {
       out.push({ server: entry.mcpServer, keys: [...entry.keys] });
     }
   }

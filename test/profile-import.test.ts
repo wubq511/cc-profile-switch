@@ -15,10 +15,7 @@ import {
   type ImportPreview,
 } from '../src/core/profile-import';
 import { getClaudeJsonPath } from '../src/core/mcp-servers';
-import {
-  createProfileFromTemplate,
-  getProfileTemplatePaths,
-} from '../src/core/profile-template';
+import { createProfileFromTemplate, getProfileTemplatePaths } from '../src/core/profile-template';
 import type { CaptureProcess } from '../src/platform/process';
 
 const FIXED_CLOCK = () => new Date('2026-08-01T00:00:00Z');
@@ -114,9 +111,10 @@ async function exportBundle(
 
 type RecordedCall = { args: string[]; claudeConfigDir: string };
 
-function mockClaudeAdd(
-  failOn?: (name: string) => boolean,
-): { capture: CaptureProcess; calls: RecordedCall[] } {
+function mockClaudeAdd(failOn?: (name: string) => boolean): {
+  capture: CaptureProcess;
+  calls: RecordedCall[];
+} {
   const calls: RecordedCall[] = [];
   const capture: CaptureProcess = async (_command, args, options) => {
     const claudeConfigDir = options.env?.CLAUDE_CONFIG_DIR as string;
@@ -157,8 +155,15 @@ function applyMcpAdd(claudeConfigDir: string, args: string[]): void {
   const env: Record<string, string> = {};
   while (i < args.length) {
     const a = args[i];
-    if (a === '--scope') { i += 2; continue; }
-    if (a === '--transport') { transport = args[i + 1] as 'sse' | 'http'; i += 2; continue; }
+    if (a === '--scope') {
+      i += 2;
+      continue;
+    }
+    if (a === '--transport') {
+      transport = args[i + 1] as 'sse' | 'http';
+      i += 2;
+      continue;
+    }
     if (a === '-e' || a === '--env') {
       const pair = args[i + 1];
       const eq = pair.indexOf('=');
@@ -184,7 +189,11 @@ function applyMcpAdd(claudeConfigDir: string, args: string[]): void {
   writeMcpServer(claudeConfigDir, name, entry);
 }
 
-function writeMcpServer(claudeConfigDir: string, name: string, entry: Record<string, unknown>): void {
+function writeMcpServer(
+  claudeConfigDir: string,
+  name: string,
+  entry: Record<string, unknown>,
+): void {
   const file = path.join(claudeConfigDir, '.claude.json');
   let json: Record<string, unknown> = {};
   try {
@@ -385,7 +394,9 @@ describe('profile import service', () => {
 
     expect('aborted' in result).toBe(true);
     // no new profile created
-    expect(await fs.pathExists(getProfileTemplatePaths(appHome, 'coding').profileRootPath)).toBe(true);
+    expect(await fs.pathExists(getProfileTemplatePaths(appHome, 'coding').profileRootPath)).toBe(
+      true,
+    );
   });
 
   it('re-registers MCP servers via delegated claude mcp add (never direct .claude.json writes)', async () => {
@@ -558,7 +569,9 @@ describe('profile import service', () => {
     const paths = getProfileTemplatePaths(appHome, 'imported');
     const mcpJson = await fs.readJson(paths.mcpConfigPath);
     expect(mcpJson.mcpServers.legacy.env.LEGACY_TOKEN).toBe('<redacted>');
-    expect(result.legacyMcpEnvKeysToReenter).toEqual([{ server: 'legacy', keys: ['LEGACY_TOKEN'] }]);
+    expect(result.legacyMcpEnvKeysToReenter).toEqual([
+      { server: 'legacy', keys: ['LEGACY_TOKEN'] },
+    ]);
   });
 
   it('repairs autoMemoryDirectory so validate passes for the new profile', async () => {
@@ -582,7 +595,9 @@ describe('profile import service', () => {
     const settings = await fs.readJson(paths.settingsPath);
     expect(settings.autoMemoryDirectory).toBe(paths.autoMemoryPath);
     // no memory-directory mismatch finding
-    expect(result.validation.findings.some((f) => f.code === 'PROFILE_MEMORY_DIRECTORY_MISMATCH')).toBe(false);
+    expect(
+      result.validation.findings.some((f) => f.code === 'PROFILE_MEMORY_DIRECTORY_MISMATCH'),
+    ).toBe(false);
   });
 
   it('refuses a missing bundle', async () => {
@@ -658,6 +673,143 @@ describe('profile import service', () => {
       }),
     ).rejects.toMatchObject({ code: 'IMPORT_PROFILE_INVALID' });
   });
+
+  // --- issue #105 boundary: version compatibility & content-over-manifest ----
+
+  it('accepts a v1 manifest bundle and sweeps its runtime entries before publishing', async () => {
+    const appHome = await makeAppHome();
+    await makeProfile(appHome, 'coding');
+    await injectSecrets(appHome, 'coding');
+    const bundlePath = await exportBundle(appHome, 'coding');
+
+    // Downgrade the manifest to the exact v1 shape and plant runtime entries
+    // in the tree (as an old, pre-policy exporter would have).
+    const dir = await mkdtemp(join(tmpdir(), 'ccps-import-v1-'));
+    tempRoots.push(dir);
+    const tar = await import('tar');
+    await tar.x({ file: bundlePath, cwd: dir });
+    const raw = await fs.readJson(path.join(dir, 'manifest.json'));
+    await fs.writeJson(path.join(dir, 'manifest.json'), {
+      version: 1,
+      bundleFormat: raw.bundleFormat,
+      exporterVersion: raw.exporterVersion,
+      exportedAt: raw.exportedAt,
+      profileName: raw.profileName,
+      includeSecrets: raw.includeSecrets,
+      secretsPresent: raw.secretsPresent,
+      secretsStripped: raw.secretsStripped,
+      strippedKeys: raw.strippedKeys,
+      resources: raw.resources,
+      mcpServerNames: raw.mcpServerNames,
+    });
+    await fs.outputFile(
+      path.join(dir, 'profile', 'claude-home', 'sessions', 'old.jsonl'),
+      '{"o":1}',
+    );
+    await fs.outputFile(path.join(dir, 'profile', 'claude-home', 'history', 'h.jsonl'), '{"o":1}');
+    await fs.outputFile(path.join(dir, 'profile', 'claude-home', 'unknown-runtime-dir', 'x'), 'x');
+    const v1Bundle = path.join(dir, 'v1.tar.gz');
+    await tar.c({ gzip: true, file: v1Bundle, cwd: dir, portable: true }, [
+      'manifest.json',
+      'profile',
+    ]);
+
+    const result = await importProfile({
+      appHomePath: appHome,
+      bundlePath: v1Bundle,
+      targetName: 'imported',
+      confirm: proceedConfirm(),
+      captureProcess: mockClaudeAdd().capture,
+      clock: FIXED_CLOCK,
+    });
+
+    expect('aborted' in result).toBe(false);
+    if ('aborted' in result) return;
+    expect(result.manifest.version).toBe(1);
+    const paths = getProfileTemplatePaths(appHome, 'imported');
+    // the old bundle's runtime entries never land in the new profile
+    expect(await fs.pathExists(path.join(paths.claudeHomePath, 'sessions'))).toBe(false);
+    expect(await fs.pathExists(path.join(paths.claudeHomePath, 'history'))).toBe(false);
+    expect(await fs.pathExists(path.join(paths.claudeHomePath, 'unknown-runtime-dir'))).toBe(false);
+    // supported resources still import
+    expect(await fs.pathExists(paths.profileConfigPath)).toBe(true);
+    expect(result.validation.status).toBe('valid');
+  });
+
+  it('rejects a manifest from a future version', async () => {
+    const appHome = await makeAppHome();
+    await makeProfile(appHome, 'coding');
+    const bundlePath = await exportBundle(appHome, 'coding');
+    const tampered = await rebuildBundleWithManifest(bundlePath, {
+      version: 99,
+      bundleFormat: 'ccps-profile-bundle',
+      exporterVersion: '99.0.0',
+      exportedAt: '2030-01-01T00:00:00.000Z',
+      profileName: 'coding',
+      includeSecrets: false,
+      secretsPresent: false,
+      secretsStripped: false,
+      strippedKeys: [],
+      resources: {
+        userMemory: 0,
+        autoMemory: 0,
+        skills: 0,
+        agents: 0,
+        mcpServers: 0,
+        settings: 0,
+        launchConfig: 0,
+      },
+      mcpServerNames: [],
+    });
+
+    await expect(
+      importProfile({
+        appHomePath: appHome,
+        bundlePath: tampered,
+        confirm: proceedConfirm(),
+        clock: FIXED_CLOCK,
+      }),
+    ).rejects.toMatchObject({ code: 'IMPORT_MANIFEST_INVALID' });
+  });
+
+  it('imports a planted runtime entry even when the manifest claims none exist', async () => {
+    const appHome = await makeAppHome();
+    await makeProfile(appHome, 'coding');
+    const bundlePath = await exportBundle(appHome, 'coding');
+    // Plant a runtime dir AND mark the manifest as claiming exclusions —
+    // the staged content check must win over any manifest claim.
+    const dir = await mkdtemp(join(tmpdir(), 'ccps-import-claim-'));
+    tempRoots.push(dir);
+    const tar = await import('tar');
+    await tar.x({ file: bundlePath, cwd: dir });
+    const raw = await fs.readJson(path.join(dir, 'manifest.json'));
+    raw.excludedTopLevelEntries = ['claude-home/sessions'];
+    raw.topLevelEntries = ['claude-home', 'profile.json'];
+    await fs.writeJson(path.join(dir, 'manifest.json'), raw);
+    await fs.outputFile(
+      path.join(dir, 'profile', 'claude-home', 'sessions', 'planted.jsonl'),
+      '{"p":1}',
+    );
+    const planted = path.join(dir, 'planted.tar.gz');
+    await tar.c({ gzip: true, file: planted, cwd: dir, portable: true }, [
+      'manifest.json',
+      'profile',
+    ]);
+
+    const result = await importProfile({
+      appHomePath: appHome,
+      bundlePath: planted,
+      targetName: 'imported',
+      confirm: proceedConfirm(),
+      captureProcess: mockClaudeAdd().capture,
+      clock: FIXED_CLOCK,
+    });
+
+    expect('aborted' in result).toBe(false);
+    if ('aborted' in result) return;
+    const paths = getProfileTemplatePaths(appHome, 'imported');
+    expect(await fs.pathExists(path.join(paths.claudeHomePath, 'sessions'))).toBe(false);
+  });
 });
 
 // --- CLI command ----------------------------------------------------------------
@@ -726,13 +878,23 @@ describe('import command output', () => {
     });
     await fs.writeJson(paths.claudeUserConfigPath, {
       mcpServers: {
-        github: { type: 'stdio', command: 'npx', args: ['-y', 'x'], env: { GITHUB_TOKEN: 'ghp_secret' } },
+        github: {
+          type: 'stdio',
+          command: 'npx',
+          args: ['-y', 'x'],
+          env: { GITHUB_TOKEN: 'ghp_secret' },
+        },
       },
     });
     const outDir = await mkdtemp(join(tmpdir(), 'ccps-import-cli-out-'));
     tempRoots.push(outDir);
     const bundlePath = path.join(outDir, 'bundle.tar.gz');
-    await exportProfile({ appHomePath: appHome, name: 'coding', outputPath: bundlePath, clock: FIXED_CLOCK });
+    await exportProfile({
+      appHomePath: appHome,
+      name: 'coding',
+      outputPath: bundlePath,
+      clock: FIXED_CLOCK,
+    });
     return bundlePath;
   }
 
@@ -743,7 +905,9 @@ describe('import command output', () => {
     await fs.mkdir(userHome);
     const bundlePath = await setup(userHome);
 
-    const { output } = await runCli(userHome, ['import', bundlePath, 'imported'], { inputs: ['y'] });
+    const { output } = await runCli(userHome, ['import', bundlePath, 'imported'], {
+      inputs: ['y'],
+    });
 
     expect(output).toContain('Bundle: ccps profile-bundle');
     expect(output).toContain('exporter ccps 0.1.0');
@@ -755,6 +919,50 @@ describe('import command output', () => {
     expect(output).toContain('MCP env keys to re-enter: github (GITHUB_TOKEN)');
     expect(output).toContain('Secrets to re-enter in settings.json: ANTHROPIC_API_KEY');
     expect(output).toContain('Validation: valid');
+  });
+
+  it('reports MCP header keys needing re-entry after import (real CLI entry)', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'ccps-import-cli-'));
+    tempRoots.push(root);
+    const userHome = path.join(root, 'userhome');
+    await fs.mkdir(userHome);
+    const appHome = path.join(userHome, '.cc-profile-switch');
+    await createAppConfig(appHome, { clock: FIXED_CLOCK });
+    await createProfileFromTemplate({
+      appHomePath: appHome,
+      name: 'coding',
+      template: 'coding',
+      clock: FIXED_CLOCK,
+    });
+    const paths = getProfileTemplatePaths(appHome, 'coding');
+    await fs.writeJson(paths.claudeUserConfigPath, {
+      mcpServers: {
+        httpapi: {
+          type: 'http',
+          url: 'https://mcp.example.com/v1',
+          headers: { Authorization: 'Bearer hdr-secret-789' },
+        },
+      },
+    });
+    const outDir = await mkdtemp(join(tmpdir(), 'ccps-import-cli-out-'));
+    tempRoots.push(outDir);
+    const bundlePath = path.join(outDir, 'bundle.tar.gz');
+    await exportProfile({
+      appHomePath: appHome,
+      name: 'coding',
+      outputPath: bundlePath,
+      clock: FIXED_CLOCK,
+    });
+
+    const { output } = await runCli(userHome, ['import', bundlePath, 'imported'], {
+      inputs: ['y'],
+    });
+
+    // header keys surface in the same per-server shape as env keys
+    expect(output).toContain('MCP header keys to re-enter: httpapi (Authorization)');
+    expect(output).toContain('MCP servers re-registered: httpapi');
+    // the stripped header value never reaches the terminal
+    expect(output).not.toContain('hdr-secret-789');
   });
 
   it('offers import-as-new-name on collision and imports under the new name', async () => {
@@ -822,9 +1030,7 @@ describe('malicious traversal bundle (safety invariant)', () => {
     expect(await fs.pathExists(path.join(appHomeParent, 'escape-two-up.txt'))).toBe(false);
 
     // No staging residue survives anywhere under app home.
-    const residue = (await fs.readdir(appHome)).filter((name) =>
-      name.startsWith('.ccps-import-'),
-    );
+    const residue = (await fs.readdir(appHome)).filter((name) => name.startsWith('.ccps-import-'));
     expect(residue).toEqual([]);
   });
 });
@@ -845,10 +1051,7 @@ async function treeContains(dir: string, needle: string): Promise<boolean> {
   return false;
 }
 
-async function rebuildBundleWithManifest(
-  bundlePath: string,
-  manifest: unknown,
-): Promise<string> {
+async function rebuildBundleWithManifest(bundlePath: string, manifest: unknown): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'ccps-import-tamper-'));
   tempRoots.push(dir);
   const tar = await import('tar');
