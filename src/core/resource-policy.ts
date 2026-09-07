@@ -1,7 +1,7 @@
 import fs from 'fs-extra';
 import path from 'node:path';
 
-import { CcpsError } from '../utils/errors';
+import { CcpsError, type CcpsErrorOptions } from '../utils/errors';
 import { isNodeError } from '../utils/type-guards';
 
 /**
@@ -90,8 +90,8 @@ export type SelectResourcesOptions = {
 export class ResourceLinkForbiddenError extends CcpsError {
   readonly relativePath: string;
 
-  constructor(relativePath: string, message: string, guidance: string) {
-    super('RESOURCE_LINK_FORBIDDEN', message, { guidance });
+  constructor(relativePath: string, message: string, options: CcpsErrorOptions = {}) {
+    super('RESOURCE_LINK_FORBIDDEN', message, options);
     this.relativePath = relativePath;
   }
 }
@@ -343,19 +343,8 @@ async function copySupportedDir(
         result.skipped.push(relativePath);
         continue;
       }
-      if (relativePath === 'claude-home/memory' && excludeAutoMemory) {
-        // Recurse into memory/ but keep the exclusion in force for auto/.
-        await fs.ensureDir(stagingPath);
-        result.copiedDirs += 1;
-        const failure = await copySupportedDir({
-          ...args,
-          sourceDir: sourcePath,
-          stagingDir: stagingPath,
-          relativeBase: relativePath,
-        });
-        if (failure) return failure;
-        continue;
-      }
+      // memory/ (and every other supported subdirectory) recurses with the
+      // exclusion flags still in force: auto/ is re-checked one level down.
       await fs.ensureDir(stagingPath);
       result.copiedDirs += 1;
       const failure = await copySupportedDir({

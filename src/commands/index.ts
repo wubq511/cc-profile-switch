@@ -324,7 +324,7 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
     .description('Package a profile as a single portable .tar.gz bundle.')
     .option(
       '--include-secrets',
-      'Include secret-class values (env.ANTHROPIC_* and MCP env). Writes the file 0600.',
+      'Include secret-class values (env.ANTHROPIC_*, MCP env and HTTP header values). Writes the file 0600.',
     )
     .action(async (name: string, outputPath: string, options: { includeSecrets?: boolean }) => {
       const result = await exportProfile({
@@ -356,7 +356,9 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
           continue;
         }
         const serverSuffix =
-          entry.scope === 'mcp-env' && entry.mcpServer ? ` (${entry.mcpServer})` : '';
+          (entry.scope === 'mcp-env' || entry.scope === 'mcp-headers') && entry.mcpServer
+            ? ` (${entry.mcpServer})`
+            : '';
         runtime.writeOut(`  ${entry.file}${serverSuffix}: ${entry.keys.join(', ')}\n`);
       }
 
@@ -1249,6 +1251,34 @@ function formatImportResult(result: ImportResult): string {
     .map((s) => `${s.name} (${s.envKeysToReenter.join(', ')})`);
   if (envReentry.length > 0) {
     lines.push(`MCP env keys to re-enter: ${envReentry.join('; ')}`);
+  }
+  // MCP HTTP header key names needing guided re-entry (issue #105): header
+  // values are redacted under the same rules as env values and are never
+  // passed through `claude mcp add`, so the keys are reported per server in
+  // the same shape as the env line above. Native servers surface keys from
+  // the staged content; the manifest-scope list additionally covers legacy
+  // root mcp.json servers (no delegation happens for them).
+  const headerReentry = new Map<string, string[]>();
+  for (const server of result.mcpServers) {
+    if (server.headerKeysToReenter.length > 0) {
+      headerReentry.set(server.name, [...server.headerKeysToReenter]);
+    }
+  }
+  for (const entry of result.mcpHeaderKeysToReenter) {
+    if (entry.keys.length === 0) {
+      continue;
+    }
+    headerReentry.set(entry.server, [
+      ...new Set([...(headerReentry.get(entry.server) ?? []), ...entry.keys]),
+    ]);
+  }
+  const headerLines = [...headerReentry.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(
+      ([server, keys]) => `${server} (${[...keys].sort((a, b) => a.localeCompare(b)).join(', ')})`,
+    );
+  if (headerLines.length > 0) {
+    lines.push(`MCP header keys to re-enter: ${headerLines.join('; ')}`);
   }
   if (result.settingsSecretKeysToReenter.length > 0) {
     lines.push(

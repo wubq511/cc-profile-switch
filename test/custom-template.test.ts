@@ -825,6 +825,101 @@ describe('createProfileFromCustomTemplate', () => {
     );
   });
 
+  it('rejects a crafted manifest whose linkedSkills name escapes the skills dir', async () => {
+    const appHome = await makeAppHome();
+    await makeProfile(appHome, 'coding');
+    await saveProfileAsTemplate({
+      appHomePath: appHome,
+      profileName: 'coding',
+      templateName: 'crafted',
+      clock: FIXED_CLOCK,
+    });
+    const templateDir = path.join(appHome, 'templates', 'crafted');
+    // Hand-crafted v2 manifest + sidecar: a traversal name that, unguarded,
+    // would fs.remove + symlink an arbitrary path under claude-home.
+    const manifestRaw = await fs.readJson(path.join(templateDir, 'template.json'));
+    await fs.writeJson(path.join(templateDir, 'template.json'), {
+      ...manifestRaw,
+      linkedSkills: ['../settings.json'],
+    });
+    await fs.writeJson(path.join(templateDir, 'linked-skills.json'), {
+      '../settings.json': path.join(appHome, 'some-external-target'),
+    });
+
+    await expect(
+      createProfileFromCustomTemplate({
+        appHomePath: appHome,
+        templateName: 'crafted',
+        name: 'fresh',
+        captureProcess: mockClaudeAdd().capture,
+        clock: FIXED_CLOCK,
+      }),
+    ).rejects.toMatchObject({ code: 'TEMPLATE_INVALID' });
+    // nothing was copied: no partial profile, and the crafted link never ran
+    expect(await fs.pathExists(path.join(appHome, 'profiles', 'fresh'))).toBe(false);
+    // a real profile can still be created afterwards under the same name
+    const manifestGood = await fs.readJson(path.join(templateDir, 'template.json'));
+    await fs.writeJson(path.join(templateDir, 'template.json'), {
+      ...manifestGood,
+      linkedSkills: [],
+    });
+    const result = await createProfileFromCustomTemplate({
+      appHomePath: appHome,
+      templateName: 'crafted',
+      name: 'fresh',
+      captureProcess: mockClaudeAdd().capture,
+      clock: FIXED_CLOCK,
+    });
+    expect(result.profileName).toBe('fresh');
+  });
+
+  it('refuses a linkedSkills name that also exists as a real entry in the template tree', async () => {
+    const appHome = await makeAppHome();
+    await makeProfile(appHome, 'coding');
+    await saveProfileAsTemplate({
+      appHomePath: appHome,
+      profileName: 'coding',
+      templateName: 'conflict',
+      clock: FIXED_CLOCK,
+    });
+    const templateDir = path.join(appHome, 'templates', 'conflict');
+    // A template whose tree materialized skill dir "copied-skill" while the
+    // manifest claims the same name is a Linked Skill — inconsistent, so the
+    // create refuses rather than delete the copied dir and swap in a link.
+    await fs.ensureDir(path.join(templateDir, 'profile', 'claude-home', 'skills', 'copied-skill'));
+    await fs.writeFile(
+      path.join(templateDir, 'profile', 'claude-home', 'skills', 'copied-skill', 'SKILL.md'),
+      '# copied',
+      'utf8',
+    );
+    const manifestRaw = await fs.readJson(path.join(templateDir, 'template.json'));
+    await fs.writeJson(path.join(templateDir, 'template.json'), {
+      ...manifestRaw,
+      linkedSkills: ['copied-skill'],
+    });
+    await fs.writeJson(path.join(templateDir, 'linked-skills.json'), {
+      'copied-skill': path.join(appHome, 'external-source'),
+    });
+
+    await expect(
+      createProfileFromCustomTemplate({
+        appHomePath: appHome,
+        templateName: 'conflict',
+        name: 'fresh',
+        captureProcess: mockClaudeAdd().capture,
+        clock: FIXED_CLOCK,
+      }),
+    ).rejects.toMatchObject({ code: 'TEMPLATE_INVALID' });
+    // refused before anything was copied: no partial profile, and the real
+    // copied-skill entry was never deleted by a relink attempt
+    expect(await fs.pathExists(path.join(appHome, 'profiles', 'fresh'))).toBe(false);
+    expect(
+      await fs.pathExists(
+        path.join(templateDir, 'profile', 'claude-home', 'skills', 'copied-skill', 'SKILL.md'),
+      ),
+    ).toBe(true);
+  });
+
   it('reports MCP header keys needing re-entry (import parity)', async () => {
     const appHome = await makeAppHome();
     await makeProfile(appHome, 'coding');

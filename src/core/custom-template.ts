@@ -37,6 +37,7 @@ import {
   type CustomTemplateManifest,
 } from '../schemas/custom-template';
 import { CcpsError } from '../utils/errors';
+import { isNodeError } from '../utils/type-guards';
 
 /**
  * Custom profile templates — save a Profile as a reusable template and create
@@ -273,6 +274,39 @@ export async function createProfileFromCustomTemplate(
     });
   }
 
+  // Linked Skill names from the manifest are untrusted input (crafting one
+  // needs local write access to templates/, but the new profile's
+  // claude-home must still not be deletable through it). Every name is
+  // validated as a plain single path segment BEFORE anything is copied, so a
+  // hostile manifest cannot leave a partial profile behind either. A name
+  // that also exists as a real entry in the template tree is inconsistent (a
+  // copied skill cannot also be a Linked reference) and is refused the same
+  // way — only symlink entries (an explicit Linked Skill tree shape) pass.
+  if (manifest.version === 2) {
+    for (const skillName of manifest.linkedSkills) {
+      assertLinkedSkillName(skillName);
+      let templateEntry: fs.Stats | undefined;
+      try {
+        templateEntry = await fs.lstat(
+          path.join(templateProfile, 'claude-home', 'skills', skillName),
+        );
+      } catch (error) {
+        if (!isNodeError(error) || error.code !== 'ENOENT') {
+          throw error;
+        }
+      }
+      if (templateEntry !== undefined && !templateEntry.isSymbolicLink()) {
+        throw new CcpsError(
+          'TEMPLATE_INVALID',
+          `Template "${templateName}" lists Linked Skill "${skillName}" but its tree carries a real entry at that name.`,
+          {
+            guidance: 'Remove the template and save it again from its source profile.',
+          },
+        );
+      }
+    }
+  }
+
   await fs.copy(templateProfile, targetPaths.profileRootPath, {
     overwrite: false,
     errorOnExist: true,
@@ -286,7 +320,10 @@ export async function createProfileFromCustomTemplate(
 
   // Linked Skills travel as references only: re-create the symlink (if the
   // source target still exists) rather than materializing the external dir.
-  const linkedSkills = manifest.version >= 2 ? manifest.linkedSkills : [];
+  // Names and tree conflicts were validated before the copy; the copied tree
+  // can only hold symlink entries at those names (or nothing), so removing
+  // before re-linking cannot touch a real copied resource.
+  const linkedSkills = manifest.version === 2 ? manifest.linkedSkills : [];
   for (const skillName of linkedSkills) {
     const linkPath = path.join(targetPaths.claudeHomePath, 'skills', skillName);
     const linkedTarget = await readTemplateLinkedSkillTarget(templateDir, skillName);
@@ -347,6 +384,29 @@ async function readTemplateLinkedSkillTarget(
     return undefined;
   }
   return undefined;
+}
+
+/**
+ * A Linked Skill name from a template manifest must be a plain single path
+ * segment — never a path, traversal, or NUL. The manifest is untrusted
+ * input; validating before any fs.remove/symlink keeps a crafted template
+ * from touching anything outside the new profile's skills/ directory.
+ */
+function assertLinkedSkillName(skillName: string): void {
+  const valid =
+    skillName.length > 0 &&
+    skillName !== '.' &&
+    skillName !== '..' &&
+    !skillName.includes('/') &&
+    !skillName.includes('\\') &&
+    !skillName.includes('\0');
+  if (!valid) {
+    throw new CcpsError(
+      'TEMPLATE_INVALID',
+      `Template manifest lists an invalid Linked Skill name: "${skillName}".`,
+      { guidance: 'Remove the template and save it again from its source profile.' },
+    );
+  }
 }
 
 function isRecordShape(value: unknown): value is Record<string, unknown> {

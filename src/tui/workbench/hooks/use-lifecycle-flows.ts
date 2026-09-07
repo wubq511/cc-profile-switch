@@ -44,12 +44,16 @@ import type { LaunchResumeState } from '../launch/launch-resume';
 /** Post-mutation re-entry report shared by create-from-custom-template (§11.3)
  *  and import (§11.2): both land with the same two follow-ups — which secret
  *  keys the user must re-enter (values never travel) and which MCP servers
- *  failed to re-register through delegation, with the core's reason. */
+ *  failed to re-register through delegation, with the core's reason. MCP HTTP
+ *  header key names are reported separately (issue #105): header values are
+ *  stripped under the same rules as env values and never reach the delegated
+ *  CLI, so the user must re-enter them by hand. */
 function reentryFlashParts(
   result: {
     settingsSecretKeysToReenter: string[];
     mcpServers: ImportMcpServerResult[];
     legacyMcpEnvKeysToReenter: { server: string; keys: string[] }[];
+    mcpHeaderKeysToReenter: { server: string; keys: string[] }[];
   },
   t: (key: LocaleKey, params?: I18nParams) => string,
 ): string[] {
@@ -58,6 +62,12 @@ function reentryFlashParts(
       ...result.settingsSecretKeysToReenter,
       ...result.mcpServers.flatMap((s) => s.envKeysToReenter),
       ...result.legacyMcpEnvKeysToReenter.flatMap((s) => s.keys),
+    ]),
+  ].sort((a, b) => a.localeCompare(b));
+  const headerKeys = [
+    ...new Set([
+      ...result.mcpServers.flatMap((s) => s.headerKeysToReenter),
+      ...result.mcpHeaderKeysToReenter.flatMap((s) => s.keys),
     ]),
   ].sort((a, b) => a.localeCompare(b));
   const failedServers = result.mcpServers
@@ -69,6 +79,14 @@ function reentryFlashParts(
       t('lifecycle.reenterSecrets', {
         count: String(reenterKeys.length),
         keys: reenterKeys.join(', '),
+      }),
+    );
+  }
+  if (headerKeys.length > 0) {
+    parts.push(
+      t('lifecycle.reenterHeaders', {
+        count: String(headerKeys.length),
+        keys: headerKeys.join(', '),
       }),
     );
   }

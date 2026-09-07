@@ -164,6 +164,7 @@ export const en = {
   'template.source.custom': 'custom',
   'template.removeHint': '[x] remove this template (no undo)',
   'lifecycle.reenterSecrets': 'Re-enter {count} secret keys: {keys}',
+  'lifecycle.reenterHeaders': 'Re-enter {count} MCP HTTP header keys: {keys}',
   'lifecycle.mcpFailed': 'MCP re-register failed: {names}',
   // Profile export/import (issue #95)
   'lifecycle.success.exported': 'Exported "{name}"',

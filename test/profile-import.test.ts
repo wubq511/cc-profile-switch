@@ -921,6 +921,50 @@ describe('import command output', () => {
     expect(output).toContain('Validation: valid');
   });
 
+  it('reports MCP header keys needing re-entry after import (real CLI entry)', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'ccps-import-cli-'));
+    tempRoots.push(root);
+    const userHome = path.join(root, 'userhome');
+    await fs.mkdir(userHome);
+    const appHome = path.join(userHome, '.cc-profile-switch');
+    await createAppConfig(appHome, { clock: FIXED_CLOCK });
+    await createProfileFromTemplate({
+      appHomePath: appHome,
+      name: 'coding',
+      template: 'coding',
+      clock: FIXED_CLOCK,
+    });
+    const paths = getProfileTemplatePaths(appHome, 'coding');
+    await fs.writeJson(paths.claudeUserConfigPath, {
+      mcpServers: {
+        httpapi: {
+          type: 'http',
+          url: 'https://mcp.example.com/v1',
+          headers: { Authorization: 'Bearer hdr-secret-789' },
+        },
+      },
+    });
+    const outDir = await mkdtemp(join(tmpdir(), 'ccps-import-cli-out-'));
+    tempRoots.push(outDir);
+    const bundlePath = path.join(outDir, 'bundle.tar.gz');
+    await exportProfile({
+      appHomePath: appHome,
+      name: 'coding',
+      outputPath: bundlePath,
+      clock: FIXED_CLOCK,
+    });
+
+    const { output } = await runCli(userHome, ['import', bundlePath, 'imported'], {
+      inputs: ['y'],
+    });
+
+    // header keys surface in the same per-server shape as env keys
+    expect(output).toContain('MCP header keys to re-enter: httpapi (Authorization)');
+    expect(output).toContain('MCP servers re-registered: httpapi');
+    // the stripped header value never reaches the terminal
+    expect(output).not.toContain('hdr-secret-789');
+  });
+
   it('offers import-as-new-name on collision and imports under the new name', async () => {
     const root = await mkdtemp(join(tmpdir(), 'ccps-import-cli-'));
     tempRoots.push(root);

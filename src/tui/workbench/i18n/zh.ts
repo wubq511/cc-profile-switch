@@ -159,6 +159,7 @@ export const zh: Record<LocaleKey, string> = {
   'template.source.custom': '自定义',
   'template.removeHint': '[x] 删除该模板（不可恢复）',
   'lifecycle.reenterSecrets': '需重新输入 {count} 个机密键：{keys}',
+  'lifecycle.reenterHeaders': '需重新输入 {count} 个 MCP HTTP header 键：{keys}',
   'lifecycle.mcpFailed': 'MCP 重新注册失败：{names}',
   // Profile export/import (issue #95)
   'lifecycle.success.exported': '已导出「{name}」',

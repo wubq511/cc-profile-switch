@@ -318,14 +318,20 @@ async function processSettingsEnv(filePath: string, redact: boolean): Promise<st
     throw new CcpsError(
       'EXPORT_SECRET_FILE_UNREADABLE',
       `${SETTINGS_REL} is not a JSON object; cannot safely export.`,
-      { guidance: `Fix ${SETTINGS_REL} or export with --include-secrets.` },
+      {
+        // Mode-independent refusal: --include-secrets cannot bypass it, so it
+        // is not offered as guidance.
+        guidance: `Fix ${SETTINGS_REL} in the source profile, then retry the export.`,
+      },
     );
   }
   if (json.env !== undefined && !isRecord(json.env)) {
     throw new CcpsError(
       'EXPORT_SECRET_FILE_UNREADABLE',
       `${SETTINGS_REL} env is not an object; cannot safely export.`,
-      { guidance: `Fix env in ${SETTINGS_REL} or export with --include-secrets.` },
+      {
+        guidance: `Fix env in ${SETTINGS_REL} of the source profile, then retry the export.`,
+      },
     );
   }
   if (!isRecord(json.env)) {
@@ -374,7 +380,9 @@ async function processMcpEnvAndHeaders(
     throw new CcpsError(
       'EXPORT_SECRET_FILE_UNREADABLE',
       `${label} is not a JSON object; cannot safely export.`,
-      { guidance: `Fix ${label} or export with --include-secrets.` },
+      {
+        guidance: `Fix ${label} in the source profile, then retry the export.`,
+      },
     );
   }
   if (!isRecord(json.mcpServers)) {
@@ -407,13 +415,15 @@ async function processMcpEnvAndHeaders(
 /**
  * Strip (or report) the values of one secret-class bag on a server entry.
  * A missing bag is empty. A present-but-malformed bag (non-object — e.g. a
- * raw string or array) cannot be verified clean, so in redact mode it is
+ * raw string or array) cannot be verified clean: in redact mode it is
  * replaced wholesale and no key/value is reported or carried; in scan-only
- * mode the bag's own enumerable keys are surfaced (never its contents).
- * In redact mode every remaining value is replaced with the `<redacted>`
- * marker — including non-primitive values (nested objects/arrays), which
- * cannot be proven clean and must not be copied through the scan. Scan-only
- * mode surfaces the key names for re-entry without touching the values.
+ * mode the bag passes through untouched and nothing is reported either —
+ * the enumerable "keys" of a non-object (character or array indices) are not
+ * real key names. In redact mode every remaining value is replaced with the
+ * `<redacted>` marker — including non-primitive values (nested objects/
+ * arrays), which cannot be proven clean and must not be copied through the
+ * scan. Scan-only mode surfaces key names for re-entry without touching the
+ * values.
  */
 function stripBag(
   serverDef: Record<string, unknown>,
@@ -431,7 +441,7 @@ function stripBag(
       serverDef[bagName] = {};
       return { keys: [], mutated: true };
     }
-    return { keys: Object.keys(bag), mutated: false };
+    return { keys: [], mutated: false };
   }
   const keys: string[] = [];
   let mutated = false;
@@ -463,7 +473,10 @@ async function readJsonForRedaction(filePath: string, label: string): Promise<un
     throw new CcpsError(
       'EXPORT_SECRET_FILE_UNREADABLE',
       `${label} could not be parsed; cannot safely export.`,
-      { guidance: `Fix ${label} or export with --include-secrets.`, cause: error },
+      {
+        guidance: `Fix ${label} in the source profile, then retry the export.`,
+        cause: error,
+      },
     );
   }
 }
