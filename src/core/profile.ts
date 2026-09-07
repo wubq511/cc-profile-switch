@@ -1,6 +1,5 @@
 import fs from 'fs-extra';
 
-import { resolveInside, validateProfileName } from '../platform/path';
 import {
   createAppConfig,
   ensureAppHomeStructure,
@@ -8,6 +7,12 @@ import {
   loadAppConfig,
   type Clock,
 } from './app-config';
+import {
+  allocateBackupDirPath,
+  createBackupStagingDir,
+  discardBackupStagingDir,
+  publishBackupWithCollisionRetry,
+} from './backup';
 import {
   createProfileFromTemplate,
   ensureCcpsProfileRule,
@@ -159,42 +164,36 @@ export async function backupProfile(options: BackupProfileOptions): Promise<Back
     });
   }
 
-  const backupPath = getBackupPath(appPaths.backupsPath, options.name, options.clock);
-  await fs.copy(paths.profileRootPath, backupPath, {
-    overwrite: false,
-    errorOnExist: true,
-  });
+  // The shared Backup ID protocol (issue #107): unique same-second
+  // allocation, staging before publish, and an atomic-rename publish whose
+  // race retry only ever changes the id. The returned path is the RESOLVED
+  // publish target — the directory that actually holds the payload.
+  const allocatedPath = await allocateBackupDirPath(
+    appPaths.backupsPath,
+    options.name,
+    options.clock ?? (() => new Date()),
+  );
+  const stagingDir = await createBackupStagingDir(appPaths.backupsPath);
+  let backupPath: string;
+  try {
+    await fs.copy(paths.profileRootPath, stagingDir, { overwrite: false, errorOnExist: true });
+    backupPath = await publishBackupWithCollisionRetry(
+      stagingDir,
+      allocatedPath,
+      appPaths.backupsPath,
+      options.name,
+      options.clock ?? (() => new Date()),
+    );
+  } catch (error) {
+    await discardBackupStagingDir(stagingDir).catch(() => {});
+    throw error;
+  }
 
   return {
     profileName: options.name,
     sourcePath: paths.profileRootPath,
     backupPath,
   };
-}
-
-function getBackupPath(
-  backupsPath: string,
-  profileName: string,
-  clock: Clock = () => new Date(),
-): string {
-  const safeName = validateProfileName(profileName);
-  const timestamp = formatBackupTimestamp(clock());
-  return resolveInside(backupsPath, `${safeName}-${timestamp}`);
-}
-
-function formatBackupTimestamp(date: Date): string {
-  const year = date.getUTCFullYear();
-  const month = padTimestampPart(date.getUTCMonth() + 1);
-  const day = padTimestampPart(date.getUTCDate());
-  const hours = padTimestampPart(date.getUTCHours());
-  const minutes = padTimestampPart(date.getUTCMinutes());
-  const seconds = padTimestampPart(date.getUTCSeconds());
-
-  return `${year}${month}${day}-${hours}${minutes}${seconds}`;
-}
-
-function padTimestampPart(value: number): string {
-  return value.toString().padStart(2, '0');
 }
 
 async function ensureConfig(appHomePath: string, clock?: Clock): Promise<boolean> {

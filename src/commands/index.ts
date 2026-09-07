@@ -982,7 +982,15 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
           }
         },
       });
+      const consumptionWarning =
+        result.consumed === false && result.consumptionWarning !== undefined
+          ? result.consumptionWarning
+          : undefined;
       runtime.writeOut(`Restored item for profile "${result.restoredProfile}".\n`);
+      if (consumptionWarning !== undefined) {
+        // The restore is committed; the item was kept (issue #108 Decision 12).
+        runtime.writeOut(`WARNING: ${consumptionWarning}\n`);
+      }
     });
 }
 

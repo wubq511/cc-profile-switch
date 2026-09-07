@@ -68,6 +68,9 @@ export const recoveryItemSchema = z
     removedAt: z.string().min(1),
     sizeBytes: z.number().int().nonnegative(),
     secretBearing: z.boolean(),
+    // v2 addition (issue #108): written by the restore consumer after the
+    // restored profile published; absent on items created by v1 producers.
+    restoredName: z.string().min(1).optional(),
   })
   .strict();
 
@@ -79,3 +82,19 @@ export const retentionDaysSchema = z.union([z.literal(7), z.literal(30), z.liter
 
 // ─── Fixed TTL for update-origin items (spec §7.1) ──────────────────────
 export const UPDATE_ORIGIN_TTL_DAYS = 3;
+
+// ─── item.json v2 (issue #108) ──────────────────────────────────────────
+// restoreName records the Profile name a whole-profile item was restored
+// under, written by the consumer AFTER the restored profile published
+// successfully. It exists so a crash after publish but before the item
+// directory is removed can be reconciled without re-restoring over a
+// user-edited profile; items written by v1 producers never carry it.
+export function withRestoredName(item: RecoveryItem, restoredName: string): RecoveryItem {
+  return { ...item, restoredName };
+}
+
+export function getRestoredName(item: RecoveryItem): string | undefined {
+  return 'restoredName' in item && typeof item.restoredName === 'string'
+    ? item.restoredName
+    : undefined;
+}
