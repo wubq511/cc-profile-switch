@@ -21,3 +21,6 @@ docs/acceptance/*-perf.json
 # docs/acceptance/workbench-visual-audit-97/shots/)
 .audit-venv/
 audit-output/
+
+# Local agent scratch space (never commit)
+.scratch/
