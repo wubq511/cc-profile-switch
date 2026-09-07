@@ -1,6 +1,5 @@
 import fs from 'fs-extra';
 
-import { resolveInside, validateProfileName } from '../platform/path';
 import {
   createAppConfig,
   ensureAppHomeStructure,
@@ -8,6 +7,12 @@ import {
   loadAppConfig,
   type Clock,
 } from './app-config';
+import {
+  allocateBackupDirPath,
+  createBackupStagingDir,
+  discardBackupStagingDir,
+  publishBackupWithCollisionRetry,
+} from './backup';
 import {
   createProfileFromTemplate,
   ensureCcpsProfileRule,
@@ -159,11 +164,29 @@ export async function backupProfile(options: BackupProfileOptions): Promise<Back
     });
   }
 
-  const backupPath = getBackupPath(appPaths.backupsPath, options.name, options.clock);
-  await fs.copy(paths.profileRootPath, backupPath, {
-    overwrite: false,
-    errorOnExist: true,
-  });
+  // The shared Backup ID protocol (issue #107): unique same-second
+  // allocation, staging before publish, and a publish race that only ever
+  // changes the id — the same rules list/restore/delete already parse.
+  const backupPath = await allocateBackupDirPath(
+    appPaths.backupsPath,
+    options.name,
+    options.clock ?? (() => new Date()),
+  );
+  const stagingDir = await createBackupStagingDir(appPaths.backupsPath);
+  try {
+    await fs.copy(paths.profileRootPath, stagingDir, { overwrite: false, errorOnExist: true });
+    await publishBackupWithCollisionRetry(
+      stagingDir,
+      backupPath,
+      appPaths.backupsPath,
+      options.name,
+      options.clock ?? (() => new Date()),
+      exclusiveBackupLanding(stagingDir),
+    );
+  } catch (error) {
+    await discardBackupStagingDir(stagingDir).catch(() => {});
+    throw error;
+  }
 
   return {
     profileName: options.name,
@@ -172,29 +195,18 @@ export async function backupProfile(options: BackupProfileOptions): Promise<Back
   };
 }
 
-function getBackupPath(
-  backupsPath: string,
-  profileName: string,
-  clock: Clock = () => new Date(),
-): string {
-  const safeName = validateProfileName(profileName);
-  const timestamp = formatBackupTimestamp(clock());
-  return resolveInside(backupsPath, `${safeName}-${timestamp}`);
-}
-
-function formatBackupTimestamp(date: Date): string {
-  const year = date.getUTCFullYear();
-  const month = padTimestampPart(date.getUTCMonth() + 1);
-  const day = padTimestampPart(date.getUTCDate());
-  const hours = padTimestampPart(date.getUTCHours());
-  const minutes = padTimestampPart(date.getUTCMinutes());
-  const seconds = padTimestampPart(date.getUTCSeconds());
-
-  return `${year}${month}${day}-${hours}${minutes}${seconds}`;
-}
-
-function padTimestampPart(value: number): string {
-  return value.toString().padStart(2, '0');
+/**
+ * Exclusive landing shared with the safety-backup flow in ./backup: create
+ * the target directory exclusively (EEXIST on a lost publish race), then
+ * copy the staged payload in. A plain errorOnExist directory copy would
+ * silently merge into an existing target.
+ */
+function exclusiveBackupLanding(stagingDir: string): (target: string) => Promise<void> {
+  return async (target: string) => {
+    await fs.mkdir(target); // exclusive: throws EEXIST when the target exists
+    await fs.copy(stagingDir, target, { overwrite: false, errorOnExist: true });
+    await fs.remove(stagingDir);
+  };
 }
 
 async function ensureConfig(appHomePath: string, clock?: Clock): Promise<boolean> {

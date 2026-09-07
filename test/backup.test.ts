@@ -453,6 +453,36 @@ describe('Profile Backup service', () => {
       expect(() => parseBackupId('coding-20260801-100000-2-3')).toThrowError();
     });
 
+    it('two normal backups in the same second produce distinct listable ids (#107 AC: normal + safety unified)', async () => {
+      const appHome = await makeAppHome();
+      await makeProfile(appHome, 'alpha');
+      await backupProfile({ appHomePath: appHome, name: 'alpha', clock: backupClock });
+      // Second normal backup in the SAME second: backupProfile now uses the
+      // shared protocol, so the suffix is allocated instead of colliding.
+      await backupProfile({ appHomePath: appHome, name: 'alpha', clock: backupClock });
+
+      const list = await listBackups(appHome);
+      expect(list.entries.map((entry) => entry.id)).toEqual([
+        'alpha-20260801-100000',
+        'alpha-20260801-100000-2',
+      ]);
+
+      // Both entries are first-class: restorable through the shared protocol.
+      const restored = await restoreProfileFromBackup({
+        appHomePath: appHome,
+        backupId: 'alpha-20260801-100000-2',
+        newName: 'from-second-normal',
+        clock: restoreClock,
+      });
+      expect(restored.restoredProfile).toBe('from-second-normal');
+
+      // And deletion removes exactly the selected suffixed item.
+      await permanentlyDeleteBackup('alpha-20260801-100000-2', appHome);
+      expect((await listBackups(appHome)).entries.map((entry) => entry.id)).toEqual([
+        'alpha-20260801-100000',
+      ]);
+    });
+
     it('allocates unique same-second targets and stages-publishes without mixing writers', async () => {
       const appHome = await makeAppHome();
       await makeProfile(appHome, 'alpha');

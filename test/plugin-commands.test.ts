@@ -60,6 +60,11 @@ describe('plugin CLI commands', () => {
       writeOut: (value) => output.push(value),
       captureProcess: capture,
       spawnProcess: async () => ({ exitCode: 0 }),
+      // #104: the startup sweep (preAction) evaluates item expiry with this
+      // clock; it must agree with the fixture dates the tests seed (all
+      // 2026-07-31) instead of the real system date, or items are swept
+      // before the command under test ever runs.
+      clock: () => new Date('2026-07-31T16:20:00Z'),
     });
     program.configureOutput({
       writeOut: (value) => output.push(value),
