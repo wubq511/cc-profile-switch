@@ -22,13 +22,18 @@ const fixedClock = () => new Date('2026-08-01T00:00:00Z');
 
 /** Force a TTY-looking stdout for the duration of `run` so createProgram
  *  embeds the banner when (and only when) the config enables it. Vitest's
- *  stdout is not a TTY, which would mask the config difference. */
+ *  stdout is not a TTY, which would mask the config difference. `CI` is also
+ *  cleared: resolveBannerOptions deliberately downgrades to the plain tier
+ *  under CI (pinned by welcome-banner-options/cli-banner tests), and hosted
+ *  runners always set CI=true — these cases target the full-tier art. */
 async function withTtyStdout(run: () => void): Promise<void> {
   const descriptor = Object.getOwnPropertyDescriptor(process.stdout, 'isTTY');
   Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
   const originalLevel = chalk.level;
   const savedNoColor = process.env.NO_COLOR;
+  const savedCi = process.env.CI;
   delete process.env.NO_COLOR;
+  delete process.env.CI;
   chalk.level = 3;
   try {
     run();
@@ -40,6 +45,7 @@ async function withTtyStdout(run: () => void): Promise<void> {
     }
     chalk.level = originalLevel;
     if (savedNoColor !== undefined) process.env.NO_COLOR = savedNoColor;
+    if (savedCi !== undefined) process.env.CI = savedCi;
   }
 }
 
