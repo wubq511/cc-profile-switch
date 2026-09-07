@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path, { join } from 'node:path';
 import { gunzipSync, gzipSync } from 'node:zlib';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createProgram } from '../src/cli';
 import { createAppConfig } from '../src/core/app-config';
@@ -997,6 +997,70 @@ describe('import command output', () => {
     expect(output).toContain('Import aborted.');
     expect(output).not.toContain('Imported profile');
   });
+
+  it('rejects a corrupt-settings bundle pre-commit and retries the same name (issue #109)', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'ccps-import-cli-'));
+    tempRoots.push(root);
+    const userHome = path.join(root, 'userhome');
+    await fs.mkdir(userHome);
+    const goodBundle = await setup(userHome);
+    const badBundle = await corruptBundleSettings(goodBundle);
+
+    // First run: pre-publish validation failure surfaces as a coded error and
+    // the target name is never created.
+    const failed = await runCliExpectError(userHome, ['import', badBundle, 'imported'], {
+      inputs: ['y'],
+    });
+    expect(failed).toMatchObject({ code: 'IMPORT_SETTINGS_INVALID' });
+    const appHome = path.join(userHome, '.cc-profile-switch');
+    expect(await fs.pathExists(path.join(appHome, 'profiles', 'imported'))).toBe(false);
+    const residue = (await fs.readdir(appHome)).filter((name) => name.startsWith('.ccps-import-'));
+    expect(residue).toEqual([]);
+
+    // Second run with the valid bundle under the SAME name succeeds — the
+    // failed import did not occupy the name.
+    const { output } = await runCli(userHome, ['import', goodBundle, 'imported'], {
+      inputs: ['y'],
+    });
+    expect(output).toContain('Imported profile "imported"');
+    expect(output).toContain('Validation: valid');
+    expect(await fs.pathExists(path.join(appHome, 'profiles', 'imported'))).toBe(true);
+  });
+
+  it('prints post-commit cleanup warnings alongside the imported profile (issue #109)', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'ccps-import-cli-'));
+    tempRoots.push(root);
+    const userHome = path.join(root, 'userhome');
+    await fs.mkdir(userHome);
+    const bundlePath = await setup(userHome);
+
+    // Fail ONLY the final cleanup of the staging root (basename carries the
+    // mkdtemp prefix); sweep removals inside staging run untouched.
+    const realRemove = fs.remove;
+    const removeSpy = vi.spyOn(fs, 'remove').mockImplementation(async (target) => {
+      if (path.basename(String(target)).startsWith('.ccps-import-')) {
+        throw Object.assign(new Error('simulated cleanup failure'), { code: 'EBUSY' });
+      }
+      return realRemove(String(target));
+    });
+    let output: string;
+    try {
+      ({ output } = await runCli(userHome, ['import', bundlePath, 'imported'], {
+        inputs: ['y'],
+      }));
+    } finally {
+      removeSpy.mockRestore();
+    }
+
+    // The import still reports success; the housekeeping failure is a WARNING
+    // line, never an error that would trigger a blind same-name retry.
+    expect(output).toContain('Imported profile "imported"');
+    expect(output).toContain('Validation: valid');
+    expect(output).toContain('WARNING: Staging cleanup failed after the profile was published');
+    expect(
+      await fs.pathExists(path.join(userHome, '.cc-profile-switch', 'profiles', 'imported')),
+    ).toBe(true);
+  });
 });
 
 describe('malicious traversal bundle (safety invariant)', () => {
@@ -1060,6 +1124,62 @@ async function rebuildBundleWithManifest(bundlePath: string, manifest: unknown):
   const out = path.join(dir, 'tampered.tar.gz');
   await tar.c({ gzip: true, file: out, cwd: dir, portable: true }, ['manifest.json', 'profile']);
   return out;
+}
+
+/** Real export with `claude-home/settings.json` replaced by corrupt content. */
+async function corruptBundleSettings(bundlePath: string): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), 'ccps-import-tamper-settings-'));
+  tempRoots.push(dir);
+  const tar = await import('tar');
+  await tar.x({ file: bundlePath, cwd: dir });
+  await fs.writeFile(join(dir, 'profile', 'claude-home', 'settings.json'), '{ corrupt', 'utf8');
+  const out = path.join(dir, 'corrupt-settings.tar.gz');
+  await tar.c({ gzip: true, file: out, cwd: dir, portable: true }, ['manifest.json', 'profile']);
+  return out;
+}
+
+/**
+ * Run a CLI command expected to fail; returns the rejection instead of
+ * throwing (Commander's exitOverride propagates action errors).
+ */
+async function runCliExpectError(
+  userHome: string,
+  args: string[],
+  options: { inputs?: string[]; capture?: CaptureProcess } = {},
+): Promise<unknown> {
+  const inputs = [...(options.inputs ?? [])];
+  const program = createProgram({
+    writeOut: () => undefined,
+    readInput: async () => inputs.shift() ?? '',
+    captureProcess: options.capture ?? mockClaudeAdd().capture,
+    clock: FIXED_CLOCK,
+  });
+  program.configureOutput({
+    writeOut: () => undefined,
+    writeErr: () => undefined,
+  });
+  const originalHome = process.env.HOME;
+  const originalUserProfile = process.env.USERPROFILE;
+  process.env.HOME = userHome;
+  process.env.USERPROFILE = userHome;
+  program.exitOverride();
+  try {
+    await program.parseAsync(['node', 'ccps', ...args], { from: 'node' });
+    return null;
+  } catch (error) {
+    return error;
+  } finally {
+    if (originalHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = originalHome;
+    }
+    if (originalUserProfile === undefined) {
+      delete process.env.USERPROFILE;
+    } else {
+      process.env.USERPROFILE = originalUserProfile;
+    }
+  }
 }
 
 async function tarPack(outFile: string, cwd: string, entries: string[]): Promise<void> {

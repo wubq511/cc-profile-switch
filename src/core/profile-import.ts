@@ -13,6 +13,7 @@ import {
   type ProfileTemplatePaths,
 } from './profile-template';
 import { addMcpServer, deriveTransport, getClaudeJsonPath, readMcpServersMap } from './mcp-servers';
+import { repairProfileIdentity } from './profile-identity';
 import { sweepRuntimeEntriesFromStagedProfile } from './resource-policy';
 import { cliVersion } from './version';
 import { validateProfile, type ProfileValidationResult } from './validator';
@@ -26,7 +27,7 @@ import {
 } from '../schemas/profile-bundle';
 import type { McpAddOptions } from '../schemas/mcp';
 import { CcpsError } from '../utils/errors';
-import { isRecord } from '../utils/type-guards';
+import { isNodeError, isRecord } from '../utils/type-guards';
 
 /**
  * Profile import — creates a new Profile from a portable `.tar.gz` bundle
@@ -48,6 +49,24 @@ import { isRecord } from '../utils/type-guards';
  *     history, projects, caches, credentials, unknown top-level entries) are
  *     removed, so an old bundle's runtime data never lands in a new Profile.
  *     Manifest claims never override this content check.
+ *   - Commit boundary (issue #109, spec Decision 6/12): every structural
+ *     check and managed-field repair happens on the STAGED tree before the
+ *     publish rename; the rename IS the commit point. Links are refused at
+ *     the resource boundary, profile.json must match the profile schema, and
+ *     settings.json is mandatory and must parse to a JSON object — a missing,
+ *     linked, directory, corrupt, null/array/primitive settings.json rejects
+ *     with NO empty-object fallback. A pre-commit failure leaves the target
+ *     name free and removes only this staging root. After the rename, MCP
+ *     re-registration failures are reported per server next to the actually
+ *     published profile — never as a clean rollback, never deleting the
+ *     published target.
+ *   - Post-commit housekeeping failures (staging cleanup, auto-Validate I/O)
+ *     degrade into `ImportResult.warnings` instead of throwing: the profile
+ *     IS published, and an exception here would mask the success and make
+ *     the caller retry the same now-occupied name (issue #109 AC). Before
+ *     the commit point, cleanup is best-effort so it never masks the coded
+ *     pre-commit failure; on the abort path (nothing published, tree already
+ *     extracted) a cleanup failure still surfaces.
  *   - A mandatory manifest preview is surfaced to the `confirm` callback before
  *     the profile directory is created. Nothing under `profiles/` is written
  *     until the caller confirms.
@@ -112,6 +131,13 @@ export type ImportResult = {
   /** MCP HTTP header key names needing re-entry, grouped by server. */
   mcpHeaderKeysToReenter: { server: string; keys: string[] }[];
   validation: ProfileValidationResult;
+  /**
+   * Post-commit housekeeping warnings (issue #109 AC): the profile IS
+   * published and usable; a staging-cleanup or auto-Validate I/O failure
+   * after the commit point degrades into these instead of throwing and
+   * masking the success. Never deletes the published target.
+   */
+  warnings: string[];
 };
 
 export type ImportAborted = { aborted: true };
@@ -142,73 +168,125 @@ export async function importProfile(
 
   // Stage under app home so the final tree move is a same-volume rename into
   // profiles/ (spec §15.3 invariant 6 — atomic, never copy+delete across fs).
-  const { profilesPath } = getAppHomePaths(appHomePath);
   const stagingRoot = await mkdtemp(path.join(appHomePath, '.ccps-import-'));
+  // Shared by every result-carrying warning: runStagedImport embeds this
+  // array in the ImportResult it returns, and the post-commit cleanup below
+  // pushes into the same instance, so the caller sees both without a side
+  // channel.
+  const warnings: string[] = [];
 
+  // runStagedImport throws ONLY before the publish rename (every post-commit
+  // failure degrades into `warnings`), so the outcome below classifies the
+  // commit state without a side flag.
+  let outcome: ImportResult | ImportAborted;
   try {
-    const { manifest, stagingProfile } = await extractBundle(stagingRoot, bundlePath);
+    outcome = await runStagedImport(options, appHomePath, stagingRoot, warnings);
+  } catch (error) {
+    // Pre-commit: nothing was published. The coded failure is the contract —
+    // a cleanup failure must not replace it (nor can it ride a result that
+    // does not exist); at worst the staging dir lingers as residue.
+    await fs.remove(stagingRoot).catch(() => undefined);
+    throw error;
+  }
 
-    // Resolve the target name through the confirm callback. A collision loops
-    // until the caller aborts or supplies a free name; choosing a new name IS
-    // the confirmation, so no extra y/N is asked after a collision is resolved.
-    let targetName = options.targetName ?? manifest.profileName;
+  if ('aborted' in outcome) {
+    // Nothing published; a cleanup failure still surfaces (the user declined,
+    // so a leftover extracted tree is worth reporting).
+    await fs.remove(stagingRoot);
+    return outcome;
+  }
+
+  // Committed: the profile is published. A cleanup failure here must not mask
+  // the success or send the caller into a blind same-name retry against the
+  // now-occupied target (issue #109 AC) — it degrades into a result warning
+  // and never touches the published profile. The staging root is empty by
+  // now, so any residue is cosmetic.
+  try {
+    await fs.remove(stagingRoot);
+  } catch (error) {
+    warnings.push(describeStagingCleanupFailure(error));
+  }
+  return outcome;
+}
+
+/**
+ * Extract the bundle, resolve the target through the confirm gate, and apply
+ * the staged import. Throws only pre-commit: after the publish rename inside
+ * applyImport, every post-commit failure (auto-Validate I/O) degrades into
+ * `warnings` instead of throwing.
+ */
+async function runStagedImport(
+  options: ImportProfileOptions,
+  appHomePath: string,
+  stagingRoot: string,
+  warnings: string[],
+): Promise<ImportResult | ImportAborted> {
+  const { profilesPath } = getAppHomePaths(appHomePath);
+  const { manifest, stagingProfile } = await extractBundle(stagingRoot, options.bundlePath);
+
+  // Resolve the target name through the confirm callback. A collision loops
+  // until the caller aborts or supplies a free name; choosing a new name IS
+  // the confirmation, so no extra y/N is asked after a collision is resolved.
+  let targetName = options.targetName ?? manifest.profileName;
+  validateProfileName(targetName);
+  let collision = await profileNameExists(profilesPath, targetName);
+  let resolvedViaCollision = false;
+  while (collision) {
+    const decision = await options.confirm({ manifest, targetName, collision: true });
+    if (decision.action === 'abort') {
+      return { aborted: true };
+    }
+    if (decision.action !== 'proceed-as-new-name') {
+      // 'proceed' on a colliding name has no valid interpretation.
+      throw new CcpsError(
+        'IMPORT_COLLISION_UNRESOLVED',
+        `A profile named "${targetName}" already exists.`,
+        {
+          guidance: `Choose a new name (import-as-new-name) or abort, then retry.`,
+        },
+      );
+    }
+    targetName = decision.targetName;
     validateProfileName(targetName);
-    let collision = await profileNameExists(profilesPath, targetName);
-    let resolvedViaCollision = false;
-    while (collision) {
-      const decision = await options.confirm({ manifest, targetName, collision: true });
-      if (decision.action === 'abort') {
-        return { aborted: true };
-      }
-      if (decision.action !== 'proceed-as-new-name') {
-        // 'proceed' on a colliding name has no valid interpretation.
+    resolvedViaCollision = true;
+    collision = await profileNameExists(profilesPath, targetName);
+  }
+
+  // Only ask for a final proceed/abort when no collision was ever present —
+  // a collision resolution already committed the user to proceed.
+  if (!resolvedViaCollision) {
+    const finalDecision = await options.confirm({ manifest, targetName, collision: false });
+    if (finalDecision.action === 'abort') {
+      return { aborted: true };
+    }
+    if (finalDecision.action === 'proceed-as-new-name') {
+      targetName = finalDecision.targetName;
+      validateProfileName(targetName);
+      if (await profileNameExists(profilesPath, targetName)) {
         throw new CcpsError(
           'IMPORT_COLLISION_UNRESOLVED',
           `A profile named "${targetName}" already exists.`,
           {
-            guidance: `Choose a new name (import-as-new-name) or abort, then retry.`,
+            guidance: `Choose a free profile name and retry.`,
           },
         );
       }
-      targetName = decision.targetName;
-      validateProfileName(targetName);
-      resolvedViaCollision = true;
-      collision = await profileNameExists(profilesPath, targetName);
     }
-
-    // Only ask for a final proceed/abort when no collision was ever present —
-    // a collision resolution already committed the user to proceed.
-    if (!resolvedViaCollision) {
-      const finalDecision = await options.confirm({ manifest, targetName, collision: false });
-      if (finalDecision.action === 'abort') {
-        return { aborted: true };
-      }
-      if (finalDecision.action === 'proceed-as-new-name') {
-        targetName = finalDecision.targetName;
-        validateProfileName(targetName);
-        if (await profileNameExists(profilesPath, targetName)) {
-          throw new CcpsError(
-            'IMPORT_COLLISION_UNRESOLVED',
-            `A profile named "${targetName}" already exists.`,
-            {
-              guidance: `Choose a free profile name and retry.`,
-            },
-          );
-        }
-      }
-    }
-
-    return await applyImport({
-      stagingProfile,
-      manifest,
-      targetName,
-      appHomePath,
-      captureProcess: options.captureProcess,
-      clock: options.clock,
-    });
-  } finally {
-    await fs.remove(stagingRoot);
   }
+
+  return applyImport({
+    stagingProfile,
+    manifest,
+    targetName,
+    appHomePath,
+    captureProcess: options.captureProcess,
+    clock: options.clock,
+    warnings,
+  });
+}
+
+function describeStagingCleanupFailure(error: unknown): string {
+  return `Staging cleanup failed after the profile was published (${errorMessage(error)}). The imported profile is unaffected; the leftover staging directory under the app home can be removed manually.`;
 }
 
 async function extractBundle(
@@ -273,12 +351,21 @@ type ApplyImportArgs = {
   appHomePath: string;
   captureProcess?: CaptureProcess;
   clock?: Clock;
+  /** Post-commit warning sink; embedded in the returned ImportResult. */
+  warnings: string[];
 };
 
 async function applyImport(args: ApplyImportArgs): Promise<ImportResult> {
-  const { manifest, targetName, appHomePath, captureProcess } = args;
+  const { manifest, targetName, appHomePath, captureProcess, warnings } = args;
   const targetPaths = getProfileTemplatePaths(appHomePath, targetName);
   const stagingProfile = args.stagingProfile;
+
+  // ── Staging validation & preparation (pre-commit) ───────────────────────
+  // Boundary first: the staging root, claude-home, and the sweep-reachable
+  // plugins/ dir must be real directories — a link at one of these would make
+  // the sweep below read or remove content outside the staging area. Then the
+  // runtime sweep, then structural validation of everything that survives it.
+  await assertImportStagingBoundary(stagingProfile);
 
   // Content-over-manifest sweep (issue #105): the manifest may claim anything,
   // so the staged tree itself is filtered through the shared resource policy
@@ -287,29 +374,68 @@ async function applyImport(args: ApplyImportArgs): Promise<ImportResult> {
   // top-level claude-home entries — are removed here, in every mode.
   await sweepRuntimeEntriesFromStagedProfile(stagingProfile);
 
+  // Everything that survives the sweep must be a plain directory/file tree
+  // (links are refused before any content read), and the mandatory
+  // profile.json + settings.json must be present, regular, parseable, and
+  // shaped like a Profile — all before anything is published.
+  await validateImportStagedContent(stagingProfile);
+
   // Capture native MCP servers from the staged .claude.json, then clear them.
   // The profile's .claude.json must never carry ccps-direct server writes; each
-  // server is re-registered through Claude Code's delegated add path below.
-  const nativeServers = await readMcpServersMap(stagingProfile);
+  // server is re-registered through Claude Code's delegated add path after the
+  // publish below.
+  const nativeServers = await readStagedNativeMcpServers(stagingProfile);
   await clearNativeMcpServers(stagingProfile);
 
-  // Move the staged tree into profiles/<name>/. Same-volume rename (staging is
-  // under app home), so atomic; overwrite:false refuses any pre-existing dir.
-  await fs.move(stagingProfile, targetPaths.profileRootPath, { overwrite: false });
+  // Shared identity/managed-path repair (M1, ./profile-identity), on the
+  // staging tree with every value pointing at the FINAL location: profile
+  // name, autoMemoryDirectory, auto-memory entrypoint, ccps boundary rule,
+  // and this machine's claudeMdExcludes merge.
+  await repairProfileIdentity({
+    stagingPath: stagingProfile,
+    finalPath: targetPaths.profileRootPath,
+    profileName: targetName,
+  });
 
-  // Repair managed fields so the imported profile points at its own locations
-  // (the bundle's settings.json still references the exporter's paths).
-  await repairImportedProfile(targetPaths, targetName, args.clock);
+  // New-profile contract backfills, in staging: settings.json claudeMdExcludes
+  // must carry the real-user CLAUDE.md exclusion and the env defaults
+  // (CLAUDE_CODE_ATTRIBUTION_HEADER=0). Idempotent; existing values preserved.
+  // Run after the repair so both read the repaired settings.json.
+  await ensureProfileClaudeMdExcludes(path.join(stagingProfile, 'claude-home', 'settings.json'));
+  await ensureDefaultProfileSettingsEnv(path.join(stagingProfile, 'claude-home', 'settings.json'));
 
-  // Re-register each native MCP server via delegated `claude mcp add --scope
-  // user`. Failures are collected, never aborting the rest or the Validate.
+  // Import-only profile.json normalization (staging): force launch.mcpMode
+  // 'none' — the AGENTS.md new-profile contract — and re-stamp the timestamps
+  // so the import reads as the birth of this Profile.
+  await normalizeImportedProfileConfig(stagingProfile, targetName, args.clock);
+
+  // ── Publish: the commit point ───────────────────────────────────────────
+  // Same-volume rename (staging is under app home), so atomic;
+  // overwrite:false refuses any target that appeared after confirmation.
+  await publishStagedProfile(stagingProfile, targetPaths.profileRootPath);
+
+  // ── Post-commit: delegated MCP re-registration + auto-Validate ───────────
+  // Failures are collected per server, never aborting the rest or the
+  // Validate. The caller sees the ACTUAL published profile and per-server
+  // outcomes; nothing here deletes or rolls back the published target.
   const mcpServers = await reRegisterMcpServers(
     targetPaths.profileRootPath,
     nativeServers,
     captureProcess,
   );
 
-  const validation = await validateProfile({ appHomePath, name: targetName });
+  // Auto-Validate is post-commit housekeeping: an unexpected I/O failure must
+  // not replace the successful result (spec Decision 12, issue #109 AC — a
+  // thrown error would send the caller into a blind same-name retry against
+  // the now-occupied target). It degrades to a warning plus an error-marked
+  // validation result the callers render like any other failed validation.
+  let validation: ProfileValidationResult;
+  try {
+    validation = await validateProfile({ appHomePath, name: targetName });
+  } catch (error) {
+    warnings.push(describeAutoValidateFailure(error));
+    validation = autoValidateFailedResult(targetPaths, targetName, error);
+  }
 
   return {
     profileName: targetName,
@@ -320,7 +446,294 @@ async function applyImport(args: ApplyImportArgs): Promise<ImportResult> {
     legacyMcpEnvKeysToReenter: collectLegacyMcpEnvKeys(manifest.strippedKeys),
     mcpHeaderKeysToReenter: collectMcpHeaderKeys(manifest.strippedKeys),
     validation,
+    warnings,
   };
+}
+
+function describeAutoValidateFailure(error: unknown): string {
+  return `Auto-validate could not complete after the profile was published (${errorMessage(error)}). The imported profile is unaffected; run "ccps validate <name>" to check it.`;
+}
+
+function autoValidateFailedResult(
+  targetPaths: ProfileTemplatePaths,
+  targetName: string,
+  cause: unknown,
+): ProfileValidationResult {
+  const message = `Auto-validate could not complete: ${errorMessage(cause)}.`;
+  return {
+    profileName: targetName,
+    status: 'error',
+    profileRootPath: targetPaths.profileRootPath,
+    claudeHomePath: targetPaths.claudeHomePath,
+    paths: targetPaths,
+    findings: [
+      {
+        severity: 'error',
+        code: 'AUTO_VALIDATE_FAILED',
+        message,
+        suggestion: `Re-run validation for the imported profile: ccps validate ${targetName}`,
+      },
+    ],
+  };
+}
+
+// ─── Pre-publish validation (issue #109 commit boundary) ─────────────────
+
+/**
+ * Pre-sweep resource boundary (spec Decision 11): the staging profile root,
+ * claude-home, and the sweep-reachable plugins/ directory must be REAL
+ * directories — never symlinks/junctions — or the sweep below would resolve
+ * reads/removals through a link to content outside the staging area. All
+ * checks are lstat-based; nothing is read through a link. Links deeper in the
+ * tree are rejected by `validateImportStagedContent` once the sweep removed
+ * runtime entries (a link inside swept-away content is itself removed, so it
+ * never survives).
+ */
+async function assertImportStagingBoundary(stagingProfileRoot: string): Promise<void> {
+  await assertStagingRealDirectory(stagingProfileRoot, '');
+  const claudeHome = path.join(stagingProfileRoot, 'claude-home');
+  await assertStagingRealDirectory(claudeHome, 'claude-home');
+  await assertStagingRealDirectory(path.join(claudeHome, 'plugins'), 'claude-home/plugins');
+}
+
+async function assertStagingRealDirectory(dirPath: string, relativePath: string): Promise<void> {
+  let stats: fs.Stats;
+  try {
+    stats = await fs.lstat(dirPath);
+  } catch (error) {
+    if (isNodeError(error) && error.code === 'ENOENT') {
+      return;
+    }
+    throw error;
+  }
+  if (stats.isSymbolicLink()) {
+    throw importLinkForbidden(relativePath === '' ? 'profile tree root' : relativePath);
+  }
+  if (!stats.isDirectory()) {
+    throw new CcpsError(
+      'IMPORT_BUNDLE_INVALID',
+      relativePath === ''
+        ? "The bundle's profile/ entry is not a directory."
+        : `The bundle's ${relativePath}/ entry is not a directory.`,
+      {
+        guidance: `Re-export the source profile with a current ccps version (${cliVersion}).`,
+      },
+    );
+  }
+}
+
+/**
+ * Post-sweep structural validation: everything that survives the runtime sweep
+ * must be a plain directory/file tree — any symlink/junction is refused at
+ * the resource boundary BEFORE its content could be read — and the mandatory
+ * files must be present, regular, and shaped like a Profile:
+ *
+ * - profile.json must parse and match the profile schema. The old flow
+ *   validated it AFTER the publish, so an IMPORT_PROFILE_INVALID left the
+ *   target directory behind occupying the name (the observed #109 defect).
+ * - settings.json is mandatory for Import: a missing, linked, non-file
+ *   (directory), unparseable, or non-object value (null/array/primitive)
+ *   rejects with NO empty-object fallback — garbage must never mint a
+ *   plausible new Profile.
+ *
+ * No staged content is read before the link scan completes.
+ */
+async function validateImportStagedContent(stagingProfileRoot: string): Promise<void> {
+  await rejectLinksInTree(stagingProfileRoot, '');
+
+  const profileConfigPath = path.join(stagingProfileRoot, 'profile.json');
+  const profileStats = await lstatOrNull(profileConfigPath);
+  if (profileStats === null) {
+    throw importProfileInvalid('Bundled profile.json is missing.');
+  }
+  if (!profileStats.isFile()) {
+    throw importProfileInvalid('Bundled profile.json is not a file.');
+  }
+  let profileRaw: unknown;
+  try {
+    profileRaw = await fs.readJson(profileConfigPath);
+  } catch (error) {
+    throw importProfileInvalid('Bundled profile.json cannot be parsed as JSON.', error);
+  }
+  const parsedProfile = profileConfigSchema.safeParse(profileRaw);
+  if (!parsedProfile.success) {
+    throw importProfileInvalid(
+      'Bundled profile.json does not match the profile schema.',
+      parsedProfile.error,
+    );
+  }
+
+  const settingsPath = path.join(stagingProfileRoot, 'claude-home', 'settings.json');
+  const settingsStats = await lstatOrNull(settingsPath);
+  if (settingsStats === null) {
+    throw importSettingsInvalid('Bundled claude-home/settings.json is missing.');
+  }
+  if (!settingsStats.isFile()) {
+    throw importSettingsInvalid('Bundled claude-home/settings.json is not a file.');
+  }
+  let settingsRaw: unknown;
+  try {
+    settingsRaw = await fs.readJson(settingsPath);
+  } catch (error) {
+    throw importSettingsInvalid(
+      'Bundled claude-home/settings.json cannot be parsed as JSON.',
+      error,
+    );
+  }
+  if (!isRecord(settingsRaw)) {
+    throw importSettingsInvalid('Bundled claude-home/settings.json is not a JSON object.');
+  }
+}
+
+/** Refuse the first symlink/junction found under `dir` (never follows links). */
+async function rejectLinksInTree(dir: string, relativePath: string): Promise<void> {
+  let entries: fs.Dirent[];
+  try {
+    entries = await fs.readdir(dir, { withFileTypes: true });
+  } catch (error) {
+    throw new CcpsError('IMPORT_BUNDLE_READ_FAILED', 'The staged profile tree could not be read.', {
+      guidance: `Re-export the source profile with a current ccps version (${cliVersion}).`,
+      cause: error,
+    });
+  }
+  for (const entry of entries) {
+    const relativeEntry = relativePath === '' ? entry.name : `${relativePath}/${entry.name}`;
+    if (entry.isSymbolicLink()) {
+      throw importLinkForbidden(relativeEntry);
+    }
+    if (entry.isDirectory()) {
+      await rejectLinksInTree(path.join(dir, entry.name), relativeEntry);
+    }
+  }
+}
+
+function importLinkForbidden(relativePath: string): CcpsError {
+  return new CcpsError(
+    'IMPORT_LINK_FORBIDDEN',
+    `The bundle's profile tree contains a link at ${relativePath}; it cannot be imported.`,
+    {
+      guidance: `Portable ccps bundles cannot carry links. Re-export the source profile with a current ccps version (${cliVersion}).`,
+    },
+  );
+}
+
+function importProfileInvalid(message: string, cause?: unknown): CcpsError {
+  return new CcpsError('IMPORT_PROFILE_INVALID', message, {
+    guidance: `Re-export the source profile with a current ccps version (${cliVersion}).`,
+    cause,
+  });
+}
+
+function importSettingsInvalid(message: string, cause?: unknown): CcpsError {
+  return new CcpsError('IMPORT_SETTINGS_INVALID', message, {
+    guidance: `Re-export the source profile with a current ccps version (${cliVersion}).`,
+    cause,
+  });
+}
+
+async function lstatOrNull(targetPath: string): Promise<fs.Stats | null> {
+  try {
+    return await fs.lstat(targetPath);
+  } catch (error) {
+    if (isNodeError(error) && error.code === 'ENOENT') {
+      return null;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Read the staged native MCP inventory. A staged .claude.json that cannot be
+ * read (corrupt JSON, directory entry, I/O error) is a pre-commit failure —
+ * its servers could not be re-registered and silently clearing it would drop
+ * them without a trace.
+ */
+async function readStagedNativeMcpServers(
+  stagingProfileRoot: string,
+): Promise<Map<string, Record<string, unknown>>> {
+  try {
+    return await readMcpServersMap(stagingProfileRoot);
+  } catch (error) {
+    throw new CcpsError(
+      'IMPORT_CLAUDE_JSON_INVALID',
+      'Bundled claude-home/.claude.json could not be read.',
+      {
+        guidance: `Re-export the source profile with a current ccps version (${cliVersion}).`,
+        cause: error,
+      },
+    );
+  }
+}
+
+/**
+ * Import-only profile.json normalization, applied to the staging tree before
+ * the publish: force launch.mcpMode 'none' (AGENTS.md new-profile contract —
+ * 'strict'/'merge' from the exporter must not travel silently across
+ * machines) and re-stamp createdAt/updatedAt so the imported Profile reads as
+ * new (mirrors copyProfile).
+ */
+async function normalizeImportedProfileConfig(
+  stagingProfileRoot: string,
+  targetName: string,
+  clock: Clock = () => new Date(),
+): Promise<void> {
+  const profileConfigPath = path.join(stagingProfileRoot, 'profile.json');
+  const raw: unknown = await fs.readJson(profileConfigPath);
+  const parsed = profileConfigSchema.safeParse(raw);
+  if (!parsed.success) {
+    // Unreachable after validateImportStagedContent + repairProfileIdentity;
+    // kept so a future repair regression still fails pre-commit, not after.
+    throw importProfileInvalid(
+      'Bundled profile.json does not match the profile schema.',
+      parsed.error,
+    );
+  }
+  const timestamp = clock().toISOString();
+  const normalized: ProfileConfig = {
+    ...parsed.data,
+    name: targetName,
+    launch: { ...parsed.data.launch, mcpMode: 'none' },
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+  await atomicWriteJson(profileConfigPath, profileConfigSchema.parse(normalized));
+}
+
+/**
+ * The publish step — the import's commit point (spec Decision 12). The staged
+ * tree is fully validated and repaired; this same-volume rename into
+ * profiles/<name> either lands the complete Profile or fails with no effect.
+ * overwrite:false keeps the never-overwrite semantics against a target that
+ * appeared after the confirm gate.
+ */
+async function publishStagedProfile(
+  stagingProfileRoot: string,
+  finalProfileRoot: string,
+): Promise<void> {
+  if (await fs.pathExists(finalProfileRoot)) {
+    throw importTargetExists(path.basename(finalProfileRoot));
+  }
+  try {
+    await fs.move(stagingProfileRoot, finalProfileRoot, { overwrite: false });
+  } catch (error) {
+    if (await fs.pathExists(finalProfileRoot)) {
+      throw importTargetExists(path.basename(finalProfileRoot));
+    }
+    throw new CcpsError(
+      'IMPORT_PUBLISH_FAILED',
+      'The validated profile could not be published to its final location.',
+      {
+        guidance: 'No profile was created; check the app home directory and retry the import.',
+        cause: error,
+      },
+    );
+  }
+}
+
+function importTargetExists(profileName: string): CcpsError {
+  return new CcpsError('IMPORT_TARGET_EXISTS', `A profile named "${profileName}" already exists.`, {
+    guidance: 'Choose a new profile name (import-as-new-name) and retry the import.',
+  });
 }
 
 export async function clearNativeMcpServers(stagingProfile: string): Promise<void> {
@@ -333,6 +746,15 @@ export async function clearNativeMcpServers(stagingProfile: string): Promise<voi
   await atomicWriteJson(claudeJsonPath, { mcpServers: {} });
 }
 
+/**
+ * Post-publish managed-field repair for a tree that was ALREADY placed at its
+ * final location — the commit point of create-from-custom-template
+ * (./custom-template), whose copy into profiles/<name> is its publish.
+ *
+ * Import (issue #109) deliberately does NOT use this path: it validates and
+ * repairs the STAGED tree before the publish rename (see applyImport), so a
+ * failed import never leaves a final directory behind.
+ */
 export async function repairImportedProfile(
   paths: ProfileTemplatePaths,
   targetName: string,

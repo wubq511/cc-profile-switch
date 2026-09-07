@@ -237,6 +237,31 @@ async function makeBundle(srcAppHome: string): Promise<string> {
   return bundlePath;
 }
 
+/**
+ * Repack a real export with `claude-home/settings.json` replaced by corrupt
+ * content — the pre-commit rejection input for the issue #109 tests.
+ */
+async function makeBundleWithCorruptSettings(srcAppHome: string): Promise<string> {
+  const bundlePath = await makeBundle(srcAppHome);
+  const tamperDir = join(dirname(srcAppHome), 'tamper');
+  await fs.ensureDir(tamperDir);
+  const extractDir = join(tamperDir, 'tree');
+  await fs.ensureDir(extractDir);
+  const tar = await import('tar');
+  await tar.x({ file: bundlePath, cwd: extractDir });
+  await fs.writeFile(
+    join(extractDir, 'profile', 'claude-home', 'settings.json'),
+    '{ corrupt settings json',
+    'utf8',
+  );
+  const out = join(tamperDir, 'corrupt-settings.tar.gz');
+  await tar.c({ gzip: true, file: out, cwd: extractDir, portable: true }, [
+    'manifest.json',
+    'profile',
+  ]);
+  return out;
+}
+
 /** Add a native MCP server to a Profile's `.claude.json`. */
 async function writeMcpServer(
   appHome: string,
@@ -515,9 +540,7 @@ describe('Workbench profile export/import flows (issue #95)', () => {
         expect(call.args).toContain('user');
       }
       const { profilesPath } = getAppHomePaths(appHome);
-      const claudeJson = await fs.readJson(
-        getClaudeJsonPath(join(profilesPath, 'coding')),
-      );
+      const claudeJson = await fs.readJson(getClaudeJsonPath(join(profilesPath, 'coding')));
       expect(claudeJson.mcpServers?.github).toBeDefined();
     } finally {
       await h.unmount();
@@ -602,14 +625,14 @@ describe('Workbench profile export/import flows (issue #95)', () => {
 
   it('surfaces an import that fails auto-validate (S100 final step)', async () => {
     const srcAppHome = await makeAppHome(['coding']);
-    // Remove the auto-memory MEMORY.md entrypoint: export still succeeds (the
-    // bundle just lacks the file), but the imported profile fails validateProfile
-    // with REQUIRED_FILE_MISSING — repair never recreates it. The TUI must report
-    // the outcome instead of a clean success.
+    // Remove the profile's CLAUDE.md: export still succeeds (the bundle just
+    // lacks the file), and the staged repair never recreates CLAUDE.md — so
+    // the imported profile fails validateProfile with REQUIRED_FILE_MISSING.
+    // (A missing auto-memory MEMORY.md is NOT a suitable defect: the staged
+    // identity repair recreates that entrypoint before the publish, issue
+    // #109.) The TUI must report the outcome instead of a clean success.
     const { profilesPath } = getAppHomePaths(srcAppHome);
-    await fs.remove(
-      join(profilesPath, 'coding', 'claude-home', 'memory', 'auto', 'MEMORY.md'),
-    );
+    await fs.remove(join(profilesPath, 'coding', 'claude-home', 'CLAUDE.md'));
     const bundlePath = await makeBundle(srcAppHome);
 
     await overrideHomeToTemp();
@@ -628,6 +651,44 @@ describe('Workbench profile export/import flows (issue #95)', () => {
       await h.press('y');
       await h.waitFor('Imported "coding"');
       expect(h.text()).toContain('Validation: error');
+    } finally {
+      await h.unmount();
+    }
+  }, 20000);
+
+  it('rejects a bundle with corrupt settings pre-commit and creates nothing (issue #109)', async () => {
+    const srcAppHome = await makeAppHome(['coding']);
+    const badBundle = await makeBundleWithCorruptSettings(srcAppHome);
+
+    await overrideHomeToTemp();
+    const appHome = getAppHomePaths().appHomePath;
+    await createAppConfig(appHome, { clock: FIXED_CLOCK });
+    const data = await loadWorkbenchData(appHome);
+    expect(data.profiles).toHaveLength(0);
+
+    const h = new Harness();
+    try {
+      await h.renderApp(data, { mcpProbe: async () => [] });
+      await h.press('i');
+      await h.waitFor('Bundle path:');
+      await h.typeText(badBundle);
+      await h.press('\r');
+      await h.waitFor('Import profile');
+      await h.press('y');
+      // Pre-publish validation failure surfaces as an error flash with the
+      // staged-settings diagnosis — the import never reaches a success state.
+      await h.waitFor('cannot be parsed as JSON');
+      const flash = h.text();
+      expect(flash).not.toContain('Imported "coding"');
+
+      // No visible profile was created and no staging residue remains.
+      const refreshed = await loadWorkbenchData(appHome);
+      expect(refreshed.profiles).toHaveLength(0);
+      const { appHomePath } = getAppHomePaths(appHome);
+      const residue = (await fs.readdir(appHomePath)).filter((name) =>
+        name.startsWith('.ccps-import-'),
+      );
+      expect(residue).toEqual([]);
     } finally {
       await h.unmount();
     }
