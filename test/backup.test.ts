@@ -12,7 +12,6 @@ import {
   listBackups,
   parseBackupId,
   permanentlyDeleteBackup,
-  publishBackupFromStaging,
   publishBackupWithCollisionRetry,
   restoreProfileFromBackup,
 } from '../src/core/backup';
@@ -376,9 +375,9 @@ describe('Profile Backup service', () => {
       await backupProfile({ appHomePath: appHome, name: 'alpha', clock: backupClock });
 
       // Second backup in the SAME second through the shared protocol: the
-      // allocator produces a suffixed id and staging→publish lands it as a
-      // first-class backup. (The normal `ccps backup` create path is wired
-      // in ./profile; this exercises the protocol every backup shares.)
+      // allocator produces a suffixed id and staging→atomic-rename publish
+      // lands it as a first-class backup. (The normal `ccps backup` create
+      // path is wired in ./profile; this exercises the protocol directly.)
       const secondTarget = await allocateBackupDirPath(backupsPath, 'alpha', backupClock);
       expect(path.basename(secondTarget)).toBe('alpha-20260801-100000-2');
       const secondStaging = await createBackupStagingDir(backupsPath);
@@ -387,7 +386,15 @@ describe('Profile Backup service', () => {
         secondStaging,
         { overwrite: false, errorOnExist: true },
       );
-      await publishBackupFromStaging(secondStaging, secondTarget);
+      const published = await publishBackupWithCollisionRetry(
+        secondStaging,
+        secondTarget,
+        backupsPath,
+        'alpha',
+        backupClock,
+      );
+      expect(published).toBe(secondTarget);
+      expect(await fs.pathExists(secondStaging)).toBe(false);
 
       const list = await listBackups(appHome);
       expect(list.entries.map((entry) => entry.id)).toEqual([
@@ -483,6 +490,65 @@ describe('Profile Backup service', () => {
       ]);
     });
 
+    it('reports the RESOLVED publish id when a concurrent writer forces a collision (review P1-1)', async () => {
+      const appHome = await makeAppHome();
+      await makeProfile(appHome, 'alpha');
+      const { backupsPath } = getAppHomePaths(appHome);
+
+      // Pre-claim the base id the way a concurrent winner would, then make
+      // the allocator hand out the same (now occupied) id anyway by racing
+      // the two calls: one of them loses and must publish under -2.
+      const [first, second] = await Promise.all([
+        backupProfile({ appHomePath: appHome, name: 'alpha', clock: backupClock }),
+        backupProfile({ appHomePath: appHome, name: 'alpha', clock: backupClock }),
+      ]);
+
+      // Each result's backupPath is a real, distinct directory that holds
+      // that caller's OWN payload — never the winner's content.
+      expect(first.backupPath).not.toBe(second.backupPath);
+      for (const result of [first, second]) {
+        expect(await fs.pathExists(join(result.backupPath, 'claude-home', 'CLAUDE.md'))).toBe(
+          true,
+        );
+      }
+      const ids = (await listBackups(appHome)).entries.map((entry) => ({
+        id: entry.id,
+        backupPath: entry.backupPath,
+      }));
+      for (const result of [first, second]) {
+        const match = ids.find((entry) => entry.backupPath === result.backupPath);
+        expect(match).toBeDefined();
+      }
+
+      // A stray FILE squatting on an id also forces a retry; the reported
+      // path must be the real directory, not the file. Which id the second
+      // racer published under depends on the race outcome, so the file is
+      // placed on the currently-lowest listed id, and the third backup must
+      // land on the id the ALLOCATOR itself resolves past the squat (the
+      // production truth), never on the squatting file's path.
+      const secondListed = (await listBackups(appHome)).entries;
+      const squatId = secondListed[0]!.id;
+      await permanentlyDeleteBackup(squatId, appHome);
+      const squattingFile = join(backupsPath, squatId);
+      await fs.writeFile(squattingFile, 'not a backup', 'utf8');
+      const third = await backupProfile({ appHomePath: appHome, name: 'alpha', clock: backupClock });
+      expect(third.backupPath).not.toBe(squattingFile);
+      expect(await fs.pathExists(squattingFile)).toBe(true);
+      // The reported id is a real directory holding its own payload, and it
+      // is listable — the allocator (called again afterwards) skips PAST it,
+      // proving the reported id is claimed by this backup on disk.
+      expect(await fs.pathExists(join(third.backupPath, 'claude-home', 'CLAUDE.md'))).toBe(true);
+      const nextFree = await allocateBackupDirPath(backupsPath, 'alpha', backupClock);
+      const thirdId = path.basename(third.backupPath);
+      expect(nextFree).not.toBe(third.backupPath);
+      const thirdParsed = parseBackupId(thirdId);
+      expect(parseBackupId(path.basename(nextFree)).counter).toBe(
+        (thirdParsed.counter ?? 1) + 1,
+      );
+      const list = await listBackups(appHome);
+      expect(list.entries.map((entry) => entry.id)).toContain(thirdId);
+    });
+
     it('allocates unique same-second targets and stages-publishes without mixing writers', async () => {
       const appHome = await makeAppHome();
       await makeProfile(appHome, 'alpha');
@@ -496,7 +562,14 @@ describe('Profile Backup service', () => {
 
       const staging = await createBackupStagingDir(backupsPath);
       await fs.writeFile(join(staging, 'payload.txt'), 'first', 'utf8');
-      await publishBackupFromStaging(staging, firstTarget);
+      const published = await publishBackupWithCollisionRetry(
+        staging,
+        firstTarget,
+        backupsPath,
+        'alpha',
+        backupClock,
+      );
+      expect(published).toBe(firstTarget);
       expect(await fs.pathExists(firstTarget)).toBe(true);
 
       const secondTarget = await allocateBackupDirPath(backupsPath, 'alpha', backupClock);
@@ -516,9 +589,10 @@ describe('Profile Backup service', () => {
       await makeProfile(appHome, 'alpha');
       const { backupsPath } = getAppHomePaths(appHome);
 
-      // Two writers allocate in the same second, then both stage and publish.
-      // The publish retry is the arbiter: the id that lands first wins, the
-      // loser republishes under the next counter id — no overwrite, no mix.
+      // Two writers allocate in the same second, then both stage and publish
+      // through the real protocol. The atomic rename is the arbiter: the id
+      // that lands first wins, the loser's rename fails and retries under the
+      // next counter id — no overwrite, no mix.
       const [left, right] = await Promise.all([
         allocateBackupDirPath(backupsPath, 'alpha', backupClock),
         allocateBackupDirPath(backupsPath, 'alpha', backupClock),
@@ -529,30 +603,19 @@ describe('Profile Backup service', () => {
         await fs.writeFile(join(staging, 'marker.txt'), marker, 'utf8');
         return staging;
       };
-      const materialize = async (staging: string, target: string): Promise<string> =>
-        publishBackupWithCollisionRetry(
-          staging,
-          target,
-          backupsPath,
-          'alpha',
-          backupClock,
-          async (finalTarget) => {
-            // Exclusive create of the target directory: EEXIST when the
-            // winner claimed the id first — the merge hazard of a plain
-            // errorOnExist directory copy is exactly what this rejects.
-            await fs.mkdir(finalTarget);
-            await fs.copy(staging, finalTarget, { overwrite: false, errorOnExist: true });
-            await fs.remove(staging);
-          },
-        );
+      const publish = async (staging: string, target: string): Promise<string> =>
+        publishBackupWithCollisionRetry(staging, target, backupsPath, 'alpha', backupClock);
 
       const leftStaging = await stageFor('left');
       const rightStaging = await stageFor('right');
       const [leftFinal, rightFinal] = await Promise.all([
-        materialize(leftStaging, left),
-        materialize(rightStaging, right),
+        publish(leftStaging, left),
+        publish(rightStaging, right),
       ]);
 
+      // Each result reports the id its own payload actually occupies.
+      expect(await fs.readFile(join(leftFinal, 'marker.txt'), 'utf8')).toBe('left');
+      expect(await fs.readFile(join(rightFinal, 'marker.txt'), 'utf8')).toBe('right');
       expect(leftFinal).not.toBe(rightFinal);
       const ids = (await listBackups(appHome)).entries.map((entry) => entry.id).sort();
       expect(ids).toEqual(['alpha-20260801-100000', 'alpha-20260801-100000-2']);

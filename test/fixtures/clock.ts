@@ -38,13 +38,3 @@ export const FIXTURE_REMOVED_AT = '2026-07-31T10:00:00Z';
 
 /** A date comfortably beyond the default 30-day retention from FIXTURE_REMOVED_AT. */
 export const EXPIRED_SWEEP_DATE = '2026-09-30T10:00:00Z';
-
-/**
- * Two test dates more than the default retention (30 days) apart, for proving
- * consistent verdicts at both ends of the retention window without waiting
- * for real time (issue #104 acceptance).
- */
-export const RETENTION_PROBE_DATES = {
-  withinRetention: '2026-08-14T10:00:00Z',
-  beyondRetention: '2026-11-15T10:00:00Z',
-} as const;

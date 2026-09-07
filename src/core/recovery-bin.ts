@@ -63,8 +63,19 @@ export type RestoreResult = {
    * restore-as-new-name flows (issue #108), the recorded profile otherwise.
    */
   restoredProfile: string;
-  /** The item directory was consumed (removed) on success. */
-  consumed: true;
+  /**
+   * Whether the Recovery Item directory was consumed (removed) after the
+   * restored profile published. True on the happy path; false when the
+   * post-publish cleanup failed — the restore itself is committed either
+   * way, and `consumptionWarning` carries the user-facing explanation.
+   */
+  consumed: boolean;
+  /**
+   * Present only when `consumed` is false: the restored profile is live and
+   * the Recovery Item was kept, marked restored so it can never re-restore
+   * stale payload over it (issue #108, spec Decision 12).
+   */
+  consumptionWarning?: string;
 };
 
 export type CollisionResolution = 'refuse' | 'restore-as-new-name' | 'delete-and-restore';
@@ -481,6 +492,11 @@ export async function restoreRecoveryItem(options: RestoreOptions): Promise<Rest
   const { profilesPath } = getAppHomePaths(appHomePath);
   const clock = options.clock ?? (() => new Date());
 
+  // An item that was restored in a previous run but never consumed (crash
+  // after publish) must not re-restore stale payload over the user's live
+  // profile — for ANY shape (issue #108).
+  await assertItemNotAlreadyRestored(item);
+
   let restoredProfile = item.profile;
 
   if (item.shape === 'file-tree') {
@@ -505,19 +521,31 @@ export async function restoreRecoveryItem(options: RestoreOptions): Promise<Rest
     await restoreFragmentItem(item, profilesPath, appHomePath, options, clock);
   }
 
-  // Publish (the rename above) is the commit point: the item is only consumed
-  // after it, and a consume failure downgrades to a warning with the item
-  // marked restored — it must never masquerade as a failed restore (issue
-  // #108, spec Decision 12).
-  const consumed = true;
+  // Publish (the rename above) is the commit point: the restored profile is
+  // live from here on. A consume failure therefore downgrades to consumed:
+  // false + a warning carried in the RESULT (no side channel) — the item is
+  // marked restored so it can never re-restore over the published target
+  // (issue #108, spec Decision 12).
+  let consumed = true;
+  let consumptionWarning: string | undefined;
   try {
     await fs.remove(item.itemDirPath);
   } catch (error) {
     await markItemRestored(item, restoredProfile);
-    recordRestoreConsumptionWarning(error);
+    consumed = false;
+    consumptionWarning = describeConsumptionFailure(error);
   }
 
-  return { restoredProfile, consumed };
+  return consumptionWarning === undefined
+    ? { restoredProfile, consumed }
+    : { restoredProfile, consumed, consumptionWarning };
+}
+
+function describeConsumptionFailure(error: unknown): string {
+  if (isNodeError(error)) {
+    return `Restored successfully, but cleanup of the Recovery Item failed (${error.code ?? 'io error'}); the item was kept and marked restored — delete it permanently when its payload is no longer needed.`;
+  }
+  return 'Restored successfully, but cleanup of the Recovery Item failed; the item was kept and marked restored — delete it permanently when its payload is no longer needed.';
 }
 
 /**
@@ -545,38 +573,22 @@ async function markItemRestored(item: RecoveryBinItem, restoredName: string): Pr
     if (!(await fs.pathExists(itemJsonPath))) return;
     const raw: unknown = await fs.readJson(itemJsonPath);
     if (!isRecord(raw)) return;
+    // The consume failure may be permission-shaped (e.g. the item directory
+    // was left unwritable); grant owner write for the marker write so the
+    // replay guard can actually persist, then keep the directory owner-
+    // accessible (0700, matching the secretBearing convention).
+    await fs.chmod(item.itemDirPath, 0o700).catch(() => {});
     await atomicWriteJson(itemJsonPath, withRestoredName(raw as RecoveryItem, restoredName));
   } catch {
-    // Bookkeeping only; the restore already committed.
+    // Bookkeeping only; the restore already committed. The item still
+    // cannot re-restore while its directory exists, because every restore
+    // path collides with the live target it names.
   }
-}
-
-function recordRestoreConsumptionWarning(error: unknown): void {
-  if (isNodeError(error)) {
-    lastRestoreConsumptionWarning = `Recovery Item cleanup failed (${error.code ?? 'io error'}); the item was kept.`;
-    return;
-  }
-  lastRestoreConsumptionWarning =
-    'Recovery Item cleanup failed; the restored profile is live and the item was kept.';
 }
 
 export async function permanentlyDeleteItem(itemId: string, appHomePath?: string): Promise<void> {
   const item = await getRecoveryItem(itemId, appHomePath);
   await fs.remove(item.itemDirPath);
-}
-
-/**
- * Warning from the most recent restore whose Recovery Item could not be
- * consumed after the restored profile had already published (issue #108):
- * the restore is committed, the item was kept, and the UI must surface both
- * facts. Null when the last restore consumed cleanly. Reset by reading.
- */
-let lastRestoreConsumptionWarning: string | null = null;
-
-export function consumeRestoreConsumptionWarning(): string | null {
-  const warning = lastRestoreConsumptionWarning;
-  lastRestoreConsumptionWarning = null;
-  return warning;
 }
 
 export async function emptyRecoveryBin(appHomePath?: string): Promise<void> {
@@ -827,7 +839,6 @@ async function restoreFileTreeItem(
       if (await fs.pathExists(newProfileDir)) {
         throw collisionError('A profile already exists with the new name.');
       }
-      await assertItemNotAlreadyRestored(item);
 
       const stagingDir = resolveInside(
         profilesPath,

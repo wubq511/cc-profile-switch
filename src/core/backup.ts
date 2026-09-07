@@ -140,9 +140,7 @@ export function formatBackupTimestamp(date: Date): string {
  * backup occupies claim the id — unrelated residue is not treated as a
  * collision. The allocator never returns a path whose id already exists, so
  * a concurrent allocator cannot be handed a target that would overwrite or
- * mix into another writer's backup; the caller must create the directory with
- * exclusive semantics (errorOnExist) so losing a race surfaces as an error
- * instead of clobbering the winner.
+ * mix into another writer's backup.
  */
 export async function allocateBackupDirPath(
   backupsPath: string,
@@ -162,16 +160,33 @@ export async function allocateBackupDirPath(
   return resolveInside(backupsPath, id);
 }
 
+async function backupIdTaken(backupsPath: string, id: string): Promise<boolean> {
+  const candidate = resolveInside(backupsPath, id);
+  const stats = await fs.stat(candidate).catch(() => null);
+  // Any existing entry at the allocated id path — including a crashed
+  // writer's half copy or a stray file squatting on the id — claims it; the
+  // loop moves to the next counter instead of risking a clobber.
+  return stats !== null;
+}
+
 /**
- * Publish a staged backup under the allocated id, retrying the ALLOCATION
- * (never the copy) when a concurrent writer claimed the id between
- * allocation and publish (issue #107: a publish collision only changes the
- * id — it must not overwrite or mix into another writer's backup). The
- * materialize callback must land the payload EXCLUSIVELY: a directory-level
- * fs.copy with errorOnExist silently MERGES into an existing directory
- * (fs-extra only errors per pre-existing FILE), so create the target
- * directory with an exclusive mkdir first — losing the race surfaces as
- * EEXIST and is retried under the next counter id.
+ * Retry bound for the publish loop: collisions are expected only while other
+ * same-second writers publish (a handful of retries); exhausting the bound
+ * means something is systematically wrong (e.g. backups/ corrupted into a
+ * non-directory), which must surface as an error rather than hang the CLI.
+ */
+const PUBLISH_COLLISION_RETRY_LIMIT = 64;
+
+/**
+ * Publish a staged backup under the allocated id (issue #107). The publish is
+ * an ATOMIC rename of the staging directory onto the target: staging lives in
+ * the same parent directory, so the rename is same-partition atomic — either
+ * the complete payload is at the final, listable id, or nothing is. A
+ * concurrent writer claiming the id between allocation and publish makes the
+ * rename fail (EEXIST/ENOTEMPTY/…); the retry only changes the id, never
+ * overwrites or mixes into the other writer's backup. The RESOLVED target —
+ * the path the payload actually occupies — is returned and MUST be used as
+ * the published backup path by the caller.
  */
 export async function publishBackupWithCollisionRetry(
   stagingDir: string,
@@ -179,48 +194,61 @@ export async function publishBackupWithCollisionRetry(
   backupsPath: string,
   profileName: string,
   clock: Clock,
-  materialize: (target: string) => Promise<void>,
 ): Promise<string> {
   const parsed = parseBackupId(path.basename(initialTarget));
   let target = initialTarget;
-  let counter = 2;
+  let attempts = 0;
 
   for (;;) {
     try {
-      await materialize(target);
+      await fs.rename(stagingDir, target);
       return target;
     } catch (error) {
+      attempts++;
       const code = isNodeError(error) ? error.code : undefined;
       const collision =
-        code === 'EEXIST' || code === 'ENOTEMPTY' || code === 'EISDIR' || code === 'ENOTDIR';
+        code === 'EEXIST' ||
+        code === 'ENOTEMPTY' ||
+        code === 'EISDIR' ||
+        code === 'ENOTDIR' ||
+        code === 'EPERM' ||
+        code === 'EACCES';
       if (!collision) throw error;
+      if (attempts >= PUBLISH_COLLISION_RETRY_LIMIT) {
+        throw new CcpsError(
+          'BACKUP_PUBLISH_COLLISION',
+          `Backup publish kept colliding with existing entries after ${String(attempts)} attempts.`,
+          {
+            guidance:
+              'Inspect the backups directory for corruption, then retry; nothing was overwritten.',
+            cause: error,
+          },
+        );
+      }
       const timestamp = formatBackupTimestamp(clock());
       target = resolveInside(
         backupsPath,
-        formatBackupId(validateProfileName(parsed.profileName), timestamp, counter),
+        formatBackupId(validateProfileName(parsed.profileName), timestamp, counterFor(attempts)),
       );
-      counter++;
     }
   }
 }
 
-async function backupIdTaken(backupsPath: string, id: string): Promise<boolean> {
-  const candidate = resolveInside(backupsPath, id);
-  const stats = await fs.stat(candidate).catch(() => null);
-  // Any existing directory at the allocated id path — including a crashed
-  // writer's half copy that matches the id shape — claims the id; the loop
-  // moves to the next counter instead of risking a clobber.
-  return stats !== null && stats.isDirectory();
+function counterFor(attemptNumber: number): number {
+  // attempts=1 → counter 2, attempts=2 → 3, …
+  return attemptNumber + 1;
 }
 
 /**
  * Stage a backup under an id the listing will not recognize (issue #107): the
- * staging directory lives inside backups/ but carries the `.ccps-tmp-*`
- * transaction prefix shared with the §7.1 crash-reconcile sweep, so an
- * interrupted copy is reclaimed (or provably preserved) instead of surfacing
- * as a half-written Backup. Callers copy the payload in with exclusive
- * semantics, then rename to the allocated final id — the rename is the
- * publish point that makes the backup listable.
+ * staging directory lives inside backups/ (or profiles/, for restore copies)
+ * and carries the `.ccps-tmp-backup-` prefix, which no listing or ID parser
+ * accepts — an interrupted first copy therefore can never surface as, or
+ * claim, a Backup id. The publish step renames the staging directory onto the
+ * final id atomically; nothing else ever writes at the final id. Residue from
+ * a crash before publish keeps the unrecognized prefix (it holds only an
+ * incomplete copy and is replaced by the next staging run for the same id —
+ * new staging names are unique); it is not part of any Backup.
  */
 export async function createBackupStagingDir(backupsPath: string): Promise<string> {
   const stagingDir = resolveInside(
@@ -229,17 +257,6 @@ export async function createBackupStagingDir(backupsPath: string): Promise<strin
   );
   await fs.ensureDir(stagingDir);
   return stagingDir;
-}
-
-/**
- * The staged backup is complete: publish it by renaming the staging directory
- * to the final allocated id. After this commit point the backup is listable.
- */
-export async function publishBackupFromStaging(
-  stagingDir: string,
-  finalDir: string,
-): Promise<void> {
-  await fs.rename(stagingDir, finalDir);
 }
 
 /** Drop an abandoned staging directory (copy failed before publish). */
@@ -386,8 +403,9 @@ export async function permanentlyDeleteBackup(
  * Durable auto-backup of the pre-restore state. Uses the same shared Backup
  * ID protocol as every other backup (issue #107): the
  * `<profile>-<yyyymmdd>-<hhmmss>` id, same-second counter retries, and
- * staging-before-publish so an interrupted copy never surfaces as (or claims)
- * a listable backup.
+ * atomic-rename publish so an interrupted copy never surfaces as (or claims)
+ * a listable backup. The returned path is the RESOLVED publish target — the
+ * directory that actually holds the payload.
  */
 async function createSafetyBackup(
   appHomePath: string,
@@ -396,45 +414,24 @@ async function createSafetyBackup(
 ): Promise<string> {
   const appPaths = await ensureAppHomeStructure(appHomePath);
   const profileRoot = resolveInside(appPaths.profilesPath, validateProfileName(profileName));
+  const now = clock ?? (() => new Date());
 
-  const backupDir = await allocateBackupDirPath(
-    appPaths.backupsPath,
-    profileName,
-    clock ?? (() => new Date()),
-  );
+  const allocatedDir = await allocateBackupDirPath(appPaths.backupsPath, profileName, now);
 
   const stagingDir = await createBackupStagingDir(appPaths.backupsPath);
   try {
     await fs.copy(profileRoot, stagingDir, { overwrite: false, errorOnExist: true });
-    await publishBackupWithCollisionRetry(
+    return await publishBackupWithCollisionRetry(
       stagingDir,
-      backupDir,
+      allocatedDir,
       appPaths.backupsPath,
       profileName,
-      clock ?? (() => new Date()),
-      await exclusiveLanding(stagingDir),
+      now,
     );
   } catch (error) {
     await discardBackupStagingDir(stagingDir).catch(() => {});
     throw error;
   }
-  return backupDir;
-}
-
-/**
- * The exclusive landing the collision retry relies on: create the target
- * directory exclusively, then copy the staged payload in. fs-extra's
- * errorOnExist only rejects pre-existing FILES (a directory-level copy
- * silently merges into an existing target), so the exclusive mkdir is the
- * guard that turns a lost publish race into a retriable EEXIST.
- */
-async function exclusiveLanding(stagingDir: string): Promise<(target: string) => Promise<void>> {
-  return async (target: string) => {
-    await fs.ensureDir(stagingDir);
-    await fs.mkdir(target); // exclusive: throws EEXIST when the target exists
-    await fs.copy(stagingDir, target, { overwrite: false, errorOnExist: true });
-    await fs.remove(stagingDir);
-  };
 }
 
 /**
@@ -462,8 +459,15 @@ async function swapReplaceDirectory(
   await fs.remove(oldDir);
 
   await fs.copy(sourceDir, tmpDir, { overwrite: false, errorOnExist: true });
-  await repairProfileIdentity({ stagingPath: tmpDir, finalPath: targetDir, profileName: targetProfileName });
-  await fs.rename(targetDir, oldDir);
-  await fs.rename(tmpDir, targetDir);
+  try {
+    await repairProfileIdentity({ stagingPath: tmpDir, finalPath: targetDir, profileName: targetProfileName });
+    await fs.rename(targetDir, oldDir);
+    await fs.rename(tmpDir, targetDir);
+  } catch (error) {
+    // Nothing published yet — clear our staging so no half-repaired copy
+    // lingers next to the live profile.
+    await fs.remove(tmpDir).catch(() => {});
+    throw error;
+  }
   await fs.remove(oldDir);
 }

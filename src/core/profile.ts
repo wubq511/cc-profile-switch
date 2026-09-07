@@ -165,23 +165,24 @@ export async function backupProfile(options: BackupProfileOptions): Promise<Back
   }
 
   // The shared Backup ID protocol (issue #107): unique same-second
-  // allocation, staging before publish, and a publish race that only ever
-  // changes the id — the same rules list/restore/delete already parse.
-  const backupPath = await allocateBackupDirPath(
+  // allocation, staging before publish, and an atomic-rename publish whose
+  // race retry only ever changes the id. The returned path is the RESOLVED
+  // publish target — the directory that actually holds the payload.
+  const allocatedPath = await allocateBackupDirPath(
     appPaths.backupsPath,
     options.name,
     options.clock ?? (() => new Date()),
   );
   const stagingDir = await createBackupStagingDir(appPaths.backupsPath);
+  let backupPath: string;
   try {
     await fs.copy(paths.profileRootPath, stagingDir, { overwrite: false, errorOnExist: true });
-    await publishBackupWithCollisionRetry(
+    backupPath = await publishBackupWithCollisionRetry(
       stagingDir,
-      backupPath,
+      allocatedPath,
       appPaths.backupsPath,
       options.name,
       options.clock ?? (() => new Date()),
-      exclusiveBackupLanding(stagingDir),
     );
   } catch (error) {
     await discardBackupStagingDir(stagingDir).catch(() => {});
@@ -192,20 +193,6 @@ export async function backupProfile(options: BackupProfileOptions): Promise<Back
     profileName: options.name,
     sourcePath: paths.profileRootPath,
     backupPath,
-  };
-}
-
-/**
- * Exclusive landing shared with the safety-backup flow in ./backup: create
- * the target directory exclusively (EEXIST on a lost publish race), then
- * copy the staged payload in. A plain errorOnExist directory copy would
- * silently merge into an existing target.
- */
-function exclusiveBackupLanding(stagingDir: string): (target: string) => Promise<void> {
-  return async (target: string) => {
-    await fs.mkdir(target); // exclusive: throws EEXIST when the target exists
-    await fs.copy(stagingDir, target, { overwrite: false, errorOnExist: true });
-    await fs.remove(stagingDir);
   };
 }
 
