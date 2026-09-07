@@ -169,6 +169,76 @@ export const jsonWriteIo = {
   },
 };
 
+// ─── Rename publish retry (PR #114 CI, windows-latest EPERM) ───────────────
+//
+// On Windows, replacing an existing file by rename (MoveFileEx
+// MOVEFILE_REPLACE_EXISTING via libuv) fails with EPERM/EACCES/EBUSY while the
+// destination is transiently open — a concurrent publisher that just renamed
+// and is closing, Defender/search-indexer scans of the new file, or an open
+// handle on the source temp. POSIX rename replaces atomically regardless of
+// open handles, so the failure is win32-specific, but retrying these codes on
+// every platform keeps the async and sync paths on one code path and matches
+// the graceful-fs precedent. The retry set is exactly the transient trio:
+// deterministic permission problems (e.g. a read-only destination on POSIX
+// yields EPERM too, but never self-heals) simply exhaust the bounded attempts
+// and still throw. The #106 contracts are untouched: same temp protocol,
+// complete-document publish, ownership-scoped cleanup, permission
+// preservation, no global lock.
+
+/** Error codes on the final rename that are worth retrying. */
+const RENAME_RETRYABLE_CODES = new Set(['EPERM', 'EACCES', 'EBUSY']);
+
+/** Backoff between rename attempts; the last entry bounds the total retry
+ * budget to well under a second so a deterministic failure surfaces quickly. */
+const RENAME_RETRY_DELAYS_MS = [25, 75, 200] as const;
+/** Total rename attempts per publish (first try + bounded retries). */
+export const RENAME_PUBLISH_MAX_ATTEMPTS = RENAME_RETRY_DELAYS_MS.length + 1;
+
+function isRetryableRenameError(error: unknown): boolean {
+  return (
+    isNodeError(error) &&
+    typeof error.code === 'string' &&
+    RENAME_RETRYABLE_CODES.has(error.code)
+  );
+}
+
+function sleepSync(ms: number): void {
+  // Node permits Atomics.wait on the main thread (unlike browsers); a fresh
+  // zeroed SharedArrayBuffer means the wait always times out after `ms`.
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Publish by rename with bounded retry on transient EPERM/EACCES/EBUSY. The
+ * temp survives every failed attempt untouched, so a retry renames the same
+ * fully-written document. */
+async function renameWithRetry(fromPath: string, toPath: string): Promise<void> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await jsonWriteIo.rename(fromPath, toPath);
+      return;
+    } catch (error) {
+      if (attempt >= RENAME_PUBLISH_MAX_ATTEMPTS || !isRetryableRenameError(error)) throw error;
+      await sleep(RENAME_RETRY_DELAYS_MS[attempt - 1]);
+    }
+  }
+}
+
+function renameWithRetrySync(fromPath: string, toPath: string): void {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      jsonWriteIo.renameSync(fromPath, toPath);
+      return;
+    } catch (error) {
+      if (attempt >= RENAME_PUBLISH_MAX_ATTEMPTS || !isRetryableRenameError(error)) throw error;
+      sleepSync(RENAME_RETRY_DELAYS_MS[attempt - 1]);
+    }
+  }
+}
+
 type TargetModePlan = { createMode: number; replicateMode: number | null };
 
 /**
@@ -253,7 +323,7 @@ async function publishJsonDocument(filePath: string, payload: string): Promise<v
     throw error;
   }
   try {
-    await jsonWriteIo.rename(tempPath, filePath);
+    await renameWithRetry(tempPath, filePath);
   } catch (error) {
     await removeOwnedTemp(tempPath);
     throw error;
@@ -277,7 +347,7 @@ function publishJsonDocumentSync(filePath: string, payload: string): void {
     throw error;
   }
   try {
-    jsonWriteIo.renameSync(tempPath, filePath);
+    renameWithRetrySync(tempPath, filePath);
   } catch (error) {
     removeOwnedTempSync(tempPath);
     throw error;
