@@ -2,7 +2,7 @@ import React from 'react';
 import { Box, Text } from 'ink';
 
 import { useI18n } from './i18n/react';
-import type { WorkbenchProfile } from './profile-data';
+import { readStateFor, type WorkbenchProfile } from './profile-data';
 import type { ResourceCategory } from '../../core/resource';
 import type { EditSession } from '../../core/edit-session';
 import { WatchingBadge } from './edit-session/WatchingBadge';
@@ -26,6 +26,9 @@ type ResourceListProps = {
  *
  * - User Memory: a single CLAUDE.md row (or a "missing → recreate" hint).
  * - Agents: one row per agents/*.md file.
+ * - An unreadable category (EISDIR/EACCES/format, issue #110) shows the
+ *   diagnostic with a fix direction instead of a successful empty list, and
+ *   the item actions stay unavailable.
  */
 export function ResourceList({
   profile,
@@ -42,9 +45,52 @@ export function ResourceList({
   const isAgents = category === 'agents';
   const userMemory = profile.resourceDetails.userMemory;
   const agents = profile.resourceDetails.agents;
+  // Issue #110: an unreadable category renders the explicit error state; the
+  // graceful-degradation fixture paths (missing userMemory entry) fall back to
+  // `ok` + empty details.
+  const categoryState = readStateFor(profile, category);
+  const unreadable = categoryState.status === 'unreadable' ? categoryState : null;
 
-  const empty = isAgents ? agents.length === 0 : !userMemory.exists;
+  const empty = !unreadable && (isAgents ? agents.length === 0 : !userMemory.exists);
   const headerText = isAgents ? t('resource.agents.title') : t('resource.userMemory.title');
+
+  if (unreadable) {
+    return React.createElement(
+      Box,
+      { flexDirection: 'column', width, height, paddingX: 1 },
+      React.createElement(Text, { bold: true }, `${profile.name} › ${headerText}`),
+      React.createElement(
+        Box,
+        { marginTop: 1, flexDirection: 'column' },
+        React.createElement(
+          Text,
+          { color: 'red' },
+          `✗ ${t('resource.state.unreadable', { code: unreadable.code })}`,
+        ),
+        React.createElement(
+          Text,
+          { color: 'gray', wrap: 'truncate' },
+          `    ${unreadable.detail}`,
+        ),
+        React.createElement(
+          Box,
+          { marginTop: 1 },
+          React.createElement(
+            Text,
+            { color: 'gray', wrap: 'wrap' },
+            t('resource.state.fixDirection'),
+          ),
+        ),
+        React.createElement(
+          Box,
+          { marginTop: 1 },
+          React.createElement(Text, { color: 'gray' }, t('resource.state.refreshHint')),
+        ),
+      ),
+      React.createElement(Box, { flexGrow: 1 }),
+      React.createElement(Text, { color: 'gray', wrap: 'truncate' }, hintLine),
+    );
+  }
 
   if (empty) {
     return React.createElement(

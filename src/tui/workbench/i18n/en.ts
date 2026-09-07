@@ -413,6 +413,13 @@ export const en = {
   'resource.agents.createSuccess': 'Agent "{name}" created — opening in VS Code',
   'resource.agents.removed': 'Agent "{name}" moved to Recovery Bin',
   'resource.list.hint': '[e] edit  [x] remove  [c] copy  [d] diff',
+  // Issue #110: explicit read-state errors (EISDIR/EACCES/format) with a fix
+  // direction — never disguised as a successful empty list.
+  'resource.state.unreadable': 'Resource cannot be read ({code})',
+  'resource.state.fixDirection':
+    'Fix the path so it is the expected file type and readable, then refresh (Esc back and re-enter).',
+  'resource.state.refreshHint': 'Fixed on disk? Esc out and re-enter to reload.',
+  'resource.state.loadFailed': 'Resource cannot be loaded: {code}',
   'resource.preview.title': 'Preview',
   'resource.preview.back': 'Esc to go back',
   'resource.edit': 'Edit in VS Code',

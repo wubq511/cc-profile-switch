@@ -24,6 +24,9 @@ type ResourceMainPaneProps = {
   sessionFor: (resourceName: string) => EditSession | undefined;
   /** Loaded preview content for the currently selected resource. */
   content: string | null;
+  /** Issue #110: diagnostic for a failed preview read; shown instead of the
+   *  missing/empty state. */
+  contentReadError?: { code: string; detail: string } | null;
   diff: ResourceDiffResult | null;
   drilledAgent: string | null;
   agentFrontmatter: AgentFrontmatter | null;
@@ -43,6 +46,7 @@ export function ResourceMainPane({
   nav,
   sessionFor,
   content,
+  contentReadError,
   diff,
   drilledAgent,
   agentFrontmatter,
@@ -102,6 +106,7 @@ export function ResourceMainPane({
       category,
       resourceName,
       content: displayContent,
+      contentReadError,
       scrollOffset: nav.scrollOffset,
       session,
       width,

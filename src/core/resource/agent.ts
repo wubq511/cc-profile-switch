@@ -59,7 +59,18 @@ export async function listAgents(appHomePath: string, profileName: string): Prom
     return [];
   }
 
-  const entries = await fs.readdir(agentsDir, { withFileTypes: true });
+  // An unreadable agents directory (EISDIR on a file, EACCES, ELOOP) must not
+  // surface as an empty agent list (issue #110): rethrow so the aggregator
+  // classifies the category as explicitly failed.
+  let entries: fs.Dirent[];
+  try {
+    entries = await fs.readdir(agentsDir, { withFileTypes: true });
+  } catch (error) {
+    throw new CcpsError('RESOURCE_READ_FAILED', `Agents directory cannot be read: ${String(error)}`, {
+      guidance: 'Fix the path so claude-home/agents is a readable directory.',
+      cause: error,
+    });
+  }
   const mdFiles = entries.filter((e) => e.isFile() && e.name.endsWith('.md'));
 
   const agents = await Promise.all(

@@ -5,6 +5,7 @@ import { createFileTreeItem, type RecoveryBinItem } from '../recovery-bin';
 import { getProfileTemplatePaths } from '../profile-template';
 import { validateProfileName } from '../../platform/path';
 import { CcpsError } from '../../utils/errors';
+import { readFileWithState } from './read-state';
 import type { Clock } from '../types';
 import type { UserMemoryEntry } from './types';
 
@@ -19,9 +20,10 @@ export async function loadUserMemory(
   const safeName = validateProfileName(profileName);
   const paths = getProfileTemplatePaths(appHomePath, safeName);
   const claudeMdPath = paths.claudeMdPath;
-  const exists = await fs.pathExists(claudeMdPath);
 
-  if (!exists) {
+  const read = await readFileWithState(claudeMdPath);
+
+  if (read.status === 'missing') {
     return {
       kind: 'user-memory',
       name: CLAUDE_MD_FILENAME,
@@ -32,8 +34,17 @@ export async function loadUserMemory(
     };
   }
 
-  const content = await fs.readFile(claudeMdPath, 'utf8');
-  const lines = content.split('\n');
+  if (read.status === 'unreadable') {
+    // EISDIR/EACCES/format errors must not masquerade as "no memory" — rethrow
+    // so the aggregator classifies this category as explicitly failed
+    // (issue #110). The cause carries the classified read outcome.
+    throw new CcpsError('RESOURCE_READ_FAILED', `CLAUDE.md cannot be read: ${read.detail}`, {
+      guidance: 'Fix the path so claude-home/CLAUDE.md is a readable file.',
+      cause: read,
+    });
+  }
+
+  const lines = read.value.split('\n');
   const nonEmptyLines = lines.filter((l) => l.trim() !== '');
   const excerpt = nonEmptyLines.slice(0, EXCERPT_MAX_LINES).join('\n');
 
