@@ -171,7 +171,7 @@ describe('app config', () => {
       {
         ...config,
         recovery: { retentionDays: 7 },
-        workbench: { skillsDiscoveryExperimental: false, language: 'zh' },
+        workbench: { skillsDiscoveryExperimental: false, welcomeBanner: true, language: 'zh' },
       },
       { clock: laterClock },
     );

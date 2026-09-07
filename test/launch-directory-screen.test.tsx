@@ -15,7 +15,7 @@ const LONG_RECENT = '/Users/someone/another/extremely/long/path/to/a/recent/laun
 
 function makeLaunch(): LaunchState {
   return {
-    phase: 'dir',
+    phase: 'dir-screen',
     dir: LONG_DIR,
     dirInput: LONG_DIR,
     recentDirs: [{ path: LONG_RECENT, lastUsedAt: '2026-08-01T00:00:00Z' }],
@@ -23,7 +23,7 @@ function makeLaunch(): LaunchState {
     dryRunPlan: null,
     validationFindings: [],
     exitCode: null,
-  } as LaunchState;
+  };
 }
 
 describe('DirectoryScreen long paths (issue #98, V14)', () => {

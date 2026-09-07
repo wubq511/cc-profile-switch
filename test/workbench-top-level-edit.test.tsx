@@ -15,6 +15,7 @@ import { createAppConfig, getAppHomePaths } from '../src/core/app-config';
 import { createProfileFromTemplate } from '../src/core/profile-template';
 import { getProfileTemplatePaths } from '../src/core/profile-template';
 import type { WorkbenchProfile, WorkbenchData } from '../src/tui/workbench/profile-data';
+import type { AgentEntry } from '../src/core/resource/types';
 import { flatten, noPluginsReader, setupSpawnSuccess, stripAnsi } from './render-helpers';
 
 vi.mock('node:child_process', () => ({
@@ -130,7 +131,7 @@ describe('top-level `e` edit in VS Code (§4.3/§8)', () => {
   }
 
   function profileWith(userMemoryExists: boolean, agentsCount = 0): WorkbenchProfile {
-    const agent = {
+    const agent: AgentEntry = {
       kind: 'agents' as const,
       name: 'explore',
       relativePath: 'claude-home/agents/explore.md',
@@ -165,11 +166,9 @@ describe('top-level `e` edit in VS Code (§4.3/§8)', () => {
           excerpt: 'Prefer explicit answers.',
         },
         agents: agentsCount > 0 ? [agent] : [],
-        autoMemory: 0,
-        skills: 0,
-        mcp: 0,
-        settings: 1,
-        launchConfig: 1,
+        autoMemory: [],
+        skills: [],
+        settings: ['model'],
         plugins: [],
       },
       mcpServers: [],
@@ -180,6 +179,7 @@ describe('top-level `e` edit in VS Code (§4.3/§8)', () => {
   const dataFor = (profile: WorkbenchProfile): WorkbenchData => ({
     profiles: [profile],
     defaultProfile: 'coding',
+    customTemplates: [],
   });
 
   async function waitForInputListener(stdin: FakeTtyStdin, timeoutMs = 2000): Promise<void> {

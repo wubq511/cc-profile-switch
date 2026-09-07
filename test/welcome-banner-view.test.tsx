@@ -22,7 +22,7 @@ async function renderFrame(element: React.ReactElement): Promise<string> {
 }
 
 describe('WelcomeBanner Ink component', () => {
-  let originalLevel: number;
+  let originalLevel: typeof chalk.level;
 
   beforeEach(() => {
     originalLevel = chalk.level;

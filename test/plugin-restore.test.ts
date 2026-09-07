@@ -157,7 +157,7 @@ describe('plugin restore', () => {
       appHomePath: appHome,
       origin: 'remove',
       profile: 'coding',
-      coordinates: { plugin: 'probe-plugin', marketplace: 'probe-marketplace', enabled: false },
+      coordinates: { plugin: 'probe-plugin', marketplace: 'probe-marketplace', enabled: false, userConfigKeys: [] },
       clock: fixedClock,
     });
 
@@ -181,7 +181,7 @@ describe('plugin restore', () => {
       appHomePath: appHome,
       origin: 'remove',
       profile: 'coding',
-      coordinates: { plugin: 'probe-plugin', marketplace: 'probe-marketplace', enabled: true },
+      coordinates: { plugin: 'probe-plugin', marketplace: 'probe-marketplace', enabled: true, userConfigKeys: [] },
       clock: fixedClock,
     });
 
@@ -203,7 +203,7 @@ describe('plugin restore', () => {
       appHomePath: appHome,
       origin: 'remove',
       profile: 'coding',
-      coordinates: { plugin: 'probe-plugin', marketplace: 'gone-marketplace', enabled: true },
+      coordinates: { plugin: 'probe-plugin', marketplace: 'gone-marketplace', enabled: true, userConfigKeys: [] },
       clock: fixedClock,
     });
 
@@ -220,7 +220,7 @@ describe('plugin restore', () => {
       appHomePath: appHome,
       origin: 'remove',
       profile: 'coding',
-      coordinates: { plugin: 'probe-plugin', marketplace: '', enabled: true },
+      coordinates: { plugin: 'probe-plugin', marketplace: '', enabled: true, userConfigKeys: [] },
       clock: fixedClock,
     });
 

@@ -2,7 +2,7 @@ import fs from 'fs-extra';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawnSync, type SpawnSyncOptions, type SpawnSyncReturns } from 'node:child_process';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -22,11 +22,13 @@ import { appStateV1Schema } from '../src/schemas/state';
  * because there is no PTY. We inject a spawnImpl that skips the wrapper
  * and calls the command directly, matching the non-macOS behavior.
  */
-function testSpawnSync(
+// `spawnImpl` is typed as the overloaded `typeof spawnSync`; no single-signature
+// wrapper satisfies every overload, so the fake is pinned with a cast at the seam.
+const testSpawnSync = ((
   command: string,
-  args: string[],
-  options: Parameters<typeof spawnSync>[2],
-) {
+  args: readonly string[],
+  options?: SpawnSyncOptions,
+): SpawnSyncReturns<string | Buffer> => {
   // If the command is 'script' with the PTY wrapper pattern, unwrap it
   if (command === 'script' && args[0] === '-q' && args[1] === '/dev/null') {
     const realCommand = args[2];
@@ -34,7 +36,7 @@ function testSpawnSync(
     return spawnSync(realCommand, realArgs, options);
   }
   return spawnSync(command, args, options);
-}
+}) as typeof spawnSync;
 
 describe('workbench launch (spawnSync)', () => {
   const tempRoots: string[] = [];
@@ -223,20 +225,20 @@ describe('workbench launch (spawnSync)', () => {
 
     // Capture spawn arguments
     let capturedCommand: string | undefined;
-    let capturedArgs: string[] | undefined;
+    let capturedArgs: readonly string[] | undefined;
     let capturedCwd: string | undefined;
     let capturedEnv: NodeJS.ProcessEnv | undefined;
 
     workbenchLaunchSync({
       plan: testPlan,
       appHomePath: appHome,
-      spawnImpl: (command, args, options) => {
+      spawnImpl: ((command, args, options) => {
         capturedCommand = command;
         capturedArgs = args;
         capturedCwd = (options as Record<string, unknown>).cwd as string;
         capturedEnv = (options as Record<string, unknown>).env as NodeJS.ProcessEnv;
         return spawnSync('node', ['-e', 'process.exit(0)'], options);
-      },
+      }) as typeof spawnSync,
     });
 
     // On macOS, command should be 'script' with PTY wrapper args

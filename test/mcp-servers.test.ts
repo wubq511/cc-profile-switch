@@ -180,8 +180,9 @@ function writeMcpServerToClaudeJson(claudeConfigDir: string, name: string, entry
   } catch {
     // missing file → start empty
   }
-  if (!isRecord(json.mcpServers)) json.mcpServers = {};
-  json.mcpServers[name] = entry;
+  const servers: Record<string, unknown> = isRecord(json.mcpServers) ? json.mcpServers : {};
+  json.mcpServers = servers;
+  servers[name] = entry;
   fs.outputJsonSync(file, json, { spaces: 2 });
 }
 

@@ -103,6 +103,7 @@ async function renderInteractive(
 const sampleData: WorkbenchData = {
   profiles: [makeProfile({ name: 'coding' })],
   defaultProfile: 'coding',
+  customTemplates: [],
 };
 
 // Locale resolution chain (spec §14.10): explicit `workbench.language` in

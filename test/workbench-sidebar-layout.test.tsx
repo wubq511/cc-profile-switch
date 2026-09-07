@@ -61,6 +61,7 @@ const wideTreeData: WorkbenchData = {
     }),
   ],
   defaultProfile: 'profile-001',
+  customTemplates: [],
 };
 
 async function waitForOutputSettled(stdout: FakeTtyStdout, baseline: string, timeoutMs = 3000): Promise<void> {

@@ -159,7 +159,7 @@ describe('plugin CLI commands', () => {
       appHomePath: appHome,
       origin: 'remove',
       profile: 'coding',
-      coordinates: { plugin: 'p', marketplace: 'm', enabled: false },
+      coordinates: { plugin: 'p', marketplace: 'm', enabled: false, userConfigKeys: [] },
       clock: () => new Date('2026-07-31T16:13:29.000Z'),
     });
     // Declare the marketplace so restore passes the presence check.

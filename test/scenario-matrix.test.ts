@@ -447,7 +447,7 @@ describe('Scenario matrix — User Memory / Agents (S30–S42)', () => {
     const appHome = await makeAppHome();
     await makeProfile(appHome, 'coding');
 
-    await createAgent(appHome, 'coding', 'reviewer', 'You review code.', { clock: fixedClock });
+    await createAgent(appHome, 'coding', 'reviewer');
     const agents = await listAgents(appHome, 'coding');
     expect(agents.some((a) => a.name === 'reviewer')).toBe(true);
   });
@@ -465,8 +465,8 @@ describe('Scenario matrix — User Memory / Agents (S30–S42)', () => {
     const appHome = await makeAppHome();
     await makeMultiProfile(appHome, ['coding', 'study']);
 
-    await createAgent(appHome, 'coding', 'coder', 'You code.', { clock: fixedClock });
-    await createAgent(appHome, 'study', 'learner', 'You learn.', { clock: fixedClock });
+    await createAgent(appHome, 'coding', 'coder');
+    await createAgent(appHome, 'study', 'learner');
 
     const diff = await diffResources(appHome, 'coding', 'study', 'agents');
     expect(diff).toBeDefined();
@@ -740,7 +740,7 @@ describe('Scenario matrix — Auto Memory / metadata / Plugins (S82–S91)', () 
       entryName: 'notes.md',
       clock: fixedClock,
     });
-    expect(result.recoveryItem).not.toBeNull();
+    expect(result).not.toBeNull();
 
     // Entry gone
     const exists = await fs.pathExists(entryPath);

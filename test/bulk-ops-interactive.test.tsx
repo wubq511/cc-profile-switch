@@ -175,7 +175,9 @@ describe('BulkOpsView interactive journeys (S95/S96/S97)', () => {
       const binItems = await listRecoveryBinItems(appHome);
       const skillItems = binItems.filter((i) => i.kind === 'skill' && i.profile === 'coding');
       expect(skillItems).toHaveLength(3);
-      const names = skillItems.map((i) => i.coordinates.targetRelativePath ?? '').sort();
+      const names = skillItems
+        .map((i) => ('targetRelativePath' in i.coordinates ? i.coordinates.targetRelativePath : ''))
+        .sort();
       expect(names.join()).toContain('skill-a');
       expect(names.join()).toContain('skill-b');
       expect(names.join()).toContain('skill-c');

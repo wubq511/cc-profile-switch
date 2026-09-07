@@ -39,7 +39,7 @@ describe('profile lifecycle commands', () => {
       clock?: () => Date;
       promptInputs?: string[];
       prompts?: string[];
-      tuiCalls?: Array<{ appHomePath: string }>;
+      tuiCalls?: Array<{ appHomePath: string | undefined }>;
       spawnCalls?: Array<{ command: string; args: string[]; cwd: string }>;
     } = {},
   ): Promise<CliRun> {
@@ -528,7 +528,7 @@ describe('profile lifecycle commands', () => {
   it('tui starts the TUI flow through the injected terminal adapter runner', async () => {
     const userHome = await makeUserHome();
     const appHome = join(userHome, '.cc-profile-switch');
-    const tuiCalls: Array<{ appHomePath: string }> = [];
+    const tuiCalls: Array<{ appHomePath: string | undefined }> = [];
 
     await runCli(userHome, ['init']);
 
