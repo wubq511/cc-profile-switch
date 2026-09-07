@@ -565,15 +565,16 @@ export async function installLocalSkill(options: InstallOptions): Promise<Instal
 }
 
 async function buildSkillSource(options: InstallOptions): Promise<SkillSource> {
+  const sourcePath = resolveFilesystemPath(options.sourcePath);
   const source: SkillSource = {
     kind: 'local',
-    path: resolveFilesystemPath(options.sourcePath),
+    path: sourcePath,
   };
   // Spec §7.1: local installs discover the enclosing git repository at
   // install time and record repo { root, remoteUrl, skillPathInRepo, ref }.
   // When none is found the field is omitted and Update is disabled with
   // reason 'no-git-repo' (checked in skills-provenance.ts).
-  const repo = await discoverLocalSkillRepo(source.path, {
+  const repo = await discoverLocalSkillRepo(sourcePath, {
     captureProcess: options.gitCaptureProcess,
   });
   if (repo) {

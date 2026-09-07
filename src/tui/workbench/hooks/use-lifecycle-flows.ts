@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState, type Dispatch, type SetStateAction } from 'react';
+import type { Key } from 'ink';
 
 import { getAppHomePaths } from '../../../core/app-config';
 import { backupProfile, createProfile } from '../../../core/profile';
@@ -141,7 +142,7 @@ export function useLifecycleFlows({
     input: string,
     selectedTemplate: string | null,
   ) => Promise<void>;
-  handleConfirmInput: (input: string, key: Record<string, boolean>) => void;
+  handleConfirmInput: (input: string, key: Key) => void;
   handleRemoveCustomTemplate: (templateName: string) => Promise<void>;
 } {
   const [lifecycle, setLifecycle] = useState<LifecycleState>(() => {
@@ -495,7 +496,7 @@ export function useLifecycleFlows({
   );
 
   const handleConfirmInput = useCallback(
-    (input: string, key: Record<string, boolean>) => {
+    (input: string, key: Key) => {
       if (key.escape) {
         if (lifecycle.kind === 'import' && importPreview) {
           // Esc on the import preview resolves the parked decision as abort; the

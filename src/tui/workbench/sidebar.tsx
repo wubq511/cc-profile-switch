@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Box, Text, useInput, useStdin } from 'ink';
+import { Box, Text, useInput, useStdin, type Key } from 'ink';
 
 import type { SearchResult } from '../../core/resource/types';
 import { useI18n } from './i18n/react';
@@ -249,7 +249,7 @@ export function Sidebar({
   // Clamp after a zero-confirm custom-template removal shrinks the list.
   const safeTemplateIndex = Math.min(templateIndex, Math.max(0, templateOptions.length - 1));
 
-  useInput((input: string, key: Record<string, boolean>) => {
+  useInput((input: string, key: Key) => {
     if (capture || wizardOpen) return;
 
     // Destructive-action panel input is owned by the app (full-width dialog).

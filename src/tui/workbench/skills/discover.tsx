@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Box, Text, useInput, useStdin } from 'ink';
+import { Box, Text, useInput, useStdin, type Key } from 'ink';
 
 import { useI18n, type I18nParams, type Locale } from '../i18n/react';
 import type { LocaleKey } from '../i18n/en';
@@ -129,7 +129,7 @@ export function DiscoverView({
   }, [loadBrowse]);
 
   useInput(
-    (input: string, key: Record<string, boolean>) => {
+    (input: string, key: Key) => {
       if (key.ctrl && input === 'c') return; // app-level exit handles this
 
       // Source entry mode (the zero-config floor).

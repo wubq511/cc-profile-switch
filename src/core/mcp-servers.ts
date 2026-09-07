@@ -488,6 +488,15 @@ export async function copyMcpServerToProfile(options: CopyMcpServerOptions): Pro
   // copied (secret-in-memory rule, spec §6.5 fallback); their key names are
   // returned so the caller can prompt for guided re-entry.
   const transport = deriveTransport(sourceEntry);
+  if (transport === 'unknown') {
+    throw new CcpsError(
+      'MCP_INVALID_CONFIG',
+      'The source MCP server transport cannot be classified, so it cannot be copied.',
+      {
+        guidance: `Add a \`type\` field (stdio/sse/http) to the source server "${options.sourceName}" in Claude Code and retry.`,
+      },
+    );
+  }
   const addOptions: McpAddOptions = { name: targetName, transport };
   if (transport === 'stdio') {
     if (typeof sourceEntry.command === 'string') addOptions.command = sourceEntry.command;
@@ -604,11 +613,16 @@ export async function restoreMcpServer(options: RestoreMcpServerOptions): Promis
   blockTraversal(profileDir, targetFile);
 
   const resolution = options.collisionResolution ?? 'refuse';
-  const targetName = resolution === 'restore-as-new-name' ? options.newName : origName;
-  if (resolution === 'restore-as-new-name' && !targetName) {
-    throw new CcpsError('RESTORE_NEW_NAME_REQUIRED', 'A new server name is required for restore-as-new-name.', {
-      guidance: 'Provide a new server name for the restored MCP server.',
-    });
+  let targetName: string;
+  if (resolution === 'restore-as-new-name') {
+    if (!options.newName) {
+      throw new CcpsError('RESTORE_NEW_NAME_REQUIRED', 'A new server name is required for restore-as-new-name.', {
+        guidance: 'Provide a new server name for the restored MCP server.',
+      });
+    }
+    targetName = options.newName;
+  } else {
+    targetName = origName;
   }
 
   let target: Record<string, unknown>;

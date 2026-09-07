@@ -1,5 +1,5 @@
 import React, { useEffect, useReducer, useRef } from 'react';
-import { Box, Text, useApp, useInput, useStdin } from 'ink';
+import { Box, Text, useApp, useInput, useStdin, type Key } from 'ink';
 
 import { useI18n } from '../i18n/react';
 import type { LocaleKey } from '../i18n/en';
@@ -57,7 +57,9 @@ export type InstallWizardCallbacks = {
 
 type InstallWizardProps = {
   profileName: string;
-  profileRootPath: string;
+  /** Optional: the wizard's install callbacks resolve the Profile root
+   *  themselves; the reducer accepts its absence (remote rename dedupe). */
+  profileRootPath?: string;
   callbacks: InstallWizardCallbacks;
   width: number;
   height: number;
@@ -292,7 +294,7 @@ export function InstallWizard({
   }, [state.phase, callbacks]);
 
   useInput(
-    (input: string, key: Record<string, boolean>) => {
+    (input: string, key: Key) => {
       if (key.ctrl && input === 'c') {
         exit();
         return;

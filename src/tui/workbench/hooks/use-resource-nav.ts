@@ -1,4 +1,5 @@
 import { useCallback, useState, type Dispatch, type SetStateAction } from 'react';
+import type { Key } from 'ink';
 
 import { getAppHomePaths } from '../../../core/app-config';
 import { getProfileTemplatePaths } from '../../../core/profile-template';
@@ -87,7 +88,7 @@ export function useResourceNav({
   saveAgentFrontmatter: (updates: Partial<AgentFrontmatter>) => Promise<void>;
   jumpToSearchHit: (hit: SearchResult) => Promise<void>;
   handleSearchContent: (query: string) => Promise<SearchResult[]>;
-  handleResourceInput: (input: string, key: Record<string, boolean>) => void;
+  handleResourceInput: (input: string, key: Key) => void;
   navBack: () => void;
 } {
   // User Memory / Agents resource rows (issue #60)
@@ -486,7 +487,7 @@ export function useResourceNav({
   );
 
   const handleResourceInput = useCallback(
-    (input: string, key: Record<string, boolean>) => {
+    (input: string, key: Key) => {
       const profile = currentProfile();
       if (!profile) return;
       const nav = resourceNav;
