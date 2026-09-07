@@ -55,10 +55,7 @@ type CcpsTempMeta = {
 
 /** Dash-free base64url: `-`→`~`, `_`→`!`, so the name's `-` separators stay unambiguous. */
 export function encodeTempToken(value: string): string {
-  return Buffer.from(value, 'utf8')
-    .toString('base64url')
-    .replaceAll('-', '~')
-    .replaceAll('_', '!');
+  return Buffer.from(value, 'utf8').toString('base64url').replaceAll('-', '~').replaceAll('_', '!');
 }
 
 const TEMP_TOKEN_PATTERN = /^[A-Za-z0-9~!]+$/;
@@ -100,9 +97,7 @@ export function createTempSiblingPath(filePath: string): string {
 
 /** Parse a temp name back into its protocol parts, or null when the name is
  * not a well-formed CCPS temp (foreign format or unknown ownership). */
-export function parseTempName(
-  tempName: string,
-): { targetName: string; meta: CcpsTempMeta } | null {
+export function parseTempName(tempName: string): { targetName: string; meta: CcpsTempMeta } | null {
   if (!tempName.startsWith(CCPS_TEMP_PREFIX)) return null;
   const rest = tempName.slice(CCPS_TEMP_PREFIX.length);
   const separator = rest.indexOf('-');

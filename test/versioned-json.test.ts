@@ -95,9 +95,12 @@ describe('atomicWriteJson', () => {
     expect(files).toEqual(['test.json']);
   });
 
-  it('clears a stale existing target when the final rename fails (EISDIR)', async () => {
+  it('never leaves a partial target behind when the final rename fails (EISDIR)', async () => {
     const dir = await makeTempDir();
     const filePath = join(dir, 'test.json');
+    // No target exists beforehand; the fault hits after the temp write. The
+    // contract under test: a failed publish must not leave a half-published
+    // target at filePath.
     await fs.writeFile(join(dir, 'payload.tmp'), 'stale', 'utf8');
     vi.spyOn(jsonWriteIo, 'rename').mockRejectedValueOnce(
       Object.assign(new Error('target is a directory'), { code: 'EISDIR' }),
@@ -107,8 +110,6 @@ describe('atomicWriteJson', () => {
       code: 'EISDIR',
     });
 
-    // The stale file was part of the interrupted publish, not a promise to
-    // the user: publishing must leave the target absent, not resuscitate it.
     await expect(fs.pathExists(filePath)).resolves.toBe(false);
     expect(fs.readdirSync(dir)).toEqual(['payload.tmp']);
     vi.restoreAllMocks();
@@ -230,7 +231,13 @@ describe('cleanupTmpResidue', () => {
     const dir = await makeTempDir();
     const deadPid = await spawnExitedPid();
     const residue = await plantResidue(dir, 'config.json', deadPid);
-    const residue2 = await plantResidue(dir, 'config.json', deadPid + 1000000);
+    // A second ended writer whose pid no live process can hold: 2**30 is
+    // above every real pid_max (Linux caps at 2**22, macOS at 99998) yet
+    // still inside the signal-0 addressable range, so the probe answers
+    // ESRCH deterministically — unlike deadPid + N guesses, which can
+    // collide with a live pid on high-pid_max hosts.
+    const guaranteedDeadPid = 2 ** 30;
+    const residue2 = await plantResidue(dir, 'config.json', guaranteedDeadPid);
 
     await cleanupTmpResidue(dir);
 
@@ -428,16 +435,29 @@ describe('permissions', () => {
     await fs.chmod(filePath, 0o600);
 
     await atomicWriteJson(filePath, { replaced: true });
+    // Cross-platform behavior check (win32 included): the replacement exists
+    // and is writable by the owner.
     let stats = await fs.stat(filePath);
-    // darwin/linux: byte-for-byte mode; win32: read-only flag mapping keeps
-    // the write bit clear — either way the file is never world-readable.
-    expect(stats.mode & 0o077).toBe(0);
-    expect(stats.mode & 0o400).toBe(0o400);
+    expect(stats.mode & 0o200).toBe(0o200);
+    expect(await fs.readFile(filePath, 'utf8')).toBe(
+      JSON.stringify({ replaced: true }, null, 2) + '\n',
+    );
+
+    // POSIX-only mode bits (S99 RM-Windows carve-out): libuv on win32
+    // synthesizes st_mode from the read-only flag alone (writable 0o666,
+    // read-only 0o444), so mode-bit equality is unverifiable there.
+    if (process.platform !== 'win32') {
+      expect(stats.mode & 0o777).toBe(0o600);
+    }
 
     atomicWriteJsonSync(filePath, { replaced: 'sync' });
-    stats = await fs.stat(filePath);
-    expect(stats.mode & 0o077).toBe(0);
-    expect(stats.mode & 0o400).toBe(0o400);
+    expect(await fs.readFile(filePath, 'utf8')).toBe(
+      JSON.stringify({ replaced: 'sync' }, null, 2) + '\n',
+    );
+    if (process.platform !== 'win32') {
+      stats = await fs.stat(filePath);
+      expect(stats.mode & 0o777).toBe(0o600);
+    }
   });
 
   it('keeps the temp file 0600 while it exists for a restricted replacement', async () => {
@@ -449,8 +469,13 @@ describe('permissions', () => {
     let tempSeen: string | null = null;
     const renameSpy = vi.spyOn(jsonWriteIo, 'rename').mockImplementationOnce(async (from, to) => {
       tempSeen = from;
-      const tempStats = await fs.stat(from);
-      expect(tempStats.mode & 0o777).toBe(0o600);
+      // The temp carries the restricted mode before the rename (POSIX only:
+      // libuv on win32 synthesizes st_mode from the read-only flag, so the
+      // 0600 bit pattern is not observable there).
+      if (process.platform !== 'win32') {
+        const tempStats = await fs.stat(from);
+        expect(tempStats.mode & 0o777).toBe(0o600);
+      }
       return jsonWriteIo.rename(from, to);
     });
 
@@ -467,8 +492,14 @@ describe('permissions', () => {
     await fs.chmod(filePath, 0o644);
 
     await atomicWriteJson(filePath, { replaced: true });
-    const stats = await fs.stat(filePath);
-    expect(stats.mode & 0o777).toBe(0o644);
+    expect(await fs.readFile(filePath, 'utf8')).toBe(
+      JSON.stringify({ replaced: true }, null, 2) + '\n',
+    );
+    // POSIX-only mode bits (S99 RM-Windows carve-out).
+    if (process.platform !== 'win32') {
+      const stats = await fs.stat(filePath);
+      expect(stats.mode & 0o777).toBe(0o644);
+    }
   });
 
   it('never widens when chmod is ineffective on the temp', async () => {
@@ -480,10 +511,20 @@ describe('permissions', () => {
     const chmodSpy = vi.spyOn(jsonWriteIo, 'chmod').mockRejectedValueOnce(new Error('EBADF'));
 
     await atomicWriteJson(filePath, { replaced: true });
-    const stats = await fs.stat(filePath);
-    // The replacement stays tighter than the old file — never wider.
-    expect(stats.mode & 0o077).toBe(0);
-    expect(stats.mode & 0o400).toBe(0o400);
+    // Cross-platform behavior check (win32 included): the replacement exists
+    // and is owner-writable — i.e. the failed chmod never produced a
+    // read-only file.
+    expect(await fs.readFile(filePath, 'utf8')).toBe(
+      JSON.stringify({ replaced: true }, null, 2) + '\n',
+    );
+    // POSIX-only mode bits (S99 RM-Windows carve-out): the failed chmod
+    // leaves the replacement at the temp's 0600 — tighter than the old
+    // 0644, never wider.
+    if (process.platform !== 'win32') {
+      const stats = await fs.stat(filePath);
+      expect(stats.mode & 0o077).toBe(0);
+      expect(stats.mode & 0o400).toBe(0o400);
+    }
     chmodSpy.mockRestore();
   });
 
@@ -492,11 +533,16 @@ describe('permissions', () => {
     const filePath = join(dir, 'fresh.json');
 
     await atomicWriteJson(filePath, { fresh: true });
-    const stats = await fs.stat(filePath);
-    // On win32 there is no POSIX mode; the assertion below reads 0o600 via
-    // libuv's mapping of the read-only flag being clear. The contract that
-    // matters cross-platform: the replacement is never wider than intended.
-    expect(stats.mode & 0o777).toBe(0o644 & ~process.umask());
+    expect(await fs.readFile(filePath, 'utf8')).toBe(
+      JSON.stringify({ fresh: true }, null, 2) + '\n',
+    );
+    // POSIX-only mode bits (S99 RM-Windows carve-out): 0o666 creation mode
+    // with the process umask applied, exactly as the previous
+    // writeFile-based behavior.
+    if (process.platform !== 'win32') {
+      const stats = await fs.stat(filePath);
+      expect(stats.mode & 0o777).toBe(0o644 & ~process.umask());
+    }
   });
 });
 
@@ -744,10 +790,7 @@ describe('multi-process concurrent whole-document saves', () => {
     const outcomes = await runConcurrentWriters(dir, 12);
 
     for (const outcome of outcomes) {
-      expect(
-        outcome.exitCode,
-        `writer pid ${outcome.pid} failed: ${outcome.stderr}`,
-      ).toBe(0);
+      expect(outcome.exitCode, `writer pid ${outcome.pid} failed: ${outcome.stderr}`).toBe(0);
     }
     // Every published document parses and is a complete single-writer value.
     for (let i = 0; i < 5; i += 1) {
@@ -757,9 +800,7 @@ describe('multi-process concurrent whole-document saves', () => {
       expect(typeof published.seq).toBe('number');
     }
     // No residue: the last writer out leaves nothing behind.
-    const residue = (await fs.readdir(dir)).filter((name) =>
-      name.startsWith('.ccps-tmp-'),
-    );
+    const residue = (await fs.readdir(dir)).filter((name) => name.startsWith('.ccps-tmp-'));
     expect(residue).toEqual([]);
   });
 
@@ -806,9 +847,9 @@ describe('publish failure contracts (fault injection)', () => {
     const filePath = join(dir, 'test.json');
     const foreign = createTempSiblingPath(join(dir, 'other.json'));
     await fs.writeFile(foreign, 'other-writer', 'utf8');
-    const writeSpy = vi.spyOn(jsonWriteIo, 'writeFile').mockRejectedValueOnce(
-      Object.assign(new Error('ENOSPC'), { code: 'ENOSPC' }),
-    );
+    const writeSpy = vi
+      .spyOn(jsonWriteIo, 'writeFile')
+      .mockRejectedValueOnce(Object.assign(new Error('ENOSPC'), { code: 'ENOSPC' }));
 
     await expect(atomicWriteJson(filePath, { version: 1 })).rejects.toMatchObject({
       code: 'ENOSPC',
@@ -841,9 +882,9 @@ describe('publish failure contracts (fault injection)', () => {
     const filePath = join(dir, 'test.json');
     const foreign = createTempSiblingPath(join(dir, 'other.json'));
     await fs.writeFile(foreign, 'other-writer', 'utf8');
-    const renameSpy = vi.spyOn(jsonWriteIo, 'rename').mockRejectedValueOnce(
-      Object.assign(new Error('EISDIR'), { code: 'EISDIR' }),
-    );
+    const renameSpy = vi
+      .spyOn(jsonWriteIo, 'rename')
+      .mockRejectedValueOnce(Object.assign(new Error('EISDIR'), { code: 'EISDIR' }));
 
     await expect(atomicWriteJson(filePath, { version: 1 })).rejects.toMatchObject({
       code: 'EISDIR',
