@@ -16,7 +16,7 @@ export type VersionedJsonSpec<T, V extends number = number> = {
   errorPrefix: string;
 };
 
-function prefix(spec: VersionedJsonSpec<never>, suffix: string): string {
+function prefix(spec: VersionedJsonSpec<unknown>, suffix: string): string {
   return `${spec.errorPrefix}_${suffix}`;
 }
 
@@ -382,7 +382,7 @@ async function scanTmpResidue(dirPath: string, depth: number): Promise<void> {
   await Promise.all(pending);
 }
 
-function readVersionedJsonText(spec: VersionedJsonSpec<never>, filePath: string): string {
+function readVersionedJsonText(spec: VersionedJsonSpec<unknown>, filePath: string): string {
   try {
     return fs.readFileSync(filePath, 'utf8');
   } catch (error) {

@@ -29,7 +29,7 @@ type DrillSurfaceProps = {
   onDiscover: () => void;
   /** The default main surface (MainPane element), rendered when no drill is
    *  active — or when a profile-scoped drill has no selected Profile. */
-  children: React.ReactElement;
+  children?: React.ReactElement;
 };
 
 /** The main-pane drill surface (issue #69/#83/#94/#101): recovery bin, Auto
@@ -118,5 +118,5 @@ export function DrillSurface({
       headless,
     });
   }
-  return children;
+  return children ?? React.createElement(React.Fragment, null);
 }

@@ -534,7 +534,7 @@ export function BulkOpsView({
     return React.createElement(
       Box,
       { flexDirection: 'column', flexGrow: 1 },
-      React.createElement(Text, { bold: true, flexShrink: 0 }, t('bulk.copy.targets')),
+      React.createElement(Text, { bold: true }, t('bulk.copy.targets')),
       targetProfiles.length === 0
         ? React.createElement(Text, { color: 'gray' }, t('bulk.empty'))
         : React.createElement(

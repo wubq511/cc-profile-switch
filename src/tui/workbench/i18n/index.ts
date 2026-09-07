@@ -55,7 +55,7 @@ export function createI18nProvider(React: typeof import('react')) {
   type I18nProviderProps = {
     initialLocale?: Locale;
     onLocaleChange?: (locale: Locale) => void;
-    children: React.ReactNode;
+    children?: React.ReactNode;
   };
 
   function I18nProvider({

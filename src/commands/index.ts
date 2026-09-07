@@ -2,11 +2,12 @@ import { Command } from 'commander';
 import fs from 'fs-extra';
 import { createInterface } from 'node:readline/promises';
 
-import { getAppHomePaths, loadAppConfig } from '../core/app-config';
+import { getAppHomePaths, loadAppConfig, type Clock } from '../core/app-config';
 import { listBackups, permanentlyDeleteBackup, restoreProfileFromBackup } from '../core/backup';
 import { buildLaunchPlan, formatLaunchDryRun, launchProfile } from '../core/launcher';
-import { backupProfile, createProfile, initProfiles, type Clock } from '../core/profile';
+import { backupProfile, createProfile, initProfiles } from '../core/profile';
 import { ensureProfileCreator } from '../core/profile-creator';
+import { type ProfileTemplateName } from '../core/profile-template';
 import { exportProfile } from '../core/profile-export';
 import {
   importProfile,
@@ -59,11 +60,7 @@ import {
 } from '../platform/process';
 import { isPathInside, relativeFilesystemPath, resolveFilesystemPath } from '../platform/path';
 import type { PluginCoordinates } from '../schemas/plugins';
-import {
-  profileConfigSchema,
-  profileTemplateSchema,
-  type ProfileTemplateName,
-} from '../schemas/profile';
+import { profileConfigSchema, profileTemplateSchema } from '../schemas/profile';
 import { runTerminalTui, type RunTerminalTuiOptions } from '../tui/terminal';
 import { CcpsError } from '../utils/errors';
 import { isNodeError } from '../utils/type-guards';

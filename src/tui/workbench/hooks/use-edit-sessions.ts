@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
+import type { Key } from 'ink';
 
 import { EditSessionManager, type EditSession } from '../../../core/edit-session';
 import { updateProfileDescription } from '../../../core/profile-management';
@@ -40,7 +41,7 @@ export function useEditSessions({
   descriptionDraft: string;
   startDescriptionEdit: () => void;
   /** Input handling for the inline description edit; true = key consumed. */
-  handleDescriptionInput: (input: string, key: Record<string, boolean>) => boolean;
+  handleDescriptionInput: (input: string, key: Key) => boolean;
   handleTopLevelEdit: () => Promise<void>;
   handleFallbackSystemEditor: (filePath: string) => Promise<void>;
   handleFallbackRetry: (filePath: string) => void;
@@ -110,7 +111,7 @@ export function useEditSessions({
 
   // Plain function (fresh closure per render): the root dispatcher re-sees the
   // latest state every render, matching the original inline block exactly.
-  const handleDescriptionInput = (input: string, key: Record<string, boolean>): boolean => {
+  const handleDescriptionInput = (input: string, key: Key): boolean => {
     if (!editingDescription) return false;
     if (key.escape) {
       cancelDescriptionEdit();

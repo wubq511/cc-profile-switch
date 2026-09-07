@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Box, useApp, useInput, useStdin, useStdout } from 'ink';
+import { Box, useApp, useInput, useStdin, useStdout, type Key } from 'ink';
 
 import { getAppHomePaths, loadAppConfig, loadAppConfigSync } from '../../core/app-config';
 import { type LaunchPlan } from '../../core/launcher';
@@ -373,7 +373,7 @@ function WorkbenchInner({
   const launchActive = lifecycle.launch.phase !== 'idle';
 
   useInput(
-    (input: string, key: Record<string, boolean>) => {
+    (input: string, key: Key) => {
       if (key.ctrl && input === 'c') {
         exit();
         return;

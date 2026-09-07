@@ -15,6 +15,7 @@ import {
   useIsScreenReaderEnabled,
   useStdin,
   useStdout,
+  type Key,
 } from 'ink';
 
 // The CJK string has display width 20 (10 chars × 2 columns). Both ruler and
@@ -40,7 +41,7 @@ type GateScreenProps = {
   screenReader: boolean;
 };
 
-function keyName(input: string, key: Record<string, boolean | undefined>): string {
+function keyName(input: string, key: Key): string {
   if (key.upArrow) return 'up';
   if (key.downArrow) return 'down';
   if (key.leftArrow) return 'left';

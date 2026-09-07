@@ -28,7 +28,7 @@ const HintsContext = createContext<HintsApi>({
 });
 
 type HintsProviderProps = {
-  children: React.ReactNode;
+  children?: React.ReactNode;
   /** Persisted per-key use counts from state.json, seeded once at mount. */
   initialUsage?: Record<string, number>;
   /** Called after each local increment so the host can persist the use. */

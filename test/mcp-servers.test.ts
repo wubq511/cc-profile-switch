@@ -191,13 +191,13 @@ function throwingCapture(): CaptureProcess {
   };
 }
 
-async function expectCcpsError(thunk: () => unknown | Promise<unknown>, code: string): Promise<void> {
+async function expectCcpsError(thunk: () => unknown | Promise<unknown>, code: string): Promise<CcpsError> {
   try {
     await thunk();
   } catch (error) {
     expect(error).toBeInstanceOf(CcpsError);
     expect((error as CcpsError).code).toBe(code);
-    return;
+    return error as CcpsError;
   }
   throw new Error(`Expected a CcpsError with code ${code}.`);
 }
@@ -823,6 +823,35 @@ describe('copyMcpServerToProfile', () => {
         }),
       'MCP_SERVER_NOT_FOUND',
     );
+  });
+
+  it('rejects an unclassifiable transport (url without type) before any delegated call', async () => {
+    const src = await makeProfile('src');
+    const tgt = await makeProfile('tgt');
+    // Adversarial counterexample (spec #103 Testing Decisions): a url without
+    // a `type` cannot be classified as sse vs http, so the copy must refuse
+    // with actionable guidance instead of delegating a malformed add.
+    await writeProfileClaudeJson(src.profileRootPath, {
+      remote: { url: 'https://example.com/mcp' },
+    });
+    const { capture, calls } = mockClaude();
+
+    const error = await expectCcpsError(
+      () =>
+        copyMcpServerToProfile({
+          sourceProfileRootPath: src.profileRootPath,
+          sourceName: 'remote',
+          targetProfileRootPath: tgt.profileRootPath,
+          captureProcess: capture,
+        }),
+      'MCP_INVALID_CONFIG',
+    );
+    expect(error.guidance).toContain('type');
+    expect(error.guidance).toContain('remote');
+    // The refusal happens before delegation: claude was never invoked.
+    expect(calls).toEqual([]);
+    // The target profile is untouched: no .claude.json was ever written.
+    expect(await fs.pathExists(getClaudeJsonPath(tgt.profileRootPath))).toBe(false);
   });
 });
 

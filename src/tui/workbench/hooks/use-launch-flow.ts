@@ -1,4 +1,5 @@
 import { useCallback, useRef, type Dispatch, type SetStateAction } from 'react';
+import type { Key } from 'ink';
 
 import { getAppHomePaths } from '../../../core/app-config';
 import { loadAppState } from '../../../core/app-state';
@@ -40,7 +41,7 @@ export function useLaunchFlow({
   onLaunch,
   coreTranslator,
 }: UseLaunchFlowOptions): {
-  handleLaunchInput: (input: string, key: Record<string, boolean>) => void;
+  handleLaunchInput: (input: string, key: Key) => void;
   handleLaunchBar: (profileName: string) => Promise<void>;
   handleLaunchDirScreen: (profileName: string) => Promise<void>;
 } {
@@ -114,7 +115,7 @@ export function useLaunchFlow({
   }, [lifecycle, selectedIndex, onLaunch, coreTranslator, setLifecycle]);
 
   const handleLaunchInput = useCallback(
-    (input: string, key: Record<string, boolean>) => {
+    (input: string, key: Key) => {
       const launch = lifecycle.launch;
       // Helper to dispatch through the reducer
       const dispatch = (action: LifecycleAction) => {

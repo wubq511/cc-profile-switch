@@ -8,7 +8,7 @@ import { Box } from 'ink';
 
 type GuidancePanelProps = {
   borderColor: 'red' | 'yellow';
-  children: React.ReactNode;
+  children?: React.ReactNode;
 };
 
 export function GuidancePanel({ borderColor, children }: GuidancePanelProps): React.ReactElement {

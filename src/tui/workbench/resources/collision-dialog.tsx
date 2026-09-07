@@ -1,5 +1,5 @@
 import React, { useReducer } from 'react';
-import { Box, Text, useInput, useStdin } from 'ink';
+import { Box, Text, useInput, useStdin, type Key } from 'ink';
 
 import { useI18n } from '../i18n/react';
 import { collisionDialogReducer, initialCollisionDialogState } from './collision-dialog-reducer';
@@ -44,7 +44,7 @@ export function CollisionDialog({
   );
 
   useInput(
-    (input: string, key: Record<string, boolean>) => {
+    (input: string, key: Key) => {
       if (key.ctrl && input === 'c') return; // app-level exit handles this
 
       if (state.phase === 'rename') {

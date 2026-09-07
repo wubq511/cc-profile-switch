@@ -167,7 +167,8 @@ export function MainPane({
             React.createElement(Text, { color: 'gray' }, profile.description),
           ),
     // Just-in-time amber nudge: MCP servers that failed to connect (§5).
-    (mcpFailed?.length ?? 0) > 0 &&
+    mcpFailed &&
+      mcpFailed.length > 0 &&
       React.createElement(
         Box,
         { marginBottom: 1 },

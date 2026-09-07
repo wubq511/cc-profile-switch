@@ -65,9 +65,24 @@ export function ResourceMainPane({
     return React.createElement(React.Fragment, null);
   }
 
-  if (category === null && phase !== 'diff') {
-    // List/preview/copy/search need a resource category; the diff phase carries
-    // its category in `diffCategory` (grid-level entry), so it is not blank.
+  // The diff phase is the one exception that survives without a category
+  // (grid-level diff entries carry their category in `diffCategory`).
+  if (phase === 'diff') {
+    return React.createElement(ResourceDiffView, {
+      profile,
+      diff,
+      counterpart: nav.diffProfile,
+      drilledAgent,
+      profiles,
+      width,
+      height,
+      scrollOffset: nav.scrollOffset,
+    });
+  }
+
+  // Every other phase (list/preview/search/copy/agent-edit) was entered from a
+  // category, so a null category here is unreachable through the nav reducer.
+  if (category === null) {
     return React.createElement(React.Fragment, null);
   }
 
@@ -112,19 +127,6 @@ export function ResourceMainPane({
       width,
       height,
       editFallback,
-    });
-  }
-
-  if (phase === 'diff') {
-    return React.createElement(ResourceDiffView, {
-      profile,
-      diff,
-      counterpart: nav.diffProfile,
-      drilledAgent,
-      profiles,
-      width,
-      height,
-      scrollOffset: nav.scrollOffset,
     });
   }
 

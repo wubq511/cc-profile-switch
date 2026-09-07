@@ -26,7 +26,7 @@ export const profileConfigSchema = z
   .object({
     name: profileNameSchema,
     description: z.string().default(''),
-    template: profileTemplateSchema.optional().default(undefined),
+    template: profileTemplateSchema.optional(),
     launch: profileLaunchConfigSchema,
     createdAt: z.string().optional(),
     updatedAt: z.string().optional(),
