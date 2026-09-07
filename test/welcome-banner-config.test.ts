@@ -25,15 +25,20 @@ const fixedClock = () => new Date('2026-08-01T00:00:00Z');
  *  stdout is not a TTY, which would mask the config difference. `CI` is also
  *  cleared: resolveBannerOptions deliberately downgrades to the plain tier
  *  under CI (pinned by welcome-banner-options/cli-banner tests), and hosted
- *  runners always set CI=true — these cases target the full-tier art. */
+ *  runners always set CI=true — these cases target the full-tier art.
+ *  WT_SESSION is set so the win32 charset probe resolves unicode (hosted
+ *  Windows runners have no modern-terminal markers and would fall back to
+ *  the ascii art pinned by the banner-options tests). */
 async function withTtyStdout(run: () => void): Promise<void> {
   const descriptor = Object.getOwnPropertyDescriptor(process.stdout, 'isTTY');
   Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
   const originalLevel = chalk.level;
   const savedNoColor = process.env.NO_COLOR;
   const savedCi = process.env.CI;
+  const savedWtSession = process.env.WT_SESSION;
   delete process.env.NO_COLOR;
   delete process.env.CI;
+  process.env.WT_SESSION = '1';
   chalk.level = 3;
   try {
     run();
@@ -46,6 +51,8 @@ async function withTtyStdout(run: () => void): Promise<void> {
     chalk.level = originalLevel;
     if (savedNoColor !== undefined) process.env.NO_COLOR = savedNoColor;
     if (savedCi !== undefined) process.env.CI = savedCi;
+    if (savedWtSession === undefined) delete process.env.WT_SESSION;
+    else process.env.WT_SESSION = savedWtSession;
   }
 }
 
