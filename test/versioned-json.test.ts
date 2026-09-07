@@ -679,7 +679,7 @@ describe('saveVersionedJson', () => {
         version: 2,
         name: 'ok',
         unknownExtra: true,
-      } as TestV2),
+      } as unknown as TestV2),
     ).rejects.toMatchObject({
       code: 'TEST_CONFIG_INVALID',
     });

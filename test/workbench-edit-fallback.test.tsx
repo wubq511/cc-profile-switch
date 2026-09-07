@@ -123,6 +123,7 @@ describe('editor unavailable fallback (§8, S35)', () => {
   const dataFor = (profile: WorkbenchProfile): WorkbenchData => ({
     profiles: [profile],
     defaultProfile: 'coding',
+    customTemplates: [],
   });
 
   async function waitForInputListener(stdin: FakeTtyStdin, timeoutMs = 2000): Promise<void> {

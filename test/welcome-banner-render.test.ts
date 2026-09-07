@@ -22,7 +22,7 @@ function stripAnsi(text: string): string {
 }
 
 describe('welcome banner renderer', () => {
-  let originalLevel: number;
+  let originalLevel: typeof chalk.level;
 
   beforeEach(() => {
     originalLevel = chalk.level;

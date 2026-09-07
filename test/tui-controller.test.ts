@@ -4,6 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { runTuiController, type TuiControllerServices, type TuiPorts } from '../src/tui/controller';
+import type { ProfileSummary, RemoveProfileResult } from '../src/core/profile-management';
+import type { ProfileValidationResult } from '../src/core/validator';
+import type { LaunchPlan } from '../src/core/launcher';
 
 describe('tui controller', () => {
   function makePorts(
@@ -34,7 +37,7 @@ describe('tui controller', () => {
 
   function makeServices(overrides: Partial<TuiControllerServices> = {}): TuiControllerServices {
     return {
-      listProfilesForDisplay: vi.fn(async () => [
+      listProfilesForDisplay: vi.fn(async (): Promise<ProfileSummary[]> => [
         {
           name: 'coding',
           status: 'valid',
@@ -66,14 +69,15 @@ describe('tui controller', () => {
         oldPath: 'C:\\profiles\\coding',
         newPath: 'C:\\profiles\\focus',
       })),
-      removeProfile: vi.fn(async () => ({
+      removeProfile: vi.fn(async (): Promise<RemoveProfileResult> => ({
         profileName: 'coding',
         removedPath: 'C:\\profiles\\coding',
         backupPath: 'C:\\backups\\coding-20260520-120000',
+        recoveryItem: null,
       })),
       setDefaultProfile: vi.fn(async () => 'coding'),
       clearDefaultProfile: vi.fn(async () => undefined),
-      validateProfile: vi.fn(async () => ({
+      validateProfile: vi.fn(async (): Promise<ProfileValidationResult> => ({
         profileName: 'coding',
         status: 'warning',
         profileRootPath: 'C:\\profiles\\coding',
@@ -104,7 +108,7 @@ describe('tui controller', () => {
           },
         ],
       })),
-      buildLaunchPlan: vi.fn(async () => ({
+      buildLaunchPlan: vi.fn(async (): Promise<LaunchPlan> => ({
         profileName: 'coding',
         profileRootPath: 'C:\\profiles\\coding',
         claudeHomePath: 'C:\\profiles\\coding\\claude-home',
@@ -125,11 +129,13 @@ describe('tui controller', () => {
           keys: [],
         },
         apiEnv: {},
+        realClaudeEnv: {},
         mcpMode: 'merge',
         userMcpConfigPath: 'C:\\profiles\\coding\\claude-home\\.claude.json',
         legacyMcpConfigPath: 'C:\\profiles\\coding\\mcp.json',
         legacyMcpConfigActive: false,
         pluginDirs: [],
+        claudeMdExcludes: [],
         validationStatus: 'valid',
         warnings: [],
         validationFindings: [],

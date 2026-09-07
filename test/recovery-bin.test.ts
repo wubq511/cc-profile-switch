@@ -222,6 +222,8 @@ describe('Recovery Bin service', () => {
         coordinates: {
           plugin: 'pretty-ts-errors',
           marketplace: 'ccps-marketplace',
+          enabled: true,
+          userConfigKeys: [],
         },
         clock: fixedClock,
       });

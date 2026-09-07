@@ -41,8 +41,8 @@ function dummyStdin(): Readable {
 async function renderOnce(): Promise<string> {
   const stdout = new FakeTtyStdout();
   const instance = render(React.createElement(InkGateApp, { headless: true }), {
-    stdout: stdout as NodeJS.WriteStream,
-    stdin: dummyStdin() as NodeJS.ReadStream,
+    stdout: stdout as unknown as NodeJS.WriteStream,
+    stdin: dummyStdin() as unknown as NodeJS.ReadStream,
     exitOnCtrlC: false,
     // vitest wraps global console, so patch-console's `new console.Console()`
     // blows up; console patching is irrelevant to these frame assertions.
@@ -90,8 +90,8 @@ describe('prototype ink gate (issue #36)', () => {
   it('renders the simplified screen-reader form', async () => {
     const stdout = new FakeTtyStdout();
     const instance = render(React.createElement(InkGateApp, { headless: true }), {
-      stdout: stdout as NodeJS.WriteStream,
-      stdin: dummyStdin() as NodeJS.ReadStream,
+      stdout: stdout as unknown as NodeJS.WriteStream,
+      stdin: dummyStdin() as unknown as NodeJS.ReadStream,
       exitOnCtrlC: false,
       isScreenReaderEnabled: true,
       patchConsole: false,

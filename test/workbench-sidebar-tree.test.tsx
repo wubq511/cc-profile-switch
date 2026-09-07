@@ -79,6 +79,7 @@ const sampleData: WorkbenchData = {
     }),
   ],
   defaultProfile: 'coding',
+  customTemplates: [],
 };
 
 async function waitForInputListener(stdin: FakeTtyStdin, timeoutMs = 2000): Promise<void> {

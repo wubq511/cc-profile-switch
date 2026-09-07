@@ -118,6 +118,7 @@ async function waitForOutput(
 const dataFor = (profile: WorkbenchProfile): WorkbenchData => ({
   profiles: [profile],
   defaultProfile: 'coding',
+  customTemplates: [],
 });
 
 async function renderApp(tty: typeof FakeTtyStdout) {

@@ -237,7 +237,7 @@ describe('acquireAndPreviewRemoteInstall', () => {
     await fs.ensureDir(realHome);
     await fs.writeFile(path.join(realHome, 'sentinel.txt'), 'before', 'utf8');
 
-    let capturedEnv: Record<string, string> | undefined;
+    let capturedEnv: NodeJS.ProcessEnv | undefined;
     const spyingCapture: CaptureProcess = async (_c, _a, options) => {
       capturedEnv = options.env;
       const claudeHome = options.env.CLAUDE_CONFIG_DIR as string;
@@ -670,7 +670,7 @@ describe('installRemoteSkill — replace crash reconciliation', () => {
   async function stageAndPreview2(
     appHome: string,
     profileDir: string,
-    opts: { name?: string; skillName?: string; source?: string } = {},
+    opts: { name?: string; skillName?: string; source?: string; stagingId?: string } = {},
   ) {
     const name = opts.name ?? 'find-skills';
     const skillName = opts.skillName ?? name;
@@ -680,7 +680,7 @@ describe('installRemoteSkill — replace crash reconciliation', () => {
       profileRootPath: profileDir,
       rawSource: opts.source ?? 'vercel-labs/skills',
       name,
-      stagingId: 'abc123',
+      stagingId: opts.stagingId ?? 'abc123',
       captureProcess: fakeCaptureStaging(skillName),
     });
   }

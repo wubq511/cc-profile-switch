@@ -64,6 +64,7 @@ function profile(name: string): WorkbenchProfile {
       settings: ['model'],
       plugins: [],
     },
+    mcpServers: [],
     validation: null,
   };
 }

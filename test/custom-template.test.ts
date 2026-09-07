@@ -717,6 +717,7 @@ describe('createProfileFromCustomTemplate', () => {
 
     // manifest records the reference; v2 field
     expect(manifest.version).toBe(2);
+    if (manifest.version !== 2) throw new Error('expected v2 manifest');
     expect(manifest.linkedSkills).toEqual(['linked-skill']);
 
     const templateProfile = templateProfilePath(appHome, 'with-links');
