@@ -60,6 +60,13 @@ import { isNodeError, isRecord } from '../utils/type-guards';
  *     re-registration failures are reported per server next to the actually
  *     published profile — never as a clean rollback, never deleting the
  *     published target.
+ *   - Post-commit housekeeping failures (staging cleanup, auto-Validate I/O)
+ *     degrade into `ImportResult.warnings` instead of throwing: the profile
+ *     IS published, and an exception here would mask the success and make
+ *     the caller retry the same now-occupied name (issue #109 AC). Before
+ *     the commit point, cleanup is best-effort so it never masks the coded
+ *     pre-commit failure; on the abort path (nothing published, tree already
+ *     extracted) a cleanup failure still surfaces.
  *   - A mandatory manifest preview is surfaced to the `confirm` callback before
  *     the profile directory is created. Nothing under `profiles/` is written
  *     until the caller confirms.
@@ -124,6 +131,13 @@ export type ImportResult = {
   /** MCP HTTP header key names needing re-entry, grouped by server. */
   mcpHeaderKeysToReenter: { server: string; keys: string[] }[];
   validation: ProfileValidationResult;
+  /**
+   * Post-commit housekeeping warnings (issue #109 AC): the profile IS
+   * published and usable; a staging-cleanup or auto-Validate I/O failure
+   * after the commit point degrades into these instead of throwing and
+   * masking the success. Never deletes the published target.
+   */
+  warnings: string[];
 };
 
 export type ImportAborted = { aborted: true };
@@ -154,73 +168,125 @@ export async function importProfile(
 
   // Stage under app home so the final tree move is a same-volume rename into
   // profiles/ (spec §15.3 invariant 6 — atomic, never copy+delete across fs).
-  const { profilesPath } = getAppHomePaths(appHomePath);
   const stagingRoot = await mkdtemp(path.join(appHomePath, '.ccps-import-'));
+  // Shared by every result-carrying warning: runStagedImport embeds this
+  // array in the ImportResult it returns, and the post-commit cleanup below
+  // pushes into the same instance, so the caller sees both without a side
+  // channel.
+  const warnings: string[] = [];
 
+  // runStagedImport throws ONLY before the publish rename (every post-commit
+  // failure degrades into `warnings`), so the outcome below classifies the
+  // commit state without a side flag.
+  let outcome: ImportResult | ImportAborted;
   try {
-    const { manifest, stagingProfile } = await extractBundle(stagingRoot, bundlePath);
+    outcome = await runStagedImport(options, appHomePath, stagingRoot, warnings);
+  } catch (error) {
+    // Pre-commit: nothing was published. The coded failure is the contract —
+    // a cleanup failure must not replace it (nor can it ride a result that
+    // does not exist); at worst the staging dir lingers as residue.
+    await fs.remove(stagingRoot).catch(() => undefined);
+    throw error;
+  }
 
-    // Resolve the target name through the confirm callback. A collision loops
-    // until the caller aborts or supplies a free name; choosing a new name IS
-    // the confirmation, so no extra y/N is asked after a collision is resolved.
-    let targetName = options.targetName ?? manifest.profileName;
+  if ('aborted' in outcome) {
+    // Nothing published; a cleanup failure still surfaces (the user declined,
+    // so a leftover extracted tree is worth reporting).
+    await fs.remove(stagingRoot);
+    return outcome;
+  }
+
+  // Committed: the profile is published. A cleanup failure here must not mask
+  // the success or send the caller into a blind same-name retry against the
+  // now-occupied target (issue #109 AC) — it degrades into a result warning
+  // and never touches the published profile. The staging root is empty by
+  // now, so any residue is cosmetic.
+  try {
+    await fs.remove(stagingRoot);
+  } catch (error) {
+    warnings.push(describeStagingCleanupFailure(error));
+  }
+  return outcome;
+}
+
+/**
+ * Extract the bundle, resolve the target through the confirm gate, and apply
+ * the staged import. Throws only pre-commit: after the publish rename inside
+ * applyImport, every post-commit failure (auto-Validate I/O) degrades into
+ * `warnings` instead of throwing.
+ */
+async function runStagedImport(
+  options: ImportProfileOptions,
+  appHomePath: string,
+  stagingRoot: string,
+  warnings: string[],
+): Promise<ImportResult | ImportAborted> {
+  const { profilesPath } = getAppHomePaths(appHomePath);
+  const { manifest, stagingProfile } = await extractBundle(stagingRoot, options.bundlePath);
+
+  // Resolve the target name through the confirm callback. A collision loops
+  // until the caller aborts or supplies a free name; choosing a new name IS
+  // the confirmation, so no extra y/N is asked after a collision is resolved.
+  let targetName = options.targetName ?? manifest.profileName;
+  validateProfileName(targetName);
+  let collision = await profileNameExists(profilesPath, targetName);
+  let resolvedViaCollision = false;
+  while (collision) {
+    const decision = await options.confirm({ manifest, targetName, collision: true });
+    if (decision.action === 'abort') {
+      return { aborted: true };
+    }
+    if (decision.action !== 'proceed-as-new-name') {
+      // 'proceed' on a colliding name has no valid interpretation.
+      throw new CcpsError(
+        'IMPORT_COLLISION_UNRESOLVED',
+        `A profile named "${targetName}" already exists.`,
+        {
+          guidance: `Choose a new name (import-as-new-name) or abort, then retry.`,
+        },
+      );
+    }
+    targetName = decision.targetName;
     validateProfileName(targetName);
-    let collision = await profileNameExists(profilesPath, targetName);
-    let resolvedViaCollision = false;
-    while (collision) {
-      const decision = await options.confirm({ manifest, targetName, collision: true });
-      if (decision.action === 'abort') {
-        return { aborted: true };
-      }
-      if (decision.action !== 'proceed-as-new-name') {
-        // 'proceed' on a colliding name has no valid interpretation.
+    resolvedViaCollision = true;
+    collision = await profileNameExists(profilesPath, targetName);
+  }
+
+  // Only ask for a final proceed/abort when no collision was ever present —
+  // a collision resolution already committed the user to proceed.
+  if (!resolvedViaCollision) {
+    const finalDecision = await options.confirm({ manifest, targetName, collision: false });
+    if (finalDecision.action === 'abort') {
+      return { aborted: true };
+    }
+    if (finalDecision.action === 'proceed-as-new-name') {
+      targetName = finalDecision.targetName;
+      validateProfileName(targetName);
+      if (await profileNameExists(profilesPath, targetName)) {
         throw new CcpsError(
           'IMPORT_COLLISION_UNRESOLVED',
           `A profile named "${targetName}" already exists.`,
           {
-            guidance: `Choose a new name (import-as-new-name) or abort, then retry.`,
+            guidance: `Choose a free profile name and retry.`,
           },
         );
       }
-      targetName = decision.targetName;
-      validateProfileName(targetName);
-      resolvedViaCollision = true;
-      collision = await profileNameExists(profilesPath, targetName);
     }
-
-    // Only ask for a final proceed/abort when no collision was ever present —
-    // a collision resolution already committed the user to proceed.
-    if (!resolvedViaCollision) {
-      const finalDecision = await options.confirm({ manifest, targetName, collision: false });
-      if (finalDecision.action === 'abort') {
-        return { aborted: true };
-      }
-      if (finalDecision.action === 'proceed-as-new-name') {
-        targetName = finalDecision.targetName;
-        validateProfileName(targetName);
-        if (await profileNameExists(profilesPath, targetName)) {
-          throw new CcpsError(
-            'IMPORT_COLLISION_UNRESOLVED',
-            `A profile named "${targetName}" already exists.`,
-            {
-              guidance: `Choose a free profile name and retry.`,
-            },
-          );
-        }
-      }
-    }
-
-    return await applyImport({
-      stagingProfile,
-      manifest,
-      targetName,
-      appHomePath,
-      captureProcess: options.captureProcess,
-      clock: options.clock,
-    });
-  } finally {
-    await fs.remove(stagingRoot);
   }
+
+  return applyImport({
+    stagingProfile,
+    manifest,
+    targetName,
+    appHomePath,
+    captureProcess: options.captureProcess,
+    clock: options.clock,
+    warnings,
+  });
+}
+
+function describeStagingCleanupFailure(error: unknown): string {
+  return `Staging cleanup failed after the profile was published (${errorMessage(error)}). The imported profile is unaffected; the leftover staging directory under the app home can be removed manually.`;
 }
 
 async function extractBundle(
@@ -285,10 +351,12 @@ type ApplyImportArgs = {
   appHomePath: string;
   captureProcess?: CaptureProcess;
   clock?: Clock;
+  /** Post-commit warning sink; embedded in the returned ImportResult. */
+  warnings: string[];
 };
 
 async function applyImport(args: ApplyImportArgs): Promise<ImportResult> {
-  const { manifest, targetName, appHomePath, captureProcess } = args;
+  const { manifest, targetName, appHomePath, captureProcess, warnings } = args;
   const targetPaths = getProfileTemplatePaths(appHomePath, targetName);
   const stagingProfile = args.stagingProfile;
 
@@ -356,7 +424,18 @@ async function applyImport(args: ApplyImportArgs): Promise<ImportResult> {
     captureProcess,
   );
 
-  const validation = await validateProfile({ appHomePath, name: targetName });
+  // Auto-Validate is post-commit housekeeping: an unexpected I/O failure must
+  // not replace the successful result (spec Decision 12, issue #109 AC — a
+  // thrown error would send the caller into a blind same-name retry against
+  // the now-occupied target). It degrades to a warning plus an error-marked
+  // validation result the callers render like any other failed validation.
+  let validation: ProfileValidationResult;
+  try {
+    validation = await validateProfile({ appHomePath, name: targetName });
+  } catch (error) {
+    warnings.push(describeAutoValidateFailure(error));
+    validation = autoValidateFailedResult(targetPaths, targetName, error);
+  }
 
   return {
     profileName: targetName,
@@ -367,6 +446,34 @@ async function applyImport(args: ApplyImportArgs): Promise<ImportResult> {
     legacyMcpEnvKeysToReenter: collectLegacyMcpEnvKeys(manifest.strippedKeys),
     mcpHeaderKeysToReenter: collectMcpHeaderKeys(manifest.strippedKeys),
     validation,
+    warnings,
+  };
+}
+
+function describeAutoValidateFailure(error: unknown): string {
+  return `Auto-validate could not complete after the profile was published (${errorMessage(error)}). The imported profile is unaffected; run "ccps validate <name>" to check it.`;
+}
+
+function autoValidateFailedResult(
+  targetPaths: ProfileTemplatePaths,
+  targetName: string,
+  cause: unknown,
+): ProfileValidationResult {
+  const message = `Auto-validate could not complete: ${errorMessage(cause)}.`;
+  return {
+    profileName: targetName,
+    status: 'error',
+    profileRootPath: targetPaths.profileRootPath,
+    claudeHomePath: targetPaths.claudeHomePath,
+    paths: targetPaths,
+    findings: [
+      {
+        severity: 'error',
+        code: 'AUTO_VALIDATE_FAILED',
+        message,
+        suggestion: `Re-run validation for the imported profile: ccps validate ${targetName}`,
+      },
+    ],
   };
 }
 

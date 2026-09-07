@@ -20,7 +20,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path, { join } from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createAppConfig } from '../src/core/app-config';
 import {
@@ -38,6 +38,7 @@ const FIXED_CLOCK = () => new Date('2026-08-01T00:00:00Z');
 const tempRoots: string[] = [];
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await Promise.allSettled(tempRoots.map((root) => rm(root, { recursive: true, force: true })));
   tempRoots.length = 0;
 });
@@ -583,5 +584,101 @@ describe('profile import commit boundary (issue #109)', () => {
     expect(previews).toHaveLength(1);
     expect(previews[0].collision).toBe(true);
     expect('aborted' in retry).toBe(true);
+  });
+});
+
+describe('post-commit housekeeping failures (issue #109 AC)', () => {
+  /**
+   * Fault seam: fail ONLY the final cleanup of the staging root — the one
+   * path whose basename carries the mkdtemp prefix. Every other fs.remove
+   * (the runtime sweep removes children with ordinary names) runs untouched,
+   * so the failure lands exactly where the post-commit cleanup happens.
+   */
+  function stageCleanupFault(): { mockRestore: () => void } {
+    const realRemove = fs.remove;
+    return vi.spyOn(fs, 'remove').mockImplementation(async (target) => {
+      if (path.basename(String(target)).startsWith('.ccps-import-')) {
+        throw Object.assign(new Error('simulated cleanup failure'), { code: 'EBUSY' });
+      }
+      return realRemove(String(target));
+    });
+  }
+
+  it('degrades a post-publish staging-cleanup failure to a result warning instead of masking the import', async () => {
+    const appHome = await makeAppHome();
+    await makeProfile(appHome, 'coding');
+    const { bundlePath } = await exportBundle(appHome);
+
+    const removeSpy = stageCleanupFault();
+    let result: Awaited<ReturnType<typeof importBundle>>;
+    try {
+      result = await importBundle(appHome, bundlePath, { targetName: 'imported' });
+    } finally {
+      removeSpy.mockRestore();
+    }
+
+    // The import RESOLVES and reports the ACTUAL published profile; the
+    // cleanup failure is a warning on the result, never a thrown fs error
+    // that would send the caller into a blind same-name retry.
+    expect('aborted' in result).toBe(false);
+    if ('aborted' in result) return;
+    expect(result.profileName).toBe('imported');
+    expect(await fs.pathExists(profilePaths(appHome, 'imported').profileRootPath)).toBe(true);
+    expect(result.validation.status).toBe('valid');
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]).toMatch(/Staging cleanup failed after the profile was published/);
+    expect(result.warnings[0]).toMatch(/simulated cleanup failure/);
+
+    // The published target is never deleted; only the leftover staging dir
+    // remains from the failed cleanup.
+    expect(await stagingResidue(appHome)).toHaveLength(1);
+    const previews: ImportPreview[] = [];
+    const retry = await importProfile({
+      appHomePath: appHome,
+      bundlePath,
+      targetName: 'imported',
+      confirm: async (preview) => {
+        previews.push(preview);
+        return { action: 'abort' };
+      },
+      captureProcess: mockClaudeAdd().capture,
+      clock: FIXED_CLOCK,
+    });
+    expect(previews).toHaveLength(1);
+    expect(previews[0].collision).toBe(true);
+    expect('aborted' in retry).toBe(true);
+  });
+
+  it('degrades a post-publish auto-Validate I/O failure to a warning plus an error validation result', async () => {
+    const appHome = await makeAppHome();
+    await makeProfile(appHome, 'coding');
+    const { bundlePath } = await exportBundle(appHome);
+
+    const validatorModule = await import('../src/core/validator');
+    const validateSpy = vi
+      .spyOn(validatorModule, 'validateProfile')
+      .mockRejectedValue(
+        Object.assign(new Error('simulated validate I/O failure'), { code: 'EIO' }),
+      );
+    let result: Awaited<ReturnType<typeof importBundle>>;
+    try {
+      result = await importBundle(appHome, bundlePath, { targetName: 'imported' });
+    } finally {
+      validateSpy.mockRestore();
+    }
+
+    // The import resolves with the published profile; auto-Validate's I/O
+    // failure shows up as a warning + a validation result the callers render
+    // like any other failed validation — never as a thrown error.
+    expect('aborted' in result).toBe(false);
+    if ('aborted' in result) return;
+    expect(result.profileName).toBe('imported');
+    expect(await fs.pathExists(profilePaths(appHome, 'imported').profileRootPath)).toBe(true);
+    expect(result.validation.status).toBe('error');
+    expect(result.validation.findings.some((f) => f.code === 'AUTO_VALIDATE_FAILED')).toBe(true);
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]).toMatch(
+      /Auto-validate could not complete after the profile was published/,
+    );
   });
 });

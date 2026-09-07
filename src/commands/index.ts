@@ -1303,6 +1303,11 @@ function formatImportResult(result: ImportResult): string {
   if (result.validation.findings.length > 0) {
     lines.push(formatFindings(result.validation.findings).trimEnd());
   }
+  // Post-commit housekeeping warnings (issue #109): the profile was
+  // published; these never turn the import into an error.
+  for (const warning of result.warnings) {
+    lines.push(`WARNING: ${warning}`);
+  }
   lines.push(`Next: ccps launch ${result.profileName} --dry-run`);
   return `${lines.join('\n')}\n`;
 }

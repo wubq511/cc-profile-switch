@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path, { join } from 'node:path';
 import { gunzipSync, gzipSync } from 'node:zlib';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createProgram } from '../src/cli';
 import { createAppConfig } from '../src/core/app-config';
@@ -1025,6 +1025,41 @@ describe('import command output', () => {
     expect(output).toContain('Imported profile "imported"');
     expect(output).toContain('Validation: valid');
     expect(await fs.pathExists(path.join(appHome, 'profiles', 'imported'))).toBe(true);
+  });
+
+  it('prints post-commit cleanup warnings alongside the imported profile (issue #109)', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'ccps-import-cli-'));
+    tempRoots.push(root);
+    const userHome = path.join(root, 'userhome');
+    await fs.mkdir(userHome);
+    const bundlePath = await setup(userHome);
+
+    // Fail ONLY the final cleanup of the staging root (basename carries the
+    // mkdtemp prefix); sweep removals inside staging run untouched.
+    const realRemove = fs.remove;
+    const removeSpy = vi.spyOn(fs, 'remove').mockImplementation(async (target) => {
+      if (path.basename(String(target)).startsWith('.ccps-import-')) {
+        throw Object.assign(new Error('simulated cleanup failure'), { code: 'EBUSY' });
+      }
+      return realRemove(String(target));
+    });
+    let output: string;
+    try {
+      ({ output } = await runCli(userHome, ['import', bundlePath, 'imported'], {
+        inputs: ['y'],
+      }));
+    } finally {
+      removeSpy.mockRestore();
+    }
+
+    // The import still reports success; the housekeeping failure is a WARNING
+    // line, never an error that would trigger a blind same-name retry.
+    expect(output).toContain('Imported profile "imported"');
+    expect(output).toContain('Validation: valid');
+    expect(output).toContain('WARNING: Staging cleanup failed after the profile was published');
+    expect(
+      await fs.pathExists(path.join(userHome, '.cc-profile-switch', 'profiles', 'imported')),
+    ).toBe(true);
   });
 });
 
