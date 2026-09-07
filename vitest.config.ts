@@ -14,5 +14,8 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     testTimeout: 30000,
+    // Tower worktrees hold per-mission checkouts with their own test runs;
+    // the main checkout must never execute their copies.
+    exclude: ['**/node_modules/**', '**/dist/**', '.tower/**'],
   },
 });
