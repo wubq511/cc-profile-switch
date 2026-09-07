@@ -14,6 +14,9 @@ type ResourcePreviewProps = {
   category: ResourceCategory;
   resourceName: string;
   content: string | null;
+  /** Issue #110: diagnostic for a failed preview read (EISDIR/EACCES/format);
+   *  rendered instead of the missing/empty state. */
+  contentReadError?: { code: string; detail: string } | null;
   scrollOffset: number;
   session: EditSession | undefined;
   width: number;
@@ -41,6 +44,7 @@ export function ResourcePreview({
   category,
   resourceName,
   content,
+  contentReadError,
   scrollOffset,
   session,
   width,
@@ -96,19 +100,43 @@ export function ResourcePreview({
       }),
     ),
     React.createElement(Box, { marginTop: 1, flexDirection: 'column' },
-      session && session.phase === 'missing'
-        ? React.createElement(MissingOverlay, { lastContent: session.lastContent })
-        : content === null
-          ? React.createElement(Text, { color: 'gray' }, t('resource.userMemory.missing'))
-          : visibleLines.map((line, i) =>
+      contentReadError
+        ? React.createElement(
+            Box,
+            { flexDirection: 'column' },
+            React.createElement(
+              Text,
+              { color: 'red', wrap: 'wrap' },
+              `✗ ${t('resource.state.loadFailed', { code: contentReadError.code })}`,
+            ),
+            React.createElement(
+              Text,
+              { color: 'gray', wrap: 'truncate' },
+              contentReadError.detail,
+            ),
+            React.createElement(
+              Box,
+              { marginTop: 1 },
               React.createElement(
                 Text,
-                { key: i, wrap: 'truncate' },
-                String(scrollOffset + i + 1).padStart(3),
-                ' ',
-                line,
+                { color: 'gray', wrap: 'wrap' },
+                t('resource.state.fixDirection'),
               ),
             ),
+          )
+        : session && session.phase === 'missing'
+          ? React.createElement(MissingOverlay, { lastContent: session.lastContent })
+          : content === null
+            ? React.createElement(Text, { color: 'gray' }, t('resource.userMemory.missing'))
+            : visibleLines.map((line, i) =>
+                React.createElement(
+                  Text,
+                  { key: i, wrap: 'truncate' },
+                  String(scrollOffset + i + 1).padStart(3),
+                  ' ',
+                  line,
+                ),
+              ),
     ),
     React.createElement(Box, { flexGrow: 1 }),
     React.createElement(
