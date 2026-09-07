@@ -176,7 +176,11 @@ export function useResourceNav({
       setResourceReadError(null);
     } catch (error) {
       content = null;
-      setResourceReadError(classifyReadError(error) as { code: string; detail: string });
+      // Only an explicitly unreadable target renders the error panel; a
+      // delete-between-list-and-preview race classifies as missing and falls
+      // back to the existing missing/empty view (review P2-1).
+      const classified = classifyReadError(error);
+      setResourceReadError(classified.status === 'unreadable' ? classified : null);
     }
     setResourceContent(content);
     setResourceNav((prev) => resourceNavReducer(prev, { type: 'OPEN_PREVIEW' }));
@@ -389,7 +393,10 @@ export function useResourceNav({
         setResourceReadError(null);
       } catch (error) {
         content = null;
-        setResourceReadError(classifyReadError(error) as { code: string; detail: string });
+        // Unreadable targets render the error panel; a delete race (missing)
+        // falls back to the existing missing/empty view (review P2-1).
+        const classified = classifyReadError(error);
+        setResourceReadError(classified.status === 'unreadable' ? classified : null);
       }
       setResourceContent(content);
       setResourceNav((prev) => resourceNavReducer(prev, { type: 'CLOSE' }));
@@ -448,7 +455,10 @@ export function useResourceNav({
           setResourceReadError(null);
         } catch (error) {
           content = null;
-          setResourceReadError(classifyReadError(error) as { code: string; detail: string });
+          // Unreadable targets render the error panel; a delete race (missing)
+          // falls back to the existing missing/empty view (review P2-1).
+          const classified = classifyReadError(error);
+          setResourceReadError(classified.status === 'unreadable' ? classified : null);
         }
       } else {
         try {
@@ -456,7 +466,8 @@ export function useResourceNav({
           setResourceReadError(null);
         } catch (error) {
           content = null;
-          setResourceReadError(classifyReadError(error) as { code: string; detail: string });
+          const classified = classifyReadError(error);
+          setResourceReadError(classified.status === 'unreadable' ? classified : null);
         }
       }
       setResourceContent(content);

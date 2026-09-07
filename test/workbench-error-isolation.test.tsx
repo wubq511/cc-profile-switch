@@ -268,4 +268,40 @@ describe('Workbench error isolation (issue #110)', () => {
       await instance.waitUntilExit();
     }
   });
+
+  it('a delete-between-list-and-preview race renders the missing view, not an undefined error label', async () => {
+    // Review P2-1: classifyReadError maps a delete race to { status:
+    // 'missing' } (no code/detail). The preview read path must leave
+    // resourceReadError null in that case so the existing missing/empty view
+    // renders — not "Resource cannot be loaded: undefined".
+    const core = await import('../src/core/resource');
+    const enoentRace = Object.assign(new Error('ENOENT race'), { code: 'ENOENT' });
+    const spy = vi.spyOn(core, 'readUserMemoryContent').mockRejectedValue(enoentRace);
+    try {
+      const appHome = await makeAppHome();
+      const data = await loadWorkbenchData(appHome);
+
+      const { instance, stdout, stdin } = await renderWorkbench(data);
+      try {
+        // First profile selected; drill into User Memory (u → list), then
+        // Enter opens the preview whose read throws ENOENT — the delete race.
+        stdout.snapshot();
+        stdin.press('u');
+        await waitForOutput(stdout, 'CLAUDE.md');
+        stdout.snapshot();
+        stdin.press('\r');
+        await waitForOutput(stdout, 'CLAUDE.md not found');
+        const previewFrame = flatten(stdout.snapshot());
+        // The missing view renders; the error label must not exist anywhere —
+        // and specifically never with an interpolated-undefined code.
+        expect(previewFrame).not.toContain('Resource cannot be loaded');
+        expect(previewFrame).not.toContain('undefined');
+      } finally {
+        instance.unmount();
+        await instance.waitUntilExit();
+      }
+    } finally {
+      spy.mockRestore();
+    }
+  });
 });
