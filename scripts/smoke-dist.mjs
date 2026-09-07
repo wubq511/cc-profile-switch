@@ -80,16 +80,20 @@ async function smokeCliHelpVersion() {
  *  failure apart from a runtime concern (spec static/packaging boundary):
  *
  *  - "alive after settle": the Ink render loop is up — full pass.
- *  - early exit on the KNOWN non-TTY limitation ("Raw mode is not supported",
- *    thrown by Ink's render once main() already ran): every import resolved
- *    and startup reached the render call, so the module configuration is
- *    sound — the exit is environmental (CI has no TTY), not a load failure.
+ *  - early exit with Ink's EXACT known non-TTY message (thrown by Ink's
+ *    render once main() already ran): every import resolved and startup
+ *    reached the render call, so the module configuration is sound — the
+ *    exit is environmental (CI has no TTY), not a load failure. The match
+ *    is the precise thrown text, not a loose pattern, so a genuine startup
+ *    crash (e.g. a TypeError mentioning stdin APIs) still fails.
  *  - early exit with anything else (loader errors, top-level crashes, other
  *    WORKBENCH_ERROR causes): a real module/startup failure — fail.
  *
  *  The sandbox home is initialized through the real CJS bin (`ccps init`)
  *  first — the Workbench requires an existing config.json and never reads
  *  the real user configuration. */
+const INK_NON_TTY_MESSAGE = 'Raw mode is not supported on the current process.stdin';
+
 const MODULE_FAILURE_PATTERN =
   /Cannot find (module|package)|ERR_MODULE|ERR_PACKAGE|SyntaxError|does not provide an export/i;
 
@@ -122,7 +126,7 @@ async function smokeWorkbenchLoad() {
   if (earlyExit === null) child.kill('SIGKILL');
   rmSync(sandboxHome, { recursive: true, force: true });
 
-  const nonTtyLimitation = /Raw mode is not supported|isRawModeSupported/.test(stderr);
+  const nonTtyLimitation = stderr.includes(INK_NON_TTY_MESSAGE);
   if (MODULE_FAILURE_PATTERN.test(stderr)) {
     fail(`dist/workbench.mjs module-graph failure: ${stderr.slice(0, 400)}`);
   } else if (earlyExit !== null && !nonTtyLimitation) {
