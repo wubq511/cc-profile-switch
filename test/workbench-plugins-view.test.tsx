@@ -175,6 +175,7 @@ class Harness {
 const dataFor = (profile: WorkbenchProfile): WorkbenchData => ({
   profiles: [profile],
   defaultProfile: 'coding',
+  customTemplates: [],
 });
 
 const tempRoots: string[] = [];
@@ -381,7 +382,11 @@ describe('Workbench Plugins category + drill view (issue #101, §7.6)', () => {
       return { status: 'ok', plugins: [{ id: 'probe-plugin@m', enabled: true }] };
     };
     await h.renderApp(
-      { profiles: [makeProfile(), makeProfile({ name: 'second' })], defaultProfile: 'coding' },
+      {
+        profiles: [makeProfile(), makeProfile({ name: 'second' })],
+        defaultProfile: 'coding',
+        customTemplates: [],
+      },
       { pluginInventoryReader: flakyReader },
     );
 

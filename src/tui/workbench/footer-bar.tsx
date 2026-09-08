@@ -47,7 +47,7 @@ export function FooterBar({
       : [
           React.createElement(
             Text,
-            { key: 'strip', color: 'gray', wrap: 'truncate', flexShrink: 1 },
+            { key: 'strip', color: 'gray', wrap: 'truncate' },
             ` ${locale === 'zh' ? 'zh' : 'en'} │ ? ${t('keymap.help')} │ q ${t('app.quit')}` +
               (mainPaneFocus
                 ? ` │ ${t('main.backToList')}`
@@ -58,12 +58,12 @@ export function FooterBar({
           flashMessage
             ? React.createElement(
                 Text,
-                { key: 'badge', color: 'green', wrap: 'truncate', flexShrink: 0 },
+                { key: 'badge', color: 'green', wrap: 'truncate' },
                 flashMessage,
               )
             : React.createElement(
                 Text,
-                { key: 'badge', color: 'gray', flexShrink: 0 },
+                { key: 'badge', color: 'gray' },
                 `${width}×${height} `,
               ),
         ],

@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState, type Dispatch, type SetStateAction } from 'react';
+import type { Key } from 'ink';
 
 import { getAppHomePaths } from '../../../core/app-config';
 import { backupProfile, createProfile } from '../../../core/profile';
@@ -44,12 +45,16 @@ import type { LaunchResumeState } from '../launch/launch-resume';
 /** Post-mutation re-entry report shared by create-from-custom-template (§11.3)
  *  and import (§11.2): both land with the same two follow-ups — which secret
  *  keys the user must re-enter (values never travel) and which MCP servers
- *  failed to re-register through delegation, with the core's reason. */
+ *  failed to re-register through delegation, with the core's reason. MCP HTTP
+ *  header key names are reported separately (issue #105): header values are
+ *  stripped under the same rules as env values and never reach the delegated
+ *  CLI, so the user must re-enter them by hand. */
 function reentryFlashParts(
   result: {
     settingsSecretKeysToReenter: string[];
     mcpServers: ImportMcpServerResult[];
     legacyMcpEnvKeysToReenter: { server: string; keys: string[] }[];
+    mcpHeaderKeysToReenter: { server: string; keys: string[] }[];
   },
   t: (key: LocaleKey, params?: I18nParams) => string,
 ): string[] {
@@ -58,6 +63,12 @@ function reentryFlashParts(
       ...result.settingsSecretKeysToReenter,
       ...result.mcpServers.flatMap((s) => s.envKeysToReenter),
       ...result.legacyMcpEnvKeysToReenter.flatMap((s) => s.keys),
+    ]),
+  ].sort((a, b) => a.localeCompare(b));
+  const headerKeys = [
+    ...new Set([
+      ...result.mcpServers.flatMap((s) => s.headerKeysToReenter),
+      ...result.mcpHeaderKeysToReenter.flatMap((s) => s.keys),
     ]),
   ].sort((a, b) => a.localeCompare(b));
   const failedServers = result.mcpServers
@@ -69,6 +80,14 @@ function reentryFlashParts(
       t('lifecycle.reenterSecrets', {
         count: String(reenterKeys.length),
         keys: reenterKeys.join(', '),
+      }),
+    );
+  }
+  if (headerKeys.length > 0) {
+    parts.push(
+      t('lifecycle.reenterHeaders', {
+        count: String(headerKeys.length),
+        keys: headerKeys.join(', '),
       }),
     );
   }
@@ -123,7 +142,7 @@ export function useLifecycleFlows({
     input: string,
     selectedTemplate: string | null,
   ) => Promise<void>;
-  handleConfirmInput: (input: string, key: Record<string, boolean>) => void;
+  handleConfirmInput: (input: string, key: Key) => void;
   handleRemoveCustomTemplate: (templateName: string) => Promise<void>;
 } {
   const [lifecycle, setLifecycle] = useState<LifecycleState>(() => {
@@ -477,7 +496,7 @@ export function useLifecycleFlows({
   );
 
   const handleConfirmInput = useCallback(
-    (input: string, key: Record<string, boolean>) => {
+    (input: string, key: Key) => {
       if (key.escape) {
         if (lifecycle.kind === 'import' && importPreview) {
           // Esc on the import preview resolves the parked decision as abort; the

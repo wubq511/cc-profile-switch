@@ -2,6 +2,121 @@ import { describe, expect, it } from 'vitest';
 
 import { appConfigSchema, appConfigV2Schema } from '../src/schemas/config';
 import { profileConfigSchema } from '../src/schemas/profile';
+import {
+  BUNDLE_MANIFEST_VERSION,
+  bundleManifestV1Schema,
+  bundleManifestV2Schema,
+  parseBundleManifest,
+} from '../src/schemas/profile-bundle';
+import {
+  customTemplateManifestSchema,
+  customTemplateManifestV1Schema,
+  customTemplateManifestV2Schema,
+} from '../src/schemas/custom-template';
+
+const validV1Manifest = {
+  version: 1,
+  bundleFormat: 'ccps-profile-bundle',
+  exporterVersion: '0.1.0',
+  exportedAt: '2026-08-01T00:00:00.000Z',
+  profileName: 'coding',
+  includeSecrets: false,
+  secretsPresent: true,
+  secretsStripped: true,
+  strippedKeys: [
+    { file: 'claude-home/settings.json', scope: 'settings-env', keys: ['ANTHROPIC_API_KEY'] },
+  ],
+  resources: {
+    userMemory: 1,
+    autoMemory: 1,
+    skills: 0,
+    agents: 0,
+    mcpServers: 0,
+    settings: 1,
+    launchConfig: 1,
+  },
+  mcpServerNames: [],
+};
+
+const validV2Manifest = {
+  ...validV1Manifest,
+  version: 2,
+  topLevelEntries: ['claude-home', 'profile.json'],
+  excludedTopLevelEntries: ['claude-home/sessions'],
+};
+
+describe('bundle manifest versioning (#105)', () => {
+  it('writes version 2 manifests', () => {
+    expect(BUNDLE_MANIFEST_VERSION).toBe(2);
+  });
+
+  it('parses a v2 manifest including the mcp-headers stripped-key scope', () => {
+    const manifest = bundleManifestV2Schema.parse({
+      ...validV2Manifest,
+      strippedKeys: [
+        {
+          file: 'claude-home/.claude.json',
+          scope: 'mcp-headers',
+          mcpServer: 'httpapi',
+          keys: ['Authorization'],
+        },
+      ],
+    });
+    expect(manifest.version).toBe(2);
+    expect(manifest.topLevelEntries).toEqual(['claude-home', 'profile.json']);
+  });
+
+  it('still parses a v1 manifest (backward-compatible read)', () => {
+    const manifest = bundleManifestV1Schema.parse(validV1Manifest);
+    expect(manifest.version).toBe(1);
+    // v1 has no v2 fields
+    expect('topLevelEntries' in manifest).toBe(false);
+  });
+
+  it('parses v1 and v2 through the shared entry point', () => {
+    expect(parseBundleManifest(validV1Manifest).version).toBe(1);
+    expect(parseBundleManifest(validV2Manifest).version).toBe(2);
+  });
+
+  it('rejects a future manifest version', () => {
+    expect(() => parseBundleManifest({ ...validV2Manifest, version: 3 })).toThrow();
+    expect(() => bundleManifestV2Schema.parse({ ...validV2Manifest, version: 3 })).toThrow();
+  });
+
+  it('keeps the v2-only fields strict (unknown fields rejected)', () => {
+    expect(() => bundleManifestV2Schema.parse({ ...validV2Manifest, unknown: true })).toThrow();
+  });
+});
+
+describe('custom template manifest versioning (#105)', () => {
+  const v1Template = {
+    version: 1,
+    name: 'my-template',
+    sourceProfile: 'coding',
+    createdAt: '2026-08-01T00:00:00.000Z',
+    strippedKeys: [],
+    mcpServerNames: [],
+  };
+  const v2Template = {
+    ...v1Template,
+    version: 2,
+    linkedSkills: ['linked-skill'],
+    excludedTopLevelEntries: ['claude-home/sessions'],
+  };
+
+  it('parses v1 and v2 template manifests', () => {
+    expect(customTemplateManifestV1Schema.parse(v1Template).version).toBe(1);
+    const v2 = customTemplateManifestV2Schema.parse(v2Template);
+    expect(v2.linkedSkills).toEqual(['linked-skill']);
+    expect(customTemplateManifestSchema.parse(v1Template).version).toBe(1);
+    expect(customTemplateManifestSchema.parse(v2Template).version).toBe(2);
+  });
+
+  it('rejects future template versions and unknown fields', () => {
+    expect(() => customTemplateManifestSchema.parse({ ...v2Template, version: 3 })).toThrow();
+    expect(() => customTemplateManifestV2Schema.parse({ ...v2Template, unknown: true })).toThrow();
+  });
+});
 
 describe('config schemas', () => {
   it('parses app config v2 with optional profile metadata', () => {
@@ -154,14 +269,10 @@ describe('app config v2 schema', () => {
   });
 
   it('rejects unknown fields', () => {
-    expect(() =>
-      appConfigV2Schema.parse({ version: 2, unknownField: true }),
-    ).toThrow();
+    expect(() => appConfigV2Schema.parse({ version: 2, unknownField: true })).toThrow();
   });
 
   it('rejects invalid language values', () => {
-    expect(() =>
-      appConfigV2Schema.parse({ version: 2, workbench: { language: 'fr' } }),
-    ).toThrow();
+    expect(() => appConfigV2Schema.parse({ version: 2, workbench: { language: 'fr' } })).toThrow();
   });
 });

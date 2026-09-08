@@ -258,7 +258,7 @@ function resolveTier(tier: FixtureTierName | FixtureTier): FixtureTier {
   return tier;
 }
 
-function normalizePathologies(ids: string[]): string[] {
+function normalizePathologies(ids: string[]): PathologyId[] {
   const valid = new Set<string>(PATHOLOGY_IDS);
   const unknown = ids.filter((id) => !valid.has(id));
   if (unknown.length > 0) {
@@ -622,7 +622,7 @@ function profileConfig(name: string, description: string, template: string): unk
   };
 }
 
-function healthySettings(profileRoot: string): unknown {
+function healthySettings(profileRoot: string): Record<string, unknown> {
   return {
     autoMemoryDirectory: `${APPHOME_TOKEN}/${profileRoot}/claude-home/memory/auto`,
     claudeMdExcludes: [`${USERHOME_TOKEN}/.claude/CLAUDE.md`],

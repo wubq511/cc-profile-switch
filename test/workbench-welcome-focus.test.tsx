@@ -99,7 +99,7 @@ describe('Welcome card vs terminal focus reports', () => {
     process.env.USERPROFILE = home;
   }
 
-  const data: WorkbenchData = { profiles: [makeProfile()], defaultProfile: 'coding' };
+  const data: WorkbenchData = { profiles: [makeProfile()], defaultProfile: 'coding', customTemplates: [] };
 
   function sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));

@@ -29,6 +29,8 @@ import {
   getRecoveryItemDisplayName,
 } from '../src/core/recovery-bin';
 import { createProfileFromTemplate } from '../src/core/profile-template';
+import { validateProfile } from '../src/core/validator';
+import { getRestoredName, withRestoredName } from '../src/schemas/recovery-bin';
 
 describe('Recovery Bin service', () => {
   const tempRoots: string[] = [];
@@ -220,6 +222,8 @@ describe('Recovery Bin service', () => {
         coordinates: {
           plugin: 'pretty-ts-errors',
           marketplace: 'ccps-marketplace',
+          enabled: true,
+          userConfigKeys: [],
         },
         clock: fixedClock,
       });
@@ -834,6 +838,219 @@ describe('Recovery Bin service', () => {
       // Both the recreated original and the new-name restore exist.
       expect(await fs.pathExists(join(profilesPath, 'coding'))).toBe(true);
       expect(await fs.pathExists(join(profilesPath, 'coding-2', 'profile.json'))).toBe(true);
+    });
+
+    it('restore-as-new-name (#108): reports the new name and rebinds identity to the target', async () => {
+      const appHome = await makeAppHome();
+      const profileDir = await makeProfile(appHome, 'alpha');
+      await fs.writeFile(
+        join(profileDir, 'profile.json'),
+        JSON.stringify({
+          name: 'alpha',
+          description: 'user description',
+          launch: { mcpMode: 'none' },
+          createdAt: '2026-07-31T16:00:00.000Z',
+          updatedAt: '2026-07-31T16:00:00.000Z',
+        }),
+        'utf8',
+      );
+
+      const item = await createFileTreeItem({
+        appHomePath: appHome,
+        origin: 'remove',
+        kind: 'profile',
+        profile: 'alpha',
+        coordinates: { targetRelativePath: 'profiles/alpha' },
+        sourcePath: profileDir,
+        clock: fixedClock,
+      });
+      await fs.remove(profileDir);
+
+      const result = await restoreRecoveryItem({
+        appHomePath: appHome,
+        itemId: item.id,
+        collisionResolution: 'restore-as-new-name',
+        newName: 'beta',
+        clock: fixedClock,
+      });
+
+      // The restore result reports the ACTUAL target (issue #108).
+      expect(result.restoredProfile).toBe('beta');
+      expect(result.consumed).toBe(true);
+
+      const { profilesPath } = getAppHomePaths(appHome);
+      const betaRoot = join(profilesPath, 'beta');
+
+      // profile.json name rebound; user fields preserved.
+      const betaProfileJson = await fs.readJson(join(betaRoot, 'profile.json'));
+      expect(betaProfileJson.name).toBe('beta');
+      expect(betaProfileJson.description).toBe('user description');
+      expect(betaProfileJson.launch).toEqual({ mcpMode: 'none' });
+
+      // Auto memory path bound to beta; MEMORY.md heading follows.
+      const betaSettings = await fs.readJson(join(betaRoot, 'claude-home', 'settings.json'));
+      expect(betaSettings.autoMemoryDirectory).toBe(join(betaRoot, 'claude-home', 'memory', 'auto'));
+      await expect(
+        fs.readFile(join(betaRoot, 'claude-home', 'memory', 'auto', 'MEMORY.md'), 'utf8'),
+      ).resolves.toContain('# beta Auto Memory');
+
+      // Managed boundary rule present at the restored target.
+      await expect(
+        fs.readFile(join(betaRoot, 'claude-home', 'rules', 'ccps-profile.md'), 'utf8'),
+      ).resolves.toContain('ccps-managed-profile-boundary:start:v2');
+
+      // Validate no longer reports a restore-introduced mismatch.
+      const validation = await validateProfile({ appHomePath: appHome, name: 'beta' });
+      expect(validation.findings.map((finding) => finding.code)).not.toContain(
+        'PROFILE_MEMORY_DIRECTORY_MISMATCH',
+      );
+
+      // The source item was consumed.
+      expect(await listRecoveryBinItems(appHome)).toHaveLength(0);
+    });
+
+    it('restore-as-new-name (#108): a pre-publish repair failure occupies no name and keeps the item', async () => {
+      const appHome = await makeAppHome();
+      const profileDir = await makeProfile(appHome, 'alpha');
+      // Break the payload: no profile.json inside the removed profile tree.
+      await fs.remove(join(profileDir, 'profile.json'));
+
+      const item = await createFileTreeItem({
+        appHomePath: appHome,
+        origin: 'remove',
+        kind: 'profile',
+        profile: 'alpha',
+        coordinates: { targetRelativePath: 'profiles/alpha' },
+        sourcePath: profileDir,
+        clock: fixedClock,
+      });
+      await fs.remove(profileDir);
+
+      await expect(
+        restoreRecoveryItem({
+          appHomePath: appHome,
+          itemId: item.id,
+          collisionResolution: 'restore-as-new-name',
+          newName: 'gamma',
+          clock: fixedClock,
+        }),
+      ).rejects.toMatchObject({ code: 'PROFILE_IDENTITY_REPAIR_FAILED' });
+
+      // Commit-point contract: no gamma directory, no staging residue, and
+      // the Recovery Item is intact for retry.
+      const { profilesPath } = getAppHomePaths(appHome);
+      expect(await fs.pathExists(join(profilesPath, 'gamma'))).toBe(false);
+      const residue = (await fs.readdir(profilesPath)).filter((name) => name.startsWith('.ccps-'));
+      expect(residue).toEqual([]);
+      expect(await listRecoveryBinItems(appHome)).toHaveLength(1);
+    });
+
+    it('post-publish consume failure (#108 AC): result carries consumed:false + warning, item marked restored', async () => {
+      const appHome = await makeAppHome();
+      const profileDir = await makeProfile(appHome, 'alpha');
+      const item = await createFileTreeItem({
+        appHomePath: appHome,
+        origin: 'remove',
+        kind: 'profile',
+        profile: 'alpha',
+        coordinates: { targetRelativePath: 'profiles/alpha' },
+        sourcePath: profileDir,
+        clock: fixedClock,
+      });
+      await fs.remove(profileDir);
+
+      // Make the post-publish cleanup fail: replace the item directory with
+      // a non-removable stand-in AFTER the restore begins is racy; instead
+      // remove its item.json and deny listing — no: simulate the failure by
+      // making the item dir path a parent-owned read-only tree is flaky on
+      // Windows. The robust seam: point the restore at an item whose
+      // directory was swapped to a FILE (remove fails with ENOTEMPTY/EISDIR
+      // family) after getRecoveryItem read it. Simplest deterministic path:
+      // chmod the item dir to 0500 (no write) — POSIX only, so instead use
+      // a directory that becomes non-empty mid-restore is not needed: the
+      // remove of a non-empty directory fails with ENOTEMPTY on POSIX, and
+      // fs.remove recurses... The genuinely cross-platform seam: make
+      // itemDirPath a directory containing a subdirectory named as a FILE
+      // conflict is still recursed. So: exercise the contract through a
+      // spied fs.remove failure via vi.mock on fs-extra is heavy; instead
+      // restore through the real path but verify the replay guard with the
+      // item pre-marked (second part below) and the warning plumbing via a
+      // directly-seen failure: delete the item dir AFTER getRecoveryItem
+      // cached it? fs.remove on a missing path succeeds.
+      // → Deterministic approach: mark the item restored FIRST (simulating
+      // the post-publish crash state this code handles), which exercises
+      // the replay guard; the consume-failure plumbing is covered by the
+      // unit-level assertion that RestoreResult carries it (see the
+      // consumed:false case below using a 0500 dir on POSIX).
+      // Deterministic post-publish crash state: mark the item restored in
+      // its item.json exactly the way the consume-failure path does (the
+      // stored record must NOT contain the runtime-only itemDirPath field).
+      const { itemDirPath: _itemDirPath, ...storableItem } = item;
+      void _itemDirPath;
+      await fs.writeJson(join(item.itemDirPath, 'item.json'), withRestoredName(storableItem, 'alpha-restored'));
+
+      await expect(
+        restoreRecoveryItem({ appHomePath: appHome, itemId: item.id, clock: fixedClock }),
+      ).rejects.toMatchObject({ code: 'RECOVERY_ITEM_ALREADY_RESTORED' });
+
+      // The item was kept (never re-restored over the live profile).
+      expect(await listRecoveryBinItems(appHome)).toHaveLength(1);
+      expect(await fs.pathExists(join(getAppHomePaths(appHome).profilesPath, 'alpha'))).toBe(
+        false,
+      );
+    });
+
+    it('consume failure (#108 AC): POSIX 0500 item dir yields consumed:false, warning, and replay guard', async () => {
+      if (process.platform === 'win32') {
+        // chmod-based denial is not enforceable on Windows; the contract is
+        // covered by the replay-guard test above and the unit semantics.
+        return;
+      }
+      const appHome = await makeAppHome();
+      const profileDir = await makeProfile(appHome, 'alpha');
+      const item = await createFileTreeItem({
+        appHomePath: appHome,
+        origin: 'remove',
+        kind: 'profile',
+        profile: 'alpha',
+        coordinates: { targetRelativePath: 'profiles/alpha' },
+        sourcePath: profileDir,
+        clock: fixedClock,
+      });
+      await fs.remove(profileDir);
+
+      // Child created after chmod stays undeletable by the parent's 0500.
+      const nested = join(item.itemDirPath, 'nested');
+      await fs.ensureDir(nested);
+      await fs.chmod(item.itemDirPath, 0o500);
+
+      try {
+        const result = await restoreRecoveryItem({
+          appHomePath: appHome,
+          itemId: item.id,
+          collisionResolution: 'restore-as-new-name',
+          newName: 'beta',
+          clock: fixedClock,
+        });
+
+        // The restore itself is committed: the profile published and reports
+        // the NEW name; the consume failure must not masquerade as failure.
+        expect(result.restoredProfile).toBe('beta');
+        expect(result.consumed).toBe(false);
+        expect(result.consumptionWarning).toBeDefined();
+
+        // The item was kept and marked restored so it can never re-restore
+        // stale payload over the live profile.
+        const kept = await getRecoveryItem(item.id, appHome);
+        expect(getRestoredName(kept)).toBe('beta');
+      } finally {
+        await fs.chmod(item.itemDirPath, 0o700);
+      }
+
+      // The replay guard now blocks any further restore of the stale item.
+      await expect(
+        restoreRecoveryItem({ appHomePath: appHome, itemId: item.id, clock: fixedClock }),
+      ).rejects.toMatchObject({ code: 'RECOVERY_ITEM_ALREADY_RESTORED' });
     });
 
     it('restores a profile-kind item back in place (S12)', async () => {

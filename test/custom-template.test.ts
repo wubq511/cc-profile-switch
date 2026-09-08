@@ -14,10 +14,7 @@ import {
   saveProfileAsTemplate,
 } from '../src/core/custom-template';
 import { getClaudeJsonPath } from '../src/core/mcp-servers';
-import {
-  createProfileFromTemplate,
-  getProfileTemplatePaths,
-} from '../src/core/profile-template';
+import { createProfileFromTemplate, getProfileTemplatePaths } from '../src/core/profile-template';
 import type { CaptureProcess } from '../src/platform/process';
 import {
   customTemplateManifestSchema,
@@ -133,9 +130,7 @@ async function readTemplateManifest(
   appHome: string,
   templateName: string,
 ): Promise<CustomTemplateManifest> {
-  const raw = await fs.readJson(
-    path.join(appHome, 'templates', templateName, 'template.json'),
-  );
+  const raw = await fs.readJson(path.join(appHome, 'templates', templateName, 'template.json'));
   return customTemplateManifestSchema.parse(raw);
 }
 
@@ -147,9 +142,10 @@ function templateProfilePath(appHome: string, templateName: string): string {
 
 type RecordedCall = { args: string[]; claudeConfigDir: string };
 
-function mockClaudeAdd(
-  failOn?: (name: string) => boolean,
-): { capture: CaptureProcess; calls: RecordedCall[] } {
+function mockClaudeAdd(failOn?: (name: string) => boolean): {
+  capture: CaptureProcess;
+  calls: RecordedCall[];
+} {
   const calls: RecordedCall[] = [];
   const capture: CaptureProcess = async (_command, args, options) => {
     const claudeConfigDir = options.env?.CLAUDE_CONFIG_DIR as string;
@@ -186,8 +182,15 @@ function applyMcpAdd(claudeConfigDir: string, args: string[]): void {
   const env: Record<string, string> = {};
   while (i < args.length) {
     const a = args[i];
-    if (a === '--scope') { i += 2; continue; }
-    if (a === '--transport') { transport = args[i + 1] as 'sse' | 'http'; i += 2; continue; }
+    if (a === '--scope') {
+      i += 2;
+      continue;
+    }
+    if (a === '--transport') {
+      transport = args[i + 1] as 'sse' | 'http';
+      i += 2;
+      continue;
+    }
     if (a === '-e' || a === '--env') {
       const pair = args[i + 1];
       const eq = pair.indexOf('=');
@@ -213,7 +216,11 @@ function applyMcpAdd(claudeConfigDir: string, args: string[]): void {
   writeMcpServer(claudeConfigDir, name, entry);
 }
 
-function writeMcpServer(claudeConfigDir: string, name: string, entry: Record<string, unknown>): void {
+function writeMcpServer(
+  claudeConfigDir: string,
+  name: string,
+  entry: Record<string, unknown>,
+): void {
   const file = path.join(claudeConfigDir, '.claude.json');
   let json: Record<string, unknown> = {};
   try {
@@ -247,7 +254,7 @@ describe('saveProfileAsTemplate', () => {
       clock: FIXED_CLOCK,
     });
 
-    expect(manifest.version).toBe(1);
+    expect(manifest.version).toBe(2);
     expect(manifest.name).toBe('my-template');
     expect(manifest.sourceProfile).toBe('coding');
     expect(manifest.createdAt).toBe('2026-08-01T00:00:00.000Z');
@@ -263,10 +270,16 @@ describe('saveProfileAsTemplate', () => {
     // captured resources travel
     expect(await fs.pathExists(path.join(templateProfile, 'profile.json'))).toBe(true);
     expect(await fs.pathExists(path.join(templateProfile, 'claude-home', 'CLAUDE.md'))).toBe(true);
-    expect(await fs.pathExists(path.join(templateProfile, 'claude-home', 'skills', 'pdf.md'))).toBe(true);
-    expect(await fs.pathExists(path.join(templateProfile, 'claude-home', 'agents', 'reviewer.md'))).toBe(true);
+    expect(await fs.pathExists(path.join(templateProfile, 'claude-home', 'skills', 'pdf.md'))).toBe(
+      true,
+    );
+    expect(
+      await fs.pathExists(path.join(templateProfile, 'claude-home', 'agents', 'reviewer.md')),
+    ).toBe(true);
     // Auto Memory excluded entirely
-    expect(await fs.pathExists(path.join(templateProfile, 'claude-home', 'memory', 'auto'))).toBe(false);
+    expect(await fs.pathExists(path.join(templateProfile, 'claude-home', 'memory', 'auto'))).toBe(
+      false,
+    );
     // runtime internals pruned
     expect(await fs.pathExists(path.join(templateProfile, 'claude-home', 'sessions'))).toBe(false);
     expect(await fs.pathExists(path.join(templateProfile, 'claude-home', 'projects'))).toBe(false);
@@ -575,9 +588,7 @@ describe('createProfileFromCustomTemplate', () => {
       clock: FIXED_CLOCK,
     });
 
-    const created = await fs.readJson(
-      getProfileTemplatePaths(appHome, 'fresh').profileConfigPath,
-    );
+    const created = await fs.readJson(getProfileTemplatePaths(appHome, 'fresh').profileConfigPath);
     expect(created.launch?.mcpMode).toBe('none');
   });
 
@@ -684,6 +695,264 @@ describe('createProfileFromCustomTemplate', () => {
         clock: FIXED_CLOCK,
       }),
     ).rejects.toMatchObject({ code: 'PROFILE_ALREADY_EXISTS' });
+  });
+
+  // --- issue #105 boundary ---------------------------------------------------
+
+  it('keeps Linked Skills as references (never materializes the external directory)', async () => {
+    const appHome = await makeAppHome();
+    await makeProfile(appHome, 'coding');
+    const paths = getProfileTemplatePaths(appHome, 'coding');
+    const linkTarget = await mkdtemp(join(tmpdir(), 'ccps-template-skill-src-'));
+    tempRoots.push(linkTarget);
+    await fs.writeFile(path.join(linkTarget, 'SKILL.md'), '# linked skill', 'utf8');
+    await fs.symlink(linkTarget, path.join(paths.skillsPath, 'linked-skill'), 'dir');
+
+    const { manifest } = await saveProfileAsTemplate({
+      appHomePath: appHome,
+      profileName: 'coding',
+      templateName: 'with-links',
+      clock: FIXED_CLOCK,
+    });
+
+    // manifest records the reference; v2 field
+    expect(manifest.version).toBe(2);
+    if (manifest.version !== 2) throw new Error('expected v2 manifest');
+    expect(manifest.linkedSkills).toEqual(['linked-skill']);
+
+    const templateProfile = templateProfilePath(appHome, 'with-links');
+    // the external directory was never materialized into the template
+    const linkInTemplate = path.join(templateProfile, 'claude-home', 'skills', 'linked-skill');
+    const lstat = await fs.lstat(linkInTemplate).catch(() => undefined);
+    if (lstat !== undefined) {
+      expect(lstat.isSymbolicLink()).toBe(true);
+      expect(
+        await fs.pathExists(
+          path.join(templateProfile, 'claude-home', 'skills', 'linked-skill', 'SKILL.md'),
+        ),
+      ).toBe(false);
+    }
+    // the sidecar records the target so create can re-link
+    const sidecar = await fs.readJson(
+      path.join(appHome, 'templates', 'with-links', 'linked-skills.json'),
+    );
+    expect(sidecar['linked-skill']).toBe(linkTarget);
+    // the external source was never read or modified
+    expect(await fs.readFile(path.join(linkTarget, 'SKILL.md'), 'utf8')).toBe('# linked skill');
+  });
+
+  it('create-from-template re-creates Linked Skill references, not copies', async () => {
+    const appHome = await makeAppHome();
+    await makeProfile(appHome, 'coding');
+    const paths = getProfileTemplatePaths(appHome, 'coding');
+    const linkTarget = await mkdtemp(join(tmpdir(), 'ccps-template-skill-src-'));
+    tempRoots.push(linkTarget);
+    await fs.writeFile(path.join(linkTarget, 'SKILL.md'), '# linked skill', 'utf8');
+    await fs.symlink(linkTarget, path.join(paths.skillsPath, 'linked-skill'), 'dir');
+    await saveProfileAsTemplate({
+      appHomePath: appHome,
+      profileName: 'coding',
+      templateName: 'links',
+      clock: FIXED_CLOCK,
+    });
+
+    await createProfileFromCustomTemplate({
+      appHomePath: appHome,
+      templateName: 'links',
+      name: 'fresh',
+      captureProcess: mockClaudeAdd().capture,
+      clock: FIXED_CLOCK,
+    });
+
+    const freshPaths = getProfileTemplatePaths(appHome, 'fresh');
+    const linkPath = path.join(freshPaths.claudeHomePath, 'skills', 'linked-skill');
+    const stats = await fs.lstat(linkPath);
+    expect(stats.isSymbolicLink()).toBe(true);
+    expect(await fs.readlink(linkPath)).toBe(linkTarget);
+    // target content untouched
+    expect(await fs.readFile(path.join(linkTarget, 'SKILL.md'), 'utf8')).toBe('# linked skill');
+  });
+
+  it('create-from-template excludes runtime entries an older (v1) template may carry', async () => {
+    const appHome = await makeAppHome();
+    await makeProfile(appHome, 'coding');
+    await saveProfileAsTemplate({
+      appHomePath: appHome,
+      profileName: 'coding',
+      templateName: 'legacy',
+      clock: FIXED_CLOCK,
+    });
+    // Simulate a v1-era template: manifest downgraded to the exact v1 shape,
+    // runtime entries present in the tree.
+    const templateDir = path.join(appHome, 'templates', 'legacy');
+    const manifestRaw = await fs.readJson(path.join(templateDir, 'template.json'));
+    await fs.writeJson(path.join(templateDir, 'template.json'), {
+      version: 1,
+      name: manifestRaw.name,
+      description: manifestRaw.description,
+      sourceProfile: manifestRaw.sourceProfile,
+      createdAt: manifestRaw.createdAt,
+      strippedKeys: manifestRaw.strippedKeys,
+      mcpServerNames: manifestRaw.mcpServerNames,
+    });
+    await fs.outputFile(
+      path.join(templateDir, 'profile', 'claude-home', 'sessions', 'old.jsonl'),
+      '{"legacy":true}',
+    );
+    await fs.outputFile(
+      path.join(templateDir, 'profile', 'claude-home', '.credentials.json'),
+      '{"oauth":"legacy-token"}',
+    );
+
+    await createProfileFromCustomTemplate({
+      appHomePath: appHome,
+      templateName: 'legacy',
+      name: 'fresh',
+      captureProcess: mockClaudeAdd().capture,
+      clock: FIXED_CLOCK,
+    });
+
+    const freshPaths = getProfileTemplatePaths(appHome, 'fresh');
+    // the old bundle's runtime entries never land in the new profile
+    expect(await fs.pathExists(path.join(freshPaths.claudeHomePath, 'sessions'))).toBe(false);
+    expect(await fs.pathExists(path.join(freshPaths.claudeHomePath, '.credentials.json'))).toBe(
+      false,
+    );
+    // and the stored template artifact is unchanged (never rewritten)
+    const after = await fs.readJson(path.join(templateDir, 'template.json'));
+    expect(after.version).toBe(1);
+    expect(await fs.pathExists(path.join(templateDir, 'profile', 'claude-home', 'sessions'))).toBe(
+      true,
+    );
+  });
+
+  it('rejects a crafted manifest whose linkedSkills name escapes the skills dir', async () => {
+    const appHome = await makeAppHome();
+    await makeProfile(appHome, 'coding');
+    await saveProfileAsTemplate({
+      appHomePath: appHome,
+      profileName: 'coding',
+      templateName: 'crafted',
+      clock: FIXED_CLOCK,
+    });
+    const templateDir = path.join(appHome, 'templates', 'crafted');
+    // Hand-crafted v2 manifest + sidecar: a traversal name that, unguarded,
+    // would fs.remove + symlink an arbitrary path under claude-home.
+    const manifestRaw = await fs.readJson(path.join(templateDir, 'template.json'));
+    await fs.writeJson(path.join(templateDir, 'template.json'), {
+      ...manifestRaw,
+      linkedSkills: ['../settings.json'],
+    });
+    await fs.writeJson(path.join(templateDir, 'linked-skills.json'), {
+      '../settings.json': path.join(appHome, 'some-external-target'),
+    });
+
+    await expect(
+      createProfileFromCustomTemplate({
+        appHomePath: appHome,
+        templateName: 'crafted',
+        name: 'fresh',
+        captureProcess: mockClaudeAdd().capture,
+        clock: FIXED_CLOCK,
+      }),
+    ).rejects.toMatchObject({ code: 'TEMPLATE_INVALID' });
+    // nothing was copied: no partial profile, and the crafted link never ran
+    expect(await fs.pathExists(path.join(appHome, 'profiles', 'fresh'))).toBe(false);
+    // a real profile can still be created afterwards under the same name
+    const manifestGood = await fs.readJson(path.join(templateDir, 'template.json'));
+    await fs.writeJson(path.join(templateDir, 'template.json'), {
+      ...manifestGood,
+      linkedSkills: [],
+    });
+    const result = await createProfileFromCustomTemplate({
+      appHomePath: appHome,
+      templateName: 'crafted',
+      name: 'fresh',
+      captureProcess: mockClaudeAdd().capture,
+      clock: FIXED_CLOCK,
+    });
+    expect(result.profileName).toBe('fresh');
+  });
+
+  it('refuses a linkedSkills name that also exists as a real entry in the template tree', async () => {
+    const appHome = await makeAppHome();
+    await makeProfile(appHome, 'coding');
+    await saveProfileAsTemplate({
+      appHomePath: appHome,
+      profileName: 'coding',
+      templateName: 'conflict',
+      clock: FIXED_CLOCK,
+    });
+    const templateDir = path.join(appHome, 'templates', 'conflict');
+    // A template whose tree materialized skill dir "copied-skill" while the
+    // manifest claims the same name is a Linked Skill — inconsistent, so the
+    // create refuses rather than delete the copied dir and swap in a link.
+    await fs.ensureDir(path.join(templateDir, 'profile', 'claude-home', 'skills', 'copied-skill'));
+    await fs.writeFile(
+      path.join(templateDir, 'profile', 'claude-home', 'skills', 'copied-skill', 'SKILL.md'),
+      '# copied',
+      'utf8',
+    );
+    const manifestRaw = await fs.readJson(path.join(templateDir, 'template.json'));
+    await fs.writeJson(path.join(templateDir, 'template.json'), {
+      ...manifestRaw,
+      linkedSkills: ['copied-skill'],
+    });
+    await fs.writeJson(path.join(templateDir, 'linked-skills.json'), {
+      'copied-skill': path.join(appHome, 'external-source'),
+    });
+
+    await expect(
+      createProfileFromCustomTemplate({
+        appHomePath: appHome,
+        templateName: 'conflict',
+        name: 'fresh',
+        captureProcess: mockClaudeAdd().capture,
+        clock: FIXED_CLOCK,
+      }),
+    ).rejects.toMatchObject({ code: 'TEMPLATE_INVALID' });
+    // refused before anything was copied: no partial profile, and the real
+    // copied-skill entry was never deleted by a relink attempt
+    expect(await fs.pathExists(path.join(appHome, 'profiles', 'fresh'))).toBe(false);
+    expect(
+      await fs.pathExists(
+        path.join(templateDir, 'profile', 'claude-home', 'skills', 'copied-skill', 'SKILL.md'),
+      ),
+    ).toBe(true);
+  });
+
+  it('reports MCP header keys needing re-entry (import parity)', async () => {
+    const appHome = await makeAppHome();
+    await makeProfile(appHome, 'coding');
+    const paths = getProfileTemplatePaths(appHome, 'coding');
+    await fs.writeJson(paths.claudeUserConfigPath, {
+      mcpServers: {
+        httpapi: {
+          type: 'http',
+          url: 'https://mcp.example.com/v1',
+          headers: { Authorization: 'Bearer hdr-secret-789' },
+        },
+      },
+    });
+    await saveProfileAsTemplate({
+      appHomePath: appHome,
+      profileName: 'coding',
+      templateName: 'hdrs',
+      clock: FIXED_CLOCK,
+    });
+
+    const result = await createProfileFromCustomTemplate({
+      appHomePath: appHome,
+      templateName: 'hdrs',
+      name: 'fresh',
+      captureProcess: mockClaudeAdd().capture,
+      clock: FIXED_CLOCK,
+    });
+
+    expect(result.mcpHeaderKeysToReenter).toEqual([{ server: 'httpapi', keys: ['Authorization'] }]);
+    // the header value never lands anywhere
+    const freshPaths = getProfileTemplatePaths(appHome, 'fresh');
+    expect(await treeContains(freshPaths.profileRootPath, 'hdr-secret-789')).toBe(false);
   });
 });
 

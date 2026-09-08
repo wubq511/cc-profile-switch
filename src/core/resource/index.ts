@@ -5,7 +5,18 @@ export type {
   AgentFrontmatter,
   ResourceEntry,
   SearchResult,
+  ResourceCategoryState,
+  ResourceStates,
 } from './types';
+export {
+  classifyReadError,
+  readFileWithState,
+  readJsonWithState,
+  listDirWithState,
+  type ResourceReadFailure,
+  type ResourceReadSuccess,
+  type ResourceReadResult,
+} from './read-state';
 export {
   loadUserMemory,
   readUserMemoryContent,

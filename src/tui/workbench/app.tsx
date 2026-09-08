@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Box, useApp, useInput, useStdin, useStdout } from 'ink';
+import { Box, useApp, useInput, useStdin, useStdout, type Key } from 'ink';
 
 import { getAppHomePaths, loadAppConfig, loadAppConfigSync } from '../../core/app-config';
 import { type LaunchPlan } from '../../core/launcher';
@@ -181,7 +181,9 @@ function WorkbenchInner({
   const welcomeBannerConfigEnabled = useMemo(() => {
     if (welcomeBannerEnabled !== undefined) return welcomeBannerEnabled;
     try {
-      return loadAppConfigSync(appHomePath).welcomeBanner !== false;
+      // Schema location: `workbench.welcomeBanner` (issue #111) — the previous
+      // top-level read never matched the schema and ignored the saved switch.
+      return loadAppConfigSync(appHomePath).workbench.welcomeBanner !== false;
     } catch {
       return true;
     }
@@ -268,6 +270,7 @@ function WorkbenchInner({
   const {
     resourceNav,
     resourceContent,
+    resourceReadError,
     diffResult,
     drilledAgent,
     agentFrontmatter,
@@ -370,7 +373,7 @@ function WorkbenchInner({
   const launchActive = lifecycle.launch.phase !== 'idle';
 
   useInput(
-    (input: string, key: Record<string, boolean>) => {
+    (input: string, key: Key) => {
       if (key.ctrl && input === 'c') {
         exit();
         return;
@@ -457,10 +460,16 @@ function WorkbenchInner({
       // drill fires over the launch flow's overlays.
       if (input === 'u' && lifecycle.phase === 'idle' && !launchActive) {
         openCategory('user-memory');
+        // Issue #110: a re-entry is also the documented refresh path — reload
+        // the real core data so a resource repaired on disk is picked up
+        // without restarting the Workbench.
+        void refreshData();
         return;
       }
       if (input === 'a' && mainPaneFocus && lifecycle.phase === 'idle' && !launchActive) {
         openCategory('agents');
+        // Issue #110: same re-entry refresh contract as `u` above.
+        void refreshData();
         return;
       }
 
@@ -732,6 +741,7 @@ function WorkbenchInner({
                             dismiss: handleFallbackDismiss,
                           },
                           content: resourceContent,
+                          contentReadError: resourceReadError,
                           diff: diffResult,
                           drilledAgent,
                           agentFrontmatter,

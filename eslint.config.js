@@ -3,7 +3,7 @@ const tseslint = require('typescript-eslint');
 
 module.exports = tseslint.config(
   {
-    ignores: ['dist/**', 'node_modules/**', 'coverage/**', '.audit-venv/**', 'audit-output/**'],
+    ignores: ['dist/**', 'node_modules/**', 'coverage/**', '.audit-venv/**', 'audit-output/**', '.tower/**'],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommended,

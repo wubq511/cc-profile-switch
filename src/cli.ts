@@ -8,10 +8,14 @@ import { renderWelcomeBanner, resolveBannerOptions } from './tui/workbench/welco
 
 export type CreateProgramOptions = Partial<CommandRuntime>;
 
-function resolveWelcomeBannerEnabled(): boolean {
+/** The banner preference from the schema location `workbench.welcomeBanner`
+ *  (issue #111); a missing/corrupt config keeps the default (enabled).
+ *  Exported for entry-contract tests — the Workbench entry resolves the same
+ *  field through the same core read. */
+export function resolveWelcomeBannerEnabled(): boolean {
   try {
     const config = loadAppConfigSync(getAppHomePaths().appHomePath);
-    return config.welcomeBanner !== false;
+    return config.workbench.welcomeBanner !== false;
   } catch {
     return true;
   }

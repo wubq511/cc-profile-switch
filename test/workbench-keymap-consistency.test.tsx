@@ -20,6 +20,14 @@ import { installLocalSkill } from '../src/core/skills-install';
 import { loadSkillsProvenance, saveSkillsProvenance } from '../src/core/skills-provenance';
 import { loadWorkbenchData } from '../src/tui/workbench/profile-data';
 import type { WorkbenchData } from '../src/tui/workbench/profile-data';
+import type { AppConfig } from '../src/schemas/config';
+
+// WorkbenchApp types configLoader as returning Promise<ReturnType<typeof loadAppConfig>>
+// (a double-wrapped Promise<Promise<AppConfig>>); this helper matches that contract
+// without casts. TODO(#113-followup): fix the prop type in src to Awaited<...>.
+function configLoaderFor(config: AppConfig): (appHomePath: string) => Promise<Promise<AppConfig>> {
+  return () => new Promise<Promise<AppConfig>>((resolve) => resolve(Promise.resolve(config)));
+}
 import type { CaptureProcess } from '../src/platform/process';
 import { apiRepo, apiTree, makeHttp, rawSkill } from './fixtures/discovery-http';
 import { FakeTtyStdout, flatten, setupSpawnSuccess, stripAnsi } from './render-helpers';
@@ -960,10 +968,10 @@ describe('Workbench help-sheet / keymap consistency (issue #92)', () => {
     const { data } = await setupReal(['coding']);
     await h.renderApp(data, {
       discoverySessionFactory: () => browseSession().session,
-      configLoader: async () => ({
+      configLoader: configLoaderFor({
         version: 2,
         recovery: { retentionDays: 30 },
-        workbench: { skillsDiscoveryExperimental: true },
+        workbench: { skillsDiscoveryExperimental: true, welcomeBanner: true },
       }),
     });
     await openBulkSkills(h);

@@ -13,7 +13,7 @@ export function CaptureProvider({
   children,
 }: {
   value: CaptureSetter;
-  children: React.ReactNode;
+  children?: React.ReactNode;
 }): React.ReactElement {
   return React.createElement(CaptureContext.Provider, { value }, children);
 }

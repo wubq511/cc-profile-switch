@@ -1,4 +1,5 @@
 import { useCallback, useState, type Dispatch, type SetStateAction } from 'react';
+import type { Key } from 'ink';
 
 import { getAppHomePaths } from '../../../core/app-config';
 import { getProfileTemplatePaths } from '../../../core/profile-template';
@@ -15,6 +16,7 @@ import {
   copyAgentToProfile,
   updateAgentFrontmatter,
   searchAllResources,
+  classifyReadError,
   type AgentFrontmatter,
   type SearchResult,
   type ResourceCategory,
@@ -32,7 +34,7 @@ import {
   type ResourceNavState,
 } from '../resource-nav';
 import type { I18nParams, LocaleKey } from '../i18n/react';
-import type { WorkbenchData, WorkbenchProfile } from '../profile-data';
+import { readStateFor, type WorkbenchData, type WorkbenchProfile } from '../profile-data';
 
 type UseResourceNavOptions = {
   workbenchData: WorkbenchData;
@@ -66,6 +68,9 @@ export function useResourceNav({
 }: UseResourceNavOptions): {
   resourceNav: ResourceNavState;
   resourceContent: string | null;
+  /** Issue #110: diagnostic for a failed preview load; null when content loaded
+   *  or the target is simply absent. */
+  resourceReadError: { code: string; detail: string } | null;
   diffResult: ResourceDiffResult | null;
   drilledAgent: string | null;
   agentFrontmatter: AgentFrontmatter | null;
@@ -83,12 +88,19 @@ export function useResourceNav({
   saveAgentFrontmatter: (updates: Partial<AgentFrontmatter>) => Promise<void>;
   jumpToSearchHit: (hit: SearchResult) => Promise<void>;
   handleSearchContent: (query: string) => Promise<SearchResult[]>;
-  handleResourceInput: (input: string, key: Record<string, boolean>) => void;
+  handleResourceInput: (input: string, key: Key) => void;
   navBack: () => void;
 } {
   // User Memory / Agents resource rows (issue #60)
   const [resourceNav, setResourceNav] = useState<ResourceNavState>(initialResourceNavState);
   const [resourceContent, setResourceContent] = useState<string | null>(null);
+  // Issue #110: an unreadable preview target (EISDIR/EACCES/format) keeps an
+  // explicit error instead of rendering the "missing/empty" view; re-entering
+  // the category after a disk fix reloads and clears it.
+  const [resourceReadError, setResourceReadError] = useState<{
+    code: string;
+    detail: string;
+  } | null>(null);
   const [diffResult, setDiffResult] = useState<ResourceDiffResult | null>(null);
   const [drilledAgent, setDrilledAgent] = useState<string | null>(null);
   const [agentFrontmatter, setAgentFrontmatter] = useState<AgentFrontmatter | null>(null);
@@ -129,6 +141,7 @@ export function useResourceNav({
   // #89): content/diff/agent drill-in all reset together.
   const resetResourceViewState = useCallback(() => {
     setResourceContent(null);
+    setResourceReadError(null);
     setDiffResult(null);
     setDrilledAgent(null);
     setAgentFrontmatter(null);
@@ -152,10 +165,23 @@ export function useResourceNav({
     const appHome = getAppHomePaths().appHomePath;
 
     let content: string | null = null;
-    if (category === 'agents') {
-      content = await readAgentContent(appHome, profile.name, resourceName);
-    } else {
-      content = await readUserMemoryContent(appHome, profile.name);
+    try {
+      if (category === 'agents') {
+        content = await readAgentContent(appHome, profile.name, resourceName);
+      } else {
+        content = await readUserMemoryContent(appHome, profile.name);
+      }
+      // Issue #110: an unreadable target (EISDIR/EACCES/format) shows the
+      // explicit error state, not the missing/empty view. The error clears on
+      // the next successful load (refresh after fixing on disk).
+      setResourceReadError(null);
+    } catch (error) {
+      content = null;
+      // Only an explicitly unreadable target renders the error panel; a
+      // delete-between-list-and-preview race classifies as missing and falls
+      // back to the existing missing/empty view (review P2-1).
+      const classified = classifyReadError(error);
+      setResourceReadError(classified.status === 'unreadable' ? classified : null);
     }
     setResourceContent(content);
     setResourceNav((prev) => resourceNavReducer(prev, { type: 'OPEN_PREVIEW' }));
@@ -359,10 +385,19 @@ export function useResourceNav({
 
       const appHome = getAppHomePaths().appHomePath;
       let content: string | null = null;
-      if (hit.category === 'agents') {
-        content = await readAgentContent(appHome, hit.profileName, hit.itemName);
-      } else {
-        content = await readUserMemoryContent(appHome, hit.profileName);
+      try {
+        if (hit.category === 'agents') {
+          content = await readAgentContent(appHome, hit.profileName, hit.itemName);
+        } else {
+          content = await readUserMemoryContent(appHome, hit.profileName);
+        }
+        setResourceReadError(null);
+      } catch (error) {
+        content = null;
+        // Unreadable targets render the error panel; a delete race (missing)
+        // falls back to the existing missing/empty view (review P2-1).
+        const classified = classifyReadError(error);
+        setResourceReadError(classified.status === 'unreadable' ? classified : null);
       }
       setResourceContent(content);
       setResourceNav((prev) => resourceNavReducer(prev, { type: 'CLOSE' }));
@@ -416,9 +451,25 @@ export function useResourceNav({
         setResourceNav((prev) =>
           resourceNavReducer(prev, { type: 'SET_SELECTED_INDEX', index: itemIndex }),
         );
-        content = await readAgentContent(appHome, profile.name, itemName);
+        try {
+          content = await readAgentContent(appHome, profile.name, itemName);
+          setResourceReadError(null);
+        } catch (error) {
+          content = null;
+          // Unreadable targets render the error panel; a delete race (missing)
+          // falls back to the existing missing/empty view (review P2-1).
+          const classified = classifyReadError(error);
+          setResourceReadError(classified.status === 'unreadable' ? classified : null);
+        }
       } else {
-        content = await readUserMemoryContent(appHome, profile.name);
+        try {
+          content = await readUserMemoryContent(appHome, profile.name);
+          setResourceReadError(null);
+        } catch (error) {
+          content = null;
+          const classified = classifyReadError(error);
+          setResourceReadError(classified.status === 'unreadable' ? classified : null);
+        }
       }
       setResourceContent(content);
       setResourceNav((prev) => resourceNavReducer(prev, { type: 'OPEN_PREVIEW' }));
@@ -436,7 +487,7 @@ export function useResourceNav({
   );
 
   const handleResourceInput = useCallback(
-    (input: string, key: Record<string, boolean>) => {
+    (input: string, key: Key) => {
       const profile = currentProfile();
       if (!profile) return;
       const nav = resourceNav;
@@ -503,8 +554,15 @@ export function useResourceNav({
 
       // List phase
       if (nav.phase === 'list' && category) {
-        const itemCount =
-          category === 'agents'
+        // Issue #110: when the category itself is unreadable, the only working
+        // action is leaving the surface — the item actions stay disabled
+        // because there are no readable items to act on.
+        const categoryState = readStateFor(profile, category);
+        const categoryUnreadable = categoryState.status === 'unreadable';
+
+        const itemCount = categoryUnreadable
+          ? 0
+          : category === 'agents'
             ? profile.resourceDetails.agents.length
             : profile.resourceDetails.userMemory.exists
               ? 1
@@ -521,6 +579,7 @@ export function useResourceNav({
         if (key.escape) {
           dispatchNav({ type: 'CLOSE' });
           setResourceContent(null);
+          setResourceReadError(null);
           setDiffResult(null);
           setDrilledAgent(null);
           return;
@@ -528,6 +587,9 @@ export function useResourceNav({
         if (input === '/') {
           dispatchNav({ type: 'OPEN_SEARCH' });
           setSearchResults([]);
+          return;
+        }
+        if (categoryUnreadable) {
           return;
         }
         if (key.return && itemCount > 0) {
@@ -731,6 +793,7 @@ export function useResourceNav({
   return {
     resourceNav,
     resourceContent,
+    resourceReadError,
     diffResult,
     drilledAgent,
     agentFrontmatter,

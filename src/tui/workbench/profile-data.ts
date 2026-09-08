@@ -8,7 +8,15 @@ import {
   type ProfileSummary,
 } from '../../core/profile-management';
 import { validateProfile, type ProfileValidationResult } from '../../core/validator';
-import { loadUserMemory, listAgents, type AgentEntry, type UserMemoryEntry } from '../../core/resource';
+import {
+  loadUserMemory,
+  listAgents,
+  classifyReadError,
+  type AgentEntry,
+  type UserMemoryEntry,
+  type ResourceCategoryState,
+  type ResourceStates,
+} from '../../core/resource';
 import { readConfiguredMcpNames } from '../../core/mcp-list';
 
 export type WorkbenchProfile = {
@@ -22,6 +30,11 @@ export type WorkbenchProfile = {
   /** Configured MCP server names (connection state is checked lazily, §5 nudge). */
   mcpServers: string[];
   validation: ProfileValidationResult | null;
+  /** Explicit per-category read outcomes (issue #110): `ok` for the loaded
+   *  details, `missing` for an absent resource, `unreadable` for EISDIR/
+   *  EACCES/format failures that must never masquerade as an empty list.
+   *  Optional so fixtures predating the field degrade to `ok` (readStateFor). */
+  resourceStates?: ResourceStates;
 };
 
 export type ResourceCounts = {
@@ -39,7 +52,7 @@ export type ResourceCounts = {
 export type ResourceDetails = {
   userMemory: UserMemoryEntry;
   agents: AgentEntry[];
-  /** Skill entry names under `claude-home/skills/` (sidebar tree item rows). */
+  /** Skill entry names under `claude-home/skills/`. */
   skills: string[];
   /** Auto Memory entry file names under `claude-home/memory/auto/`. */
   autoMemory: string[];
@@ -62,6 +75,17 @@ export type WorkbenchData = {
   customTemplates: CustomTemplateSummary[];
 };
 
+/** Read state for a nav category (`'user-memory' | 'agents'`); `ok` when the
+ *  Profile fixture predates `resourceStates` (graceful degradation). */
+export function readStateFor(
+  profile: WorkbenchProfile,
+  category: 'user-memory' | 'agents',
+): ResourceCategoryState {
+  const states = profile.resourceStates;
+  if (!states) return { status: 'ok' };
+  return category === 'agents' ? states.agents : states.userMemory;
+}
+
 export async function loadWorkbenchData(appHomePath?: string): Promise<WorkbenchData> {
   const paths = getAppHomePaths(appHomePath);
   const summaries: ProfileSummary[] = await listProfilesForDisplay({
@@ -74,9 +98,12 @@ export async function loadWorkbenchData(appHomePath?: string): Promise<Workbench
       const claudeHome = join(profilesPath, summary.name, 'claude-home');
       // One .claude.json read yields both the MCP count and the server names.
       const mcpServers = await readConfiguredMcpNames(claudeHome);
-      const [userMemory, agents, skills, autoMemory, settings] = await Promise.all([
-        loadUserMemory(paths.appHomePath, summary.name),
-        listAgents(paths.appHomePath, summary.name),
+      // User Memory / Agents load with explicit read-state classification
+      // (issue #110): a failed category read degrades that category to
+      // `unreadable` instead of throwing away the whole Profile.
+      const [userMemoryState, agentsState, skills, autoMemory, settings] = await Promise.all([
+        loadCategoryState('user-memory', () => loadUserMemory(paths.appHomePath, summary.name)),
+        loadCategoryState('agents', () => listAgents(paths.appHomePath, summary.name)),
         listEntryNames(join(claudeHome, 'skills')),
         listEntryNames(join(claudeHome, 'memory', 'auto'), true),
         listSettingKeys(join(claudeHome, 'settings.json')),
@@ -105,13 +132,26 @@ export async function loadWorkbenchData(appHomePath?: string): Promise<Workbench
         status: summary.status,
         resourceCounts: counts,
         resourceDetails: {
-          userMemory,
-          agents,
+          userMemory: userMemoryState.loaded
+            ? userMemoryState.value
+            : {
+                kind: 'user-memory' as const,
+                name: 'CLAUDE.md',
+                relativePath: 'claude-home/CLAUDE.md',
+                exists: false,
+                lineCount: 0,
+                excerpt: '',
+              },
+          agents: agentsState.loaded ? agentsState.value : [],
           skills,
           autoMemory,
           settings,
           // Filled by the delegated plugin inventory read (issue #101 L4).
           plugins: [],
+        },
+        resourceStates: {
+          userMemory: userMemoryState.state,
+          agents: agentsState.state,
         },
         mcpServers,
         validation,
@@ -129,6 +169,46 @@ export async function loadWorkbenchData(appHomePath?: string): Promise<Workbench
   }
 
   return { profiles, defaultProfile, customTemplates };
+}
+
+/**
+ * Run one resource category load and classify its outcome (issue #110): a
+ * resolution that reports itself absent becomes `missing`; a resolution with
+ * content becomes `ok` with the value; a rejection is classified as `missing`
+ * (absent path) or `unreadable` (EISDIR/EACCES/format) with a diagnostic,
+ * never as a successful empty list.
+ */
+async function loadCategoryState<T>(
+  category: 'user-memory' | 'agents',
+  load: () => Promise<T>,
+): Promise<{ loaded: true; value: T; state: ResourceCategoryState } | { loaded: false; state: ResourceCategoryState }> {
+  try {
+    const value = await load();
+    // A user-memory entry with exists=false is an explicit `missing`, not a
+    // successful read of an empty resource.
+    if (
+      category === 'user-memory' &&
+      typeof value === 'object' &&
+      value !== null &&
+      (value as { exists?: unknown }).exists === false
+    ) {
+      return { loaded: true, value, state: { status: 'missing' } };
+    }
+    return { loaded: true, value, state: { status: 'ok' } };
+  } catch (error) {
+    const classified = classifyReadError(error);
+    return {
+      loaded: false,
+      state:
+        classified.status === 'unreadable'
+          ? {
+              status: 'unreadable',
+              code: classified.code,
+              detail: `${category}: ${classified.detail}`,
+            }
+          : { status: 'missing' },
+    };
+  }
 }
 
 async function countResources(

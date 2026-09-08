@@ -26,8 +26,21 @@ npm run probe:skills # pinned Skills acquisition proof harness (issue #39)
 npm run test:watch
 npm run lint
 npm run format
-npm run check        # lint + test + build
+npm run typecheck:production  # strict no-emit tsc over shipped src (ESNext/Bundler, tsup-aligned)
+npm run typecheck:test        # same strict config extended over test/** (fixtures, harness, *.tsx)
+npm run smoke:dist            # offline smoke of built dist (CLI --help/--version, Workbench ESM load)
+npm run check        # lint + typecheck:production + typecheck:test + test + build + smoke:dist
 ```
+
+`typecheck:production` is the static gate: it type-checks every shipped module
+(CLI, core, platform, production Workbench incl. the Ink-gate bundle) with
+bundler-style resolution matching the tsup/esbuild packaging, no emit.
+Dev-only prototypes under `src/tui/prototype-*` (except the shipped
+`prototype-ink-gate`) are not part of it. `typecheck:test` reuses the same
+strict production config and extends coverage to everything Vitest runs —
+tests, fixtures, and harnesses — so a stale mock or fixture fails the gate.
+Prototype code reached only through tests is checked on the test side only;
+the production boundary stays clean.
 
 Binary entry: `"bin": { "ccps": "dist/index.js" }`. Use `npm link` for local development.
 

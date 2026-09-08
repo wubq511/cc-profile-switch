@@ -3,9 +3,13 @@ import { Box, Text } from 'ink';
 
 import { useI18n } from './i18n/react';
 import { useHints } from './guidance';
-import type { WorkbenchProfile, ResourceCounts } from './profile-data';
+import { readStateFor, type WorkbenchProfile } from './profile-data';
 import type { ResourceNavState } from './resource-nav';
-import type { AgentFrontmatter, SearchResult } from '../../core/resource';
+import type {
+  AgentFrontmatter,
+  SearchResult,
+  ResourceCategoryState,
+} from '../../core/resource';
 import type { ResourceDiffResult } from '../../core/resource/diff-all';
 import type { EditSession } from '../../core/edit-session';
 import { ResourceMainPane } from './resource-main';
@@ -37,6 +41,9 @@ type MainPaneProps = {
   /** §8 editor-unavailable fallback actions for failed edit sessions. */
   editFallback: EditFallbackHandlers;
   content: string | null;
+  /** Issue #110: diagnostic for a failed preview read; shown instead of the
+   *  missing/empty state so an unreadable target is never rendered as empty. */
+  contentReadError?: { code: string; detail: string } | null;
   diff: ResourceDiffResult | null;
   drilledAgent: string | null;
   agentFrontmatter: AgentFrontmatter | null;
@@ -76,6 +83,7 @@ export function MainPane({
   descriptionDraft,
   editFallback,
   content,
+  contentReadError,
   diff,
   drilledAgent,
   agentFrontmatter,
@@ -103,6 +111,7 @@ export function MainPane({
       nav,
       sessionFor,
       content,
+      contentReadError,
       diff,
       drilledAgent,
       agentFrontmatter,
@@ -158,7 +167,8 @@ export function MainPane({
             React.createElement(Text, { color: 'gray' }, profile.description),
           ),
     // Just-in-time amber nudge: MCP servers that failed to connect (§5).
-    (mcpFailed?.length ?? 0) > 0 &&
+    mcpFailed &&
+      mcpFailed.length > 0 &&
       React.createElement(
         Box,
         { marginBottom: 1 },
@@ -199,7 +209,7 @@ export function MainPane({
     React.createElement(
       Box,
       { flexDirection: 'column', gap: compactCards ? 0 : 1, flexGrow: 1 },
-      ...renderCategoryGrid(profile.resourceCounts, colWidth, cursor, focused ?? false, compactCards),
+      ...renderCategoryGrid(profile, colWidth, cursor, focused ?? false, compactCards),
     ),
     focused &&
       React.createElement(
@@ -231,12 +241,13 @@ export function MainPane({
   );
 
   function renderCategoryGrid(
-    counts: ResourceCounts,
+    profile: WorkbenchProfile,
     colW: number,
     cursorIdx: number,
     isFocused: boolean,
     compact: boolean,
   ): React.ReactElement[] {
+    const counts = profile.resourceCounts;
     const rows: React.ReactElement[] = [];
     for (let i = 0; i < CATEGORIES.length; i += 2) {
       const left = CATEGORIES[i];
@@ -248,11 +259,19 @@ export function MainPane({
           // through the borders at compact heights (issue #98, V1).
           Box,
           { key: left.key, gap: 1, flexShrink: 0 },
-          renderCategoryCard(left, counts[left.key], colW, i === cursorIdx && isFocused, compact),
+          renderCategoryCard(
+            left,
+            counts[left.key],
+            left.resourceCategory ? readStateFor(profile, left.resourceCategory) : undefined,
+            colW,
+            i === cursorIdx && isFocused,
+            compact,
+          ),
           right
             ? renderCategoryCard(
                 right,
                 counts[right.key as CategoryKey],
+                right.resourceCategory ? readStateFor(profile, right.resourceCategory) : undefined,
                 colW,
                 i + 1 === cursorIdx && isFocused,
                 compact,
@@ -267,6 +286,7 @@ export function MainPane({
   function renderCategoryCard(
     def: CategoryDef,
     count: number,
+    resourceState: ResourceCategoryState | undefined,
     colW: number,
     highlighted: boolean,
     compact: boolean,
@@ -288,6 +308,13 @@ export function MainPane({
           : t('empty.category')
         : null;
     const diffHint = diffCategoryFor(def.key) ? t('resource.diff.gridHint') : null;
+    // Issue #110: an unreadable User Memory/Agents category replaces the count
+    // with the explicit error — a failed read must not render as `0`.
+    const unreadable = resourceState?.status === 'unreadable' ? resourceState : null;
+    const errorLabel =
+      unreadable !== null
+        ? `✗ ${t('resource.state.unreadable', { code: unreadable.code })}`
+        : null;
 
     // Compact cells (issue #98, V1/V2): at compact main-pane widths the
     // bordered multi-row card cannot fit seven categories plus the Plugins
@@ -305,12 +332,14 @@ export function MainPane({
           {
             bold: true,
             inverse: highlighted,
-            color: highlighted ? 'cyan' : undefined,
+            color: highlighted ? 'cyan' : errorLabel !== null ? 'red' : undefined,
             wrap: 'truncate',
           },
           `${highlighted ? '▸ ' : ''}${t(def.labelKey)}`,
         ),
-        React.createElement(Text, { color: 'gray' }, ` ${count}`),
+        errorLabel !== null
+          ? React.createElement(Text, { color: 'red' }, ' ✗')
+          : React.createElement(Text, { color: 'gray' }, ` ${count}`),
       );
     }
 
@@ -327,10 +356,28 @@ export function MainPane({
         { bold: true, inverse: highlighted, color: highlighted ? 'cyan' : undefined, wrap: 'truncate' },
         `${highlighted ? '▸ ' : ''}${t(def.labelKey)}`,
       ),
-      React.createElement(Text, null, `${count}`),
-      drillHint && React.createElement(Text, { color: 'gray', wrap: 'truncate' }, drillHint),
-      diffHint && React.createElement(Text, { color: 'gray', wrap: 'truncate' }, diffHint),
-      emptyLabel && React.createElement(Text, { color: 'gray', wrap: 'truncate' }, emptyLabel),
+      errorLabel !== null
+        ? React.createElement(
+            Text,
+            { color: 'red', wrap: 'truncate' },
+            '✗',
+          )
+        : React.createElement(Text, null, `${count}`),
+      errorLabel !== null &&
+        React.createElement(
+          Text,
+          { color: 'gray', wrap: 'truncate' },
+          t('resource.state.fixDirection'),
+        ),
+      errorLabel === null &&
+        drillHint &&
+        React.createElement(Text, { color: 'gray', wrap: 'truncate' }, drillHint),
+      errorLabel === null &&
+        diffHint &&
+        React.createElement(Text, { color: 'gray', wrap: 'truncate' }, diffHint),
+      errorLabel === null &&
+        emptyLabel &&
+        React.createElement(Text, { color: 'gray', wrap: 'truncate' }, emptyLabel),
     );
   }
 }

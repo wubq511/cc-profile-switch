@@ -74,7 +74,7 @@ export function ResourceDiffView({
 
   const counterpartName = counterpart ?? profile.name;
   const visibleRows = Math.max(1, height - HEADER_ROWS);
-  const { summary, rows } = renderByCategory();
+  const { summary, rows } = renderByCategory(diff);
   const windowed = rows.slice(scrollOffset, scrollOffset + visibleRows);
 
   return React.createElement(
@@ -95,20 +95,22 @@ export function ResourceDiffView({
     ),
   );
 
-  function renderByCategory(): { summary: string | null; rows: React.ReactElement[] } {
-    switch (diff.category) {
+  function renderByCategory(
+    result: ResourceDiffResult,
+  ): { summary: string | null; rows: React.ReactElement[] } {
+    switch (result.category) {
       case 'user-memory':
-        return renderMemoryRows(diff.diff);
+        return renderMemoryRows(result.diff);
       case 'agents':
-        return renderAgentsRows(diff.diff);
+        return renderAgentsRows(result.diff);
       case 'settings':
-        return renderSettingsRows(diff.diff);
+        return renderSettingsRows(result.diff);
       case 'mcp':
-        return renderMcpRows(diff.diff);
+        return renderMcpRows(result.diff);
       case 'skills':
-        return renderSkillsRows(diff.diff);
+        return renderSkillsRows(result.diff);
       case 'launch-config':
-        return renderLaunchRows(diff.diff);
+        return renderLaunchRows(result.diff);
     }
   }
 

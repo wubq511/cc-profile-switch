@@ -159,6 +159,7 @@ export const zh: Record<LocaleKey, string> = {
   'template.source.custom': '自定义',
   'template.removeHint': '[x] 删除该模板（不可恢复）',
   'lifecycle.reenterSecrets': '需重新输入 {count} 个机密键：{keys}',
+  'lifecycle.reenterHeaders': '需重新输入 {count} 个 MCP HTTP header 键：{keys}',
   'lifecycle.mcpFailed': 'MCP 重新注册失败：{names}',
   // Profile export/import (issue #95)
   'lifecycle.success.exported': '已导出「{name}」',
@@ -402,6 +403,12 @@ export const zh: Record<LocaleKey, string> = {
   'resource.agents.createSuccess': '代理 "{name}" 已创建 — 在 VS Code 中打开',
   'resource.agents.removed': '代理 "{name}" 已移至回收站',
   'resource.list.hint': '[e] 编辑  [x] 删除  [c] 复制  [d] 对比',
+  // Issue #110：显式读取失败状态（EISDIR/EACCES/格式错误）与修复方向——
+  // 不得伪装成成功的空列表。
+  'resource.state.unreadable': '资源无法读取（{code}）',
+  'resource.state.fixDirection': '将该路径修正为预期文件类型并确保可读，然后刷新（Esc 返回后重新进入）。',
+  'resource.state.refreshHint': '已在磁盘上修复？按 Esc 返回后重新进入即可重新加载。',
+  'resource.state.loadFailed': '资源无法加载：{code}',
   'resource.preview.title': '预览',
   'resource.preview.back': '按 Esc 返回',
   'resource.edit': '在 VS Code 中编辑',

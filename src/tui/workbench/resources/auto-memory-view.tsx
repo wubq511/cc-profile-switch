@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Box, Text, useInput, useStdin } from 'ink';
+import { Box, Text, useInput, useStdin, type Key } from 'ink';
 
 import { useI18n } from '../i18n/react';
 import type { WorkbenchProfile } from '../profile-data';
@@ -163,7 +163,7 @@ export function AutoMemoryView({
   }, [appHomePath, profile.name, selectedIndex, entries, searchQuery, sessionChangeCount]);
 
   useInput(
-    (input: string, key: Record<string, boolean>) => {
+    (input: string, key: Key) => {
       if (key.ctrl && input === 'c') return; // app-level exit handles this
 
       // The collision dialog owns its own input while it is open.

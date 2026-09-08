@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Box, Text, useInput, useStdin } from 'ink';
+import { Box, Text, useInput, useStdin, type Key } from 'ink';
 
 import { useI18n } from '../i18n/react';
 import type { LocaleKey } from '../i18n/en';
@@ -199,8 +199,12 @@ export function RecoveryView({
     }
     setBusy(true);
     try {
-      await restoreRecoveryItem({ appHomePath, itemId: row.item.id, pluginRestore });
+      const result = await restoreRecoveryItem({ appHomePath, itemId: row.item.id, pluginRestore });
       setStatus(t('recovery.restore.success', { name }));
+      if (!result.consumed && result.consumptionWarning !== undefined) {
+        // The restore is committed; surface the kept-item warning (issue #108).
+        setStatus(`${t('recovery.restore.success', { name })}: ${result.consumptionWarning}`);
+      }
       await reload();
       onDataChanged?.();
     } catch (error) {
@@ -224,18 +228,24 @@ export function RecoveryView({
       return;
     }
     try {
-      await restoreRecoveryItem({
+      const result = await restoreRecoveryItem({
         appHomePath,
         itemId: row.item.id,
         collisionResolution: choice.resolution,
         newName: choice.resolution === 'restore-as-new-name' ? choice.newName : undefined,
         pluginRestore,
       });
+      // Report the ACTUAL target the core returned (issue #108), not the
+      // requested name; surface a post-publish cleanup warning when the
+      // item could not be consumed.
       setStatus(
         choice.resolution === 'restore-as-new-name'
-          ? t('recovery.restore.renamed', { name, newName: choice.newName })
+          ? t('recovery.restore.renamed', { name, newName: result.restoredProfile })
           : t('recovery.restore.replaced', { name }),
       );
+      if (result.consumptionWarning !== undefined) {
+        setStatus(`${t('recovery.restore.replaced', { name })}: ${result.consumptionWarning}`);
+      }
       setCollisionItem(null);
       setPhase('list');
       await reload();
@@ -320,7 +330,7 @@ export function RecoveryView({
   }
 
   useInput(
-    (input: string, key: Record<string, boolean>) => {
+    (input: string, key: Key) => {
       if (key.ctrl && input === 'c') return; // app-level exit handles this
 
       // The collision dialog owns its own input while it is open.

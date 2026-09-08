@@ -2,11 +2,12 @@ import { Command } from 'commander';
 import fs from 'fs-extra';
 import { createInterface } from 'node:readline/promises';
 
-import { getAppHomePaths, loadAppConfig } from '../core/app-config';
+import { getAppHomePaths, loadAppConfig, type Clock } from '../core/app-config';
 import { listBackups, permanentlyDeleteBackup, restoreProfileFromBackup } from '../core/backup';
 import { buildLaunchPlan, formatLaunchDryRun, launchProfile } from '../core/launcher';
-import { backupProfile, createProfile, initProfiles, type Clock } from '../core/profile';
+import { backupProfile, createProfile, initProfiles } from '../core/profile';
 import { ensureProfileCreator } from '../core/profile-creator';
+import { type ProfileTemplateName } from '../core/profile-template';
 import { exportProfile } from '../core/profile-export';
 import {
   importProfile,
@@ -59,11 +60,7 @@ import {
 } from '../platform/process';
 import { isPathInside, relativeFilesystemPath, resolveFilesystemPath } from '../platform/path';
 import type { PluginCoordinates } from '../schemas/plugins';
-import {
-  profileConfigSchema,
-  profileTemplateSchema,
-  type ProfileTemplateName,
-} from '../schemas/profile';
+import { profileConfigSchema, profileTemplateSchema } from '../schemas/profile';
 import { runTerminalTui, type RunTerminalTuiOptions } from '../tui/terminal';
 import { CcpsError } from '../utils/errors';
 import { isNodeError } from '../utils/type-guards';
@@ -324,7 +321,7 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
     .description('Package a profile as a single portable .tar.gz bundle.')
     .option(
       '--include-secrets',
-      'Include secret-class values (env.ANTHROPIC_* and MCP env). Writes the file 0600.',
+      'Include secret-class values (env.ANTHROPIC_*, MCP env and HTTP header values). Writes the file 0600.',
     )
     .action(async (name: string, outputPath: string, options: { includeSecrets?: boolean }) => {
       const result = await exportProfile({
@@ -356,7 +353,9 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
           continue;
         }
         const serverSuffix =
-          entry.scope === 'mcp-env' && entry.mcpServer ? ` (${entry.mcpServer})` : '';
+          (entry.scope === 'mcp-env' || entry.scope === 'mcp-headers') && entry.mcpServer
+            ? ` (${entry.mcpServer})`
+            : '';
         runtime.writeOut(`  ${entry.file}${serverSuffix}: ${entry.keys.join(', ')}\n`);
       }
 
@@ -982,7 +981,15 @@ export function registerCommands(program: Command, options: Partial<CommandRunti
           }
         },
       });
+      const consumptionWarning =
+        result.consumed === false && result.consumptionWarning !== undefined
+          ? result.consumptionWarning
+          : undefined;
       runtime.writeOut(`Restored item for profile "${result.restoredProfile}".\n`);
+      if (consumptionWarning !== undefined) {
+        // The restore is committed; the item was kept (issue #108 Decision 12).
+        runtime.writeOut(`WARNING: ${consumptionWarning}\n`);
+      }
     });
 }
 
@@ -1250,6 +1257,34 @@ function formatImportResult(result: ImportResult): string {
   if (envReentry.length > 0) {
     lines.push(`MCP env keys to re-enter: ${envReentry.join('; ')}`);
   }
+  // MCP HTTP header key names needing guided re-entry (issue #105): header
+  // values are redacted under the same rules as env values and are never
+  // passed through `claude mcp add`, so the keys are reported per server in
+  // the same shape as the env line above. Native servers surface keys from
+  // the staged content; the manifest-scope list additionally covers legacy
+  // root mcp.json servers (no delegation happens for them).
+  const headerReentry = new Map<string, string[]>();
+  for (const server of result.mcpServers) {
+    if (server.headerKeysToReenter.length > 0) {
+      headerReentry.set(server.name, [...server.headerKeysToReenter]);
+    }
+  }
+  for (const entry of result.mcpHeaderKeysToReenter) {
+    if (entry.keys.length === 0) {
+      continue;
+    }
+    headerReentry.set(entry.server, [
+      ...new Set([...(headerReentry.get(entry.server) ?? []), ...entry.keys]),
+    ]);
+  }
+  const headerLines = [...headerReentry.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(
+      ([server, keys]) => `${server} (${[...keys].sort((a, b) => a.localeCompare(b)).join(', ')})`,
+    );
+  if (headerLines.length > 0) {
+    lines.push(`MCP header keys to re-enter: ${headerLines.join('; ')}`);
+  }
   if (result.settingsSecretKeysToReenter.length > 0) {
     lines.push(
       `Secrets to re-enter in settings.json: ${result.settingsSecretKeysToReenter.join(', ')}`,
@@ -1264,6 +1299,11 @@ function formatImportResult(result: ImportResult): string {
   lines.push(`Validation: ${result.validation.status}`);
   if (result.validation.findings.length > 0) {
     lines.push(formatFindings(result.validation.findings).trimEnd());
+  }
+  // Post-commit housekeeping warnings (issue #109): the profile was
+  // published; these never turn the import into an error.
+  for (const warning of result.warnings) {
+    lines.push(`WARNING: ${warning}`);
   }
   lines.push(`Next: ccps launch ${result.profileName} --dry-run`);
   return `${lines.join('\n')}\n`;

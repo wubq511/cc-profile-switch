@@ -91,6 +91,7 @@ const sampleData: WorkbenchData = {
     makeProfile({ name: 'study', description: 'Research notes', isDefault: false }),
   ],
   defaultProfile: 'coding',
+  customTemplates: [],
 };
 
 // Ink's useInput broadcasts every keypress to ALL active handlers with no

@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.production.json",
+  "compilerOptions": {
+    "types": ["node", "vitest/globals"]
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.mts", "test/**/*.ts", "test/**/*.tsx"],
+  "exclude": ["node_modules", "dist", "src/tui/prototype-workbench", "src/tui/prototype-edit-session", "src/tui/prototype-ink-gate", "src/tui/prototype-diff", "src/tui/workbench"]
+}

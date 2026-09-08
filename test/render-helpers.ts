@@ -108,7 +108,7 @@ export function renderWithLocale(element: React.ReactElement, initialLocale: Loc
   const stdout = new FakeTtyStdout();
   const instance = render(
     React.createElement(I18nProvider, { initialLocale }, element),
-    { stdout, stdin: dummyStdin(), debug: true },
+    { stdout: stdout as unknown as NodeJS.WriteStream, stdin: dummyStdin() as unknown as NodeJS.ReadStream, debug: true },
   );
   return { instance, stdout };
 }

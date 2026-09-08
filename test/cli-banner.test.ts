@@ -12,7 +12,7 @@ function stripAnsi(text: string): string {
 const ANSI_ESC = /\x1b\[/;
 
 describe('buildCliBanner', () => {
-  let originalLevel: number;
+  let originalLevel: typeof chalk.level;
 
   beforeEach(() => {
     originalLevel = chalk.level;

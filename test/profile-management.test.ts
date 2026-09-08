@@ -146,7 +146,7 @@ describe('profile management services', () => {
         defaultProfile: 'coding',
         lastUsedProfile: 'coding',
         recovery: { retentionDays: 30 },
-        workbench: { skillsDiscoveryExperimental: true },
+        workbench: { skillsDiscoveryExperimental: true, welcomeBanner: true },
       },
       { clock: () => new Date('2026-05-20T08:05:00Z') },
     );
@@ -251,7 +251,7 @@ describe('profile management services', () => {
         defaultProfile: 'coding',
         lastUsedProfile: 'coding',
         recovery: { retentionDays: 30 },
-        workbench: { skillsDiscoveryExperimental: true },
+        workbench: { skillsDiscoveryExperimental: true, welcomeBanner: true },
       },
       { clock: () => new Date('2026-05-20T08:05:00Z') },
     );

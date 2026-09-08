@@ -18,6 +18,14 @@ import {
   FakeResponse,
 } from './fixtures/discovery-http';
 import type { WorkbenchData } from '../src/tui/workbench/profile-data';
+import type { AppConfig } from '../src/schemas/config';
+
+// WorkbenchApp types configLoader as returning Promise<ReturnType<typeof loadAppConfig>>
+// (a double-wrapped Promise<Promise<AppConfig>>); this helper matches that contract
+// without casts. TODO(#113-followup): fix the prop type in src to Awaited<...>.
+function configLoaderFor(config: AppConfig): (appHomePath: string) => Promise<Promise<AppConfig>> {
+  return () => new Promise<Promise<AppConfig>>((resolve) => resolve(Promise.resolve(config)));
+}
 
 // Discover surface (spec §7.4, issue #68).
 //
@@ -151,11 +159,9 @@ const sampleData: WorkbenchData = {
           excerpt: 'Prefer explicit answers.',
         },
         agents: [],
-        autoMemory: 5,
-        skills: 3,
-        mcp: 1,
-        settings: 1,
-        launchConfig: 1,
+        autoMemory: ['note-a.md', 'note-b.md', 'note-c.md', 'note-d.md', 'note-e.md'],
+        skills: ['skill-a', 'skill-b', 'skill-c'],
+        settings: ['env'],
         plugins: [],
       },
       mcpServers: [],
@@ -163,6 +169,7 @@ const sampleData: WorkbenchData = {
     },
   ],
   defaultProfile: 'coding',
+  customTemplates: [],
 };
 
 /** A Discover session served entirely by a fake HTTP layer. */
@@ -221,10 +228,10 @@ describe('Workbench Discover entry (Skills category card)', () => {
         data: sampleData,
         initialLocale: 'en',
         skipWelcome: true,
-        configLoader: async () => ({
+        configLoader: configLoaderFor({
           version: 2,
           recovery: { retentionDays: 30 },
-          workbench: { skillsDiscoveryExperimental: true },
+          workbench: { skillsDiscoveryExperimental: true, welcomeBanner: true },
         }),
         discoverySessionFactory: () => fakeSession(),
       }),
@@ -250,10 +257,10 @@ describe('Workbench Discover entry (Skills category card)', () => {
         data: sampleData,
         initialLocale: 'en',
         skipWelcome: true,
-        configLoader: async () => ({
+        configLoader: configLoaderFor({
           version: 2,
           recovery: { retentionDays: 30 },
-          workbench: { skillsDiscoveryExperimental: false },
+          workbench: { skillsDiscoveryExperimental: false, welcomeBanner: true },
         }),
         discoverySessionFactory: (_appHome, experimental) =>
           fakeSession({ experimentalEnabled: experimental }),
@@ -283,10 +290,10 @@ describe('Workbench Discover entry (Skills category card)', () => {
         data: sampleData,
         initialLocale: 'en',
         skipWelcome: true,
-        configLoader: async () => ({
+        configLoader: configLoaderFor({
           version: 2,
           recovery: { retentionDays: 30 },
-          workbench: { skillsDiscoveryExperimental: true },
+          workbench: { skillsDiscoveryExperimental: true, welcomeBanner: true },
         }),
         discoverySessionFactory: () => offlineSession,
       }),

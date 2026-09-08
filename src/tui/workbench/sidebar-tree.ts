@@ -133,7 +133,8 @@ function pushSubtree(
       visibleItems = expandedCategories.has(categoryExpandKey(profile.name, categoryKey)) ? items : [];
     } else {
       // When the query matched the category label itself, all items stay visible.
-      const labelMatched = categoryLabels[categoryKey].toLowerCase().includes(query);
+      const labelMatched =
+        query !== null && categoryLabels[categoryKey].toLowerCase().includes(query);
       visibleItems = query && !labelMatched
         ? items.filter((item) => item.toLowerCase().includes(query))
         : items;

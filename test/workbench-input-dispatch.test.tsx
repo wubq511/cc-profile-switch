@@ -12,6 +12,7 @@ import { WorkbenchApp, resetWelcomeSessionForTests } from '../src/tui/workbench/
 import { createAppConfig, getAppHomePaths } from '../src/core/app-config';
 import { createProfileFromTemplate } from '../src/core/profile-template';
 import type { WorkbenchProfile, WorkbenchData } from '../src/tui/workbench/profile-data';
+import type { AgentEntry } from '../src/core/resource/types';
 import { flatten, stripAnsi } from './render-helpers';
 
 vi.mock('node:child_process', () => ({
@@ -119,7 +120,7 @@ describe('Workbench input dispatch ownership (issue #90)', () => {
   }
 
   function profileWith(userMemoryExists: boolean, agentsCount = 0): WorkbenchProfile {
-    const agent = {
+    const agent: AgentEntry = {
       kind: 'agents' as const,
       name: 'explore',
       relativePath: 'claude-home/agents/explore.md',
@@ -167,6 +168,7 @@ describe('Workbench input dispatch ownership (issue #90)', () => {
   const dataFor = (profile: WorkbenchProfile): WorkbenchData => ({
     profiles: [profile],
     defaultProfile: 'coding',
+    customTemplates: [],
   });
 
   async function waitForInputListener(stdin: FakeTtyStdin, timeoutMs = 2000): Promise<void> {

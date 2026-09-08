@@ -59,7 +59,7 @@ function shubSkill(repository: string, directory: string, opts: { installs?: num
 }
 
 // The canonical backbone browse route set for the curated repos in tests.
-function browseRoutes(extra: Array<[string, unknown]> = []) {
+function browseRoutes(extra: Parameters<typeof makeHttp>[0] = []) {
   return makeHttp([
     ['/repos/vercel-labs/skills', apiRepo('vercel-labs', 'skills')],
     ['/git/trees/main', apiTree(['skills/find-skills/SKILL.md'])],
