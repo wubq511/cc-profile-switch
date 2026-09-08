@@ -17,6 +17,7 @@ import {
   jsonWriteIo,
   loadVersionedJson,
   parseTempName,
+  RENAME_PUBLISH_MAX_ATTEMPTS,
   saveVersionedJson,
   type VersionedJsonSpec,
 } from '../src/core/versioned-json';
@@ -856,7 +857,9 @@ describe('publish failure contracts (fault injection)', () => {
     });
 
     // The writer removed the temp it created; the foreign temp stays.
-    expect(await fs.readdir(dir)).toEqual([foreign.split('/').pop()].filter(Boolean));
+    // basename() (not split('/') — win32 paths carry no '/') so the
+    // assertion compares directory entries, not platform-shaped paths.
+    expect(await fs.readdir(dir)).toEqual([basename(foreign)]);
     writeSpy.mockRestore();
   });
 
@@ -872,9 +875,11 @@ describe('publish failure contracts (fault injection)', () => {
     expect(await fs.pathExists(liveTemp)).toBe(true);
 
     // The write itself still succeeds and never reaps the foreign temp.
+    // basename() (not split('/') — win32 paths carry no '/'), sorted to
+    // match readdir order.
     await atomicWriteJson(filePath, { version: 1 });
     expect(await fs.readFile(liveTemp, 'utf8')).toBe('live-writer');
-    expect(await fs.readdir(dir)).toEqual([liveTemp.split('/').pop(), 'test.json'].sort());
+    expect(await fs.readdir(dir)).toEqual([basename(liveTemp), 'test.json'].sort());
   });
 
   it('does not touch foreign temp files when the final rename fails', async () => {
@@ -905,5 +910,133 @@ describe('publish failure contracts (fault injection)', () => {
     const content = await fs.readFile(filePath, 'utf8');
     expect(JSON.parse(content)).toEqual({ version: 1 });
     expect(await fs.readdir(dir)).toEqual(['test.json']);
+  });
+});
+
+
+// ─── Rename publish retry (PR #114 CI, windows-latest EPERM) ───────────────
+//
+// On Windows the final rename can fail with transient EPERM/EACCES/EBUSY
+// while the destination is briefly open elsewhere (concurrent publisher
+// closing, Defender/indexer scan). These cases inject that fault
+// deterministically through the jsonWriteIo seam, so the retry contract is
+// exercised identically on win32/darwin/linux (AGENTS.md platform contract)
+// without needing a Windows host to reproduce it. The #106 contracts still
+// hold throughout: same temp protocol, complete-document publish,
+// ownership-scoped cleanup, no global lock.
+
+describe('rename publish retry (win32 EPERM hardening)', () => {
+  const tempRoots: string[] = [];
+
+  afterEach(async () => {
+    await Promise.all(tempRoots.map((root) => rm(root, { recursive: true, force: true })));
+    tempRoots.length = 0;
+    vi.restoreAllMocks();
+  });
+
+  async function makeTempDir(): Promise<string> {
+    const dir = await mkdtemp(join(tmpdir(), 'ccps-retry-'));
+    tempRoots.push(dir);
+    return dir;
+  }
+
+  function transientError(code: string): Error {
+    return Object.assign(new Error(`simulated win32 ${code}`), { code });
+  }
+
+  it('publishes the complete document when a rename fails once with EPERM (async)', async () => {
+    const dir = await makeTempDir();
+    const filePath = join(dir, 'test.json');
+    const renameSpy = vi
+      .spyOn(jsonWriteIo, 'rename')
+      .mockRejectedValueOnce(transientError('EPERM'));
+
+    await atomicWriteJson(filePath, { version: 1, tag: 'async' });
+
+    expect(renameSpy).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(await fs.readFile(filePath, 'utf8'))).toEqual({ version: 1, tag: 'async' });
+    // The same fully-written temp was retried in place; nothing was left behind.
+    expect(await fs.readdir(dir)).toEqual(['test.json']);
+  });
+
+  it('publishes when a rename fails repeatedly across the transient trio (async)', async () => {
+    const dir = await makeTempDir();
+    const filePath = join(dir, 'test.json');
+    const renameSpy = vi
+      .spyOn(jsonWriteIo, 'rename')
+      .mockRejectedValueOnce(transientError('EPERM'))
+      .mockRejectedValueOnce(transientError('EACCES'))
+      .mockRejectedValueOnce(transientError('EBUSY'));
+
+    await atomicWriteJson(filePath, { version: 1 });
+
+    expect(renameSpy).toHaveBeenCalledTimes(RENAME_PUBLISH_MAX_ATTEMPTS);
+    expect(JSON.parse(await fs.readFile(filePath, 'utf8'))).toEqual({ version: 1 });
+    expect(await fs.readdir(dir)).toEqual(['test.json']);
+  });
+
+  it('publishes when a rename fails once with EPERM (sync)', async () => {
+    const dir = await makeTempDir();
+    const filePath = join(dir, 'test.json');
+    const renameSpy = vi
+      .spyOn(jsonWriteIo, 'renameSync')
+      .mockImplementationOnce(() => {
+        throw transientError('EPERM');
+      });
+
+    atomicWriteJsonSync(filePath, { version: 1, tag: 'sync' });
+
+    expect(renameSpy).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(await fs.readFile(filePath, 'utf8'))).toEqual({ version: 1, tag: 'sync' });
+    expect(await fs.readdir(dir)).toEqual(['test.json']);
+  });
+
+  it('gives up after the bounded attempts and still cleans its own temp', async () => {
+    const dir = await makeTempDir();
+    const filePath = join(dir, 'test.json');
+    const renameSpy = vi
+      .spyOn(jsonWriteIo, 'rename')
+      .mockRejectedValue(transientError('EPERM'));
+
+    await expect(atomicWriteJson(filePath, { version: 1 })).rejects.toMatchObject({
+      code: 'EPERM',
+    });
+
+    // Bounded: the retry never runs past the published attempt budget, and
+    // the failed publisher removes the temp it owns (no global lock, no
+    // residue handed to other writers).
+    expect(renameSpy).toHaveBeenCalledTimes(RENAME_PUBLISH_MAX_ATTEMPTS);
+    expect(await fs.readdir(dir)).toEqual([]);
+    await expect(fs.pathExists(filePath)).resolves.toBe(false);
+  });
+
+  it('sync path gives up after the bounded attempts and cleans its own temp', () => {
+    const tempDir = fs.mkdtempSync(join(tmpdir(), 'ccps-retry-sync-'));
+    tempRoots.push(tempDir);
+    const filePath = join(tempDir, 'test.json');
+    const renameSpy = vi.spyOn(jsonWriteIo, 'renameSync').mockImplementation(() => {
+      throw transientError('EBUSY');
+    });
+
+    expect(() => atomicWriteJsonSync(filePath, { version: 1 })).toThrow(/EBUSY/);
+
+    expect(renameSpy).toHaveBeenCalledTimes(RENAME_PUBLISH_MAX_ATTEMPTS);
+    expect(fs.readdirSync(tempDir)).toEqual([]);
+  });
+
+  it('does not retry non-transient rename failures', async () => {
+    const dir = await makeTempDir();
+    const filePath = join(dir, 'test.json');
+    const renameSpy = vi
+      .spyOn(jsonWriteIo, 'rename')
+      .mockRejectedValueOnce(Object.assign(new Error('target is a directory'), { code: 'EISDIR' }));
+
+    await expect(atomicWriteJson(filePath, { version: 1 })).rejects.toMatchObject({
+      code: 'EISDIR',
+    });
+
+    // EISDIR can never self-heal; retrying would only delay a real error.
+    expect(renameSpy).toHaveBeenCalledTimes(1);
+    expect(await fs.readdir(dir)).toEqual([]);
   });
 });
